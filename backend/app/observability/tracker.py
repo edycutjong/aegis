@@ -6,7 +6,6 @@ Flex 4: Track exactly how many tokens agents burn.
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 from app.routing.model_router import calculate_cost
 

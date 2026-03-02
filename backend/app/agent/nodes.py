@@ -7,10 +7,10 @@ Together they form the Tier-2 Support Engineer pipeline:
 
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.types import Command, interrupt
+from langgraph.types import interrupt
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model, get_cost_per_token
+from app.routing.model_router import get_model
 from app.db.supabase import get_supabase
 from app.observability.tracker import get_tracker
 
@@ -128,7 +128,7 @@ Respond with ONLY the SQL query, no explanation, no markdown fences."""),
     return {
         "sql_query": sql,
         "thought_log": state.get("thought_log", []) + [
-            f"✓ Generated SQL query for investigation"
+            "✓ Generated SQL query for investigation"
         ],
     }
 
@@ -370,7 +370,7 @@ async def execute_action(state: AgentState) -> dict:
         "credit": f"Account credit of ${action.get('amount', 0):.2f} applied to customer {action.get('customer_name', 'Unknown')}'s account.",
         "tier_change": f"Subscription tier changed for customer {action.get('customer_name', 'Unknown')}. Changes take effect immediately.",
         "escalate": f"Ticket escalated to senior support manager. Reference: ESC-{hash(str(action)) % 10000:04d}",
-        "resolve": f"Ticket resolved. No further action required.",
+        "resolve": "Ticket resolved. No further action required.",
     }
     
     result = mock_results.get(action_type, "Action completed.")

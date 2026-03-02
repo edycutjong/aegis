@@ -1,7 +1,7 @@
 """Aegis configuration from environment variables."""
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 
 

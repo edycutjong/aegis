@@ -1,6 +1,6 @@
 """LangGraph agent state definition for Aegis."""
 
-from typing import Literal, Optional, TypedDict
+from typing import Literal, TypedDict
 
 
 class ActionProposal(TypedDict, total=False):

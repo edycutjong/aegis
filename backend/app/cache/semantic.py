@@ -6,8 +6,6 @@ the backend serves the cached answer in ~50ms. Cost to the company: $0.00.
 
 import hashlib
 import json
-import time
-from typing import Any
 
 import redis.asyncio as redis
 from app.config import get_settings

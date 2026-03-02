@@ -1,6 +1,5 @@
 """Supabase client for database operations."""
 
-import json
 import httpx
 from app.config import get_settings
 
