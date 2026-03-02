@@ -13,10 +13,10 @@ from app.config import get_settings
 MODEL_PRICING = {
     "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
     "gemini-2.5-pro-preview-05-06": {"input": 1.25, "output": 10.00},
-    "gpt-4o": {"input": 2.50, "output": 10.00},
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00},
-    "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.00},
+    "gpt-4.1": {"input": 2.00, "output": 8.00},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+    "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+    "claude-haiku-4-20250514": {"input": 0.80, "output": 4.00},
 }
 
 # Task → Model complexity mapping
@@ -60,7 +60,7 @@ def _create_model(model_name: str):
             google_api_key=settings.google_api_key,
             temperature=0.1,
         )
-    elif model_name.startswith("gpt"):
+    elif model_name.startswith("gpt") or model_name.startswith("o"):
         return ChatOpenAI(
             model=model_name,
             api_key=settings.openai_api_key,
