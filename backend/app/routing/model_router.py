@@ -11,7 +11,7 @@ from app.config import get_settings
 
 # Model pricing per 1M tokens (input/output)
 MODEL_PRICING = {
-    "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
+    "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
     "gemini-2.5-pro-preview-05-06": {"input": 1.25, "output": 10.00},
     "gpt-4.1": {"input": 2.00, "output": 8.00},
     "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
@@ -75,7 +75,7 @@ def _create_model(model_name: str):
     else:
         # Default to Gemini Flash as cheapest option
         return ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             google_api_key=settings.google_api_key,
             temperature=0.1,
         )
