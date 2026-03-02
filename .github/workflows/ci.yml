@@ -33,11 +33,10 @@ jobs:
       - name: Lint with ruff
         run: ruff check backend/
 
-      - name: Run tests
-        if: hashFiles('backend/tests/**') != ''
+      - name: Run tests with coverage
+        working-directory: backend
         run: |
-          pip install pytest
-          pytest backend/tests/ -v
+          pytest --cov=app.routing --cov=app.config --cov=app.observability --cov-report=term-missing --cov-fail-under=80 -v
 
   frontend:
     name: Frontend

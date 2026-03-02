@@ -1,8 +1,5 @@
 """Tests for app.observability.tracker."""
 
-import time
-from unittest.mock import patch
-
 from app.observability.tracker import (
     RequestMetrics,
     ObservabilityTracker,

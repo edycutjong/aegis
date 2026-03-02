@@ -4,7 +4,7 @@ import os
 import pytest
 from unittest.mock import patch
 
-from app.config import Settings, get_settings
+from app.config import get_settings
 
 
 @pytest.fixture
