@@ -25,7 +25,7 @@ class Settings:
     cache_ttl_seconds: int = 3600  # 1 hour
     
     # Model routing defaults
-    fast_model: str = "gemini-2.0-flash"
+    fast_model: str = "llama-3.1-8b-instant"
     smart_model: str = "gpt-4o"
     
     # CORS

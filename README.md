@@ -49,7 +49,7 @@
 - Python 3.11+
 - Node.js 18+
 - Docker & Docker Compose (for Redis)
-- API keys: OpenAI or Anthropic + Gemini (for model routing)
+- API keys: Groq (free tier) + OpenAI or Anthropic + Gemini (for model routing)
 
 ### 1. Clone & Setup
 
@@ -94,9 +94,10 @@ Visit `http://localhost:3000` and submit a support ticket.
 
 | Model | Used For | Cost per Request |
 |---|---|---|
-| Gemini Flash | Intent classification | ~$0.0001 |
-| GPT-4o / Claude 3.5 | SQL generation + reasoning | ~$0.008 |
-| **Total avg per ticket** | | **~$0.012** |
+| Llama-3 (Groq) | Intent classification, search, response | ~$0.00003 |
+| Gemini Flash | Fallback fast tasks | ~$0.0001 |
+| GPT-4o / Claude | SQL generation + reasoning | ~$0.008 |
+| **Total avg per ticket** | | **~$0.009** |
 | **With semantic cache hit** | | **$0.00** |
 
 ## 🛠 Tech Stack
@@ -105,7 +106,7 @@ Visit `http://localhost:3000` and submit a support ticket.
 - **Frontend:** Next.js 15, React, Tailwind CSS
 - **Database:** Supabase (PostgreSQL)
 - **Cache:** Redis
-- **LLMs:** Gemini (fast), GPT-4o/Claude (complex)
+- **LLMs:** Groq/Llama-3 (fast), GPT-4o/Claude (complex), Gemini (fallback)
 - **Observability:** Built-in token + cost tracking
 
 ## 📄 License

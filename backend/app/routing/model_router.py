@@ -7,25 +7,32 @@ This is Flex 2: Cost Engineering — proving you protect profit margins.
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_anthropic import ChatAnthropic
+from langchain_groq import ChatGroq
 from app.config import get_settings
 
 # Model pricing per 1M tokens (input/output)
 MODEL_PRICING = {
+    # Groq (open-source Llama models)
+    "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
+    "llama-3.1-8b-instant": {"input": 0.05, "output": 0.08},
+    # Google
     "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
     "gemini-2.5-pro-preview-05-06": {"input": 1.25, "output": 10.00},
+    # OpenAI
     "gpt-4.1": {"input": 2.00, "output": 8.00},
     "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+    # Anthropic
     "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
     "claude-haiku-4-20250514": {"input": 0.80, "output": 4.00},
 }
 
 # Task → Model complexity mapping
 TASK_MODEL_MAP = {
-    "classify_intent": "fast",      # Simple classification → cheap model
-    "write_sql": "smart",           # Complex SQL generation → powerful model
-    "search_docs": "fast",          # Document retrieval → cheap model
-    "propose_action": "smart",      # Critical reasoning → powerful model
-    "generate_response": "fast",    # Response formatting → cheap model
+    "classify_intent": "fast",      # Simple classification → Llama-3 via Groq
+    "write_sql": "smart",           # Complex SQL generation → GPT-4o / Claude
+    "search_docs": "fast",          # Document retrieval → Llama-3 via Groq
+    "propose_action": "smart",      # Critical reasoning → GPT-4o / Claude
+    "generate_response": "fast",    # Response formatting → Llama-3 via Groq
 }
 
 
@@ -72,11 +79,17 @@ def _create_model(model_name: str):
             api_key=settings.anthropic_api_key,
             temperature=0.1,
         )
+    elif model_name.startswith("llama"):
+        return ChatGroq(
+            model=model_name,
+            api_key=settings.groq_api_key,
+            temperature=0.1,
+        )
     else:
-        # Default to Gemini Flash as cheapest option
-        return ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=settings.google_api_key,
+        # Default to Llama-3 via Groq as cheapest option
+        return ChatGroq(
+            model="llama-3.1-8b-instant",
+            api_key=settings.groq_api_key,
             temperature=0.1,
         )
 
