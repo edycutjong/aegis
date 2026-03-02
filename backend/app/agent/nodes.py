@@ -366,8 +366,8 @@ async def execute_action(state: AgentState) -> dict:
     
     # Mock execution results
     mock_results = {
-        "refund": f"Refund of ${action.get('amount', 0):.2f} processed successfully for customer {action.get('customer_name', 'Unknown')}. Transaction ID: TXN-{hash(str(action)) % 100000:05d}",
-        "credit": f"Account credit of ${action.get('amount', 0):.2f} applied to customer {action.get('customer_name', 'Unknown')}'s account.",
+        "refund": f"Refund of ${(action.get('amount') or 0):.2f} processed successfully for customer {action.get('customer_name', 'Unknown')}. Transaction ID: TXN-{hash(str(action)) % 100000:05d}",
+        "credit": f"Account credit of ${(action.get('amount') or 0):.2f} applied to customer {action.get('customer_name', 'Unknown')}'s account.",
         "tier_change": f"Subscription tier changed for customer {action.get('customer_name', 'Unknown')}. Changes take effect immediately.",
         "escalate": f"Ticket escalated to senior support manager. Reference: ESC-{hash(str(action)) % 10000:04d}",
         "resolve": "Ticket resolved. No further action required.",
