@@ -1,8 +1,10 @@
 import nextConfig from "eslint-config-next";
 
-export default [
+const eslintConfig = [
     ...nextConfig,
     {
         ignores: [".next/"],
     },
 ];
+
+export default eslintConfig;
