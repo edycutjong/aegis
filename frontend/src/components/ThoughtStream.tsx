@@ -61,8 +61,8 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
                     </div>
                 ) : (
                     thoughts.map((step, i) => (
-                        <div key={i} className="thought-step flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-white/[0.02] transition-colors" style={{ animationDelay: `${i * 50}ms` }}>
-                            <span className={`text-lg font-bold mt-0.5 ${getColor(step)}`}>
+                        <div key={i} className="thought-step flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-white/[0.02] transition-colors" style={{ animationDelay: `${i * 50}ms` }}>
+                            <span className={`text-lg font-bold ${getColor(step)}`}>
                                 {getIcon(step)}
                             </span>
                             <span className="text-sm leading-relaxed" style={{ fontFamily: "var(--font-mono)", color: "var(--aegis-text)" }}>

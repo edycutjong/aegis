@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import type { ActionProposal } from "@/lib/api";
 
 interface ApprovalModalProps {
@@ -11,6 +12,13 @@ interface ApprovalModalProps {
 }
 
 export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoading }: ApprovalModalProps) {
+    const [closing, setClosing] = useState(false);
+
+    const animateOut = useCallback((callback: () => void) => {
+        setClosing(true);
+        setTimeout(callback, 200); // match CSS exit animation duration
+    }, []);
+
     const getActionIcon = (type: string) => {
         switch (type) {
             case "refund": return "💰";
@@ -32,8 +40,14 @@ export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoa
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)" }}>
-            <div className="glass-panel p-0 max-w-lg w-full pulse-glow overflow-hidden" style={{ border: "1px solid rgba(59, 130, 246, 0.3)" }}>
+        <div
+            className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${closing ? "modal-backdrop-exit" : "modal-backdrop"}`}
+            style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)" }}
+        >
+            <div
+                className={`glass-panel p-0 max-w-lg w-full pulse-glow overflow-hidden ${closing ? "modal-exit" : "modal-enter"}`}
+                style={{ border: "1px solid rgba(59, 130, 246, 0.3)" }}
+            >
                 {/* Header */}
                 <div className="px-6 py-4 flex items-center gap-3" style={{ borderBottom: "1px solid var(--aegis-border)", background: "rgba(59, 130, 246, 0.05)" }}>
                     <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-xl">
@@ -92,23 +106,23 @@ export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoa
                 {/* Action Buttons */}
                 <div className="px-6 py-4 flex gap-3" style={{ borderTop: "1px solid var(--aegis-border)", background: "rgba(0,0,0,0.2)" }}>
                     <button
-                        onClick={() => onDeny("Manager denied the proposed action")}
-                        disabled={isLoading}
+                        onClick={() => animateOut(() => onDeny("Manager denied the proposed action"))}
+                        disabled={isLoading || closing}
                         className="btn-danger flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                         {isLoading ? <div className="spinner" /> : "✗"} Deny
                     </button>
                     <button
-                        onClick={onHold}
-                        disabled={isLoading}
+                        onClick={() => animateOut(onHold)}
+                        disabled={isLoading || closing}
                         className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 font-semibold text-sm transition-all hover:brightness-110 disabled:opacity-50"
                         style={{ background: "rgba(245, 158, 11, 0.15)", border: "1px solid rgba(245, 158, 11, 0.4)", color: "#fbbf24" }}
                     >
                         ⏸ Hold
                     </button>
                     <button
-                        onClick={onApprove}
-                        disabled={isLoading}
+                        onClick={() => animateOut(onApprove)}
+                        disabled={isLoading || closing}
                         className="btn-success flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                         {isLoading ? <div className="spinner" /> : "✓"} Approve
