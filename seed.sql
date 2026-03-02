@@ -67,7 +67,7 @@ BEGIN
     END IF;
     
     -- Block dangerous keywords
-    IF LOWER(query_text) ~* '(drop|delete|insert|update|alter|create|truncate|grant|revoke)' THEN
+    IF LOWER(query_text) ~* '\y(drop|delete|insert|update|alter|create|truncate|grant|revoke)\y' THEN
         RAISE EXCEPTION 'Query contains forbidden keywords';
     END IF;
     

@@ -166,12 +166,27 @@ async def execute_sql(state: AgentState) -> dict:
             ],
         }
     else:
+        # Parse error for clean UI display
+        raw_error = result.get("error", "Unknown database error")
+        if isinstance(raw_error, dict):
+            display_error = raw_error.get("message", str(raw_error))
+        elif isinstance(raw_error, str):
+            # Try to extract "message" from JSON-like strings
+            try:
+                import json
+                parsed = json.loads(raw_error)
+                display_error = parsed.get("message", raw_error)
+            except (json.JSONDecodeError, AttributeError):
+                display_error = raw_error[:100]
+        else:
+            display_error = str(raw_error)[:100]
+        
         return {
             "sql_result": [],
-            "sql_error": result.get("error", "Unknown database error"),
+            "sql_error": raw_error,  # Keep full error for debugging
             "sql_retry_count": retry_count + 1,
             "thought_log": state.get("thought_log", []) + [
-                f"✗ SQL error (attempt {retry_count + 1}/3): {result.get('error', 'Unknown')[:100]}"
+                f"✗ SQL retry (attempt {retry_count + 1}/3): {display_error}"
             ],
         }
 

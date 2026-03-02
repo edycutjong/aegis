@@ -141,6 +141,13 @@ export default function Dashboard() {
         setApprovalLoading(false);
     }, [threadId]);
 
+    // Handle HITL hold (defer decision)
+    const handleHold = useCallback(() => {
+        setPendingAction(null);
+        setStatus("on_hold");
+        setThoughts((prev) => [...prev, "⏸ Decision deferred — action held for review"]);
+    }, []);
+
     return (
         <div className="min-h-screen flex flex-col" style={{ background: "var(--aegis-bg)" }}>
             {/* ── Top Navigation ── */}
@@ -279,6 +286,7 @@ export default function Dashboard() {
                     action={pendingAction}
                     onApprove={handleApprove}
                     onDeny={handleDeny}
+                    onHold={handleHold}
                     isLoading={approvalLoading}
                 />
             )}

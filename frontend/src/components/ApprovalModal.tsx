@@ -6,10 +6,11 @@ interface ApprovalModalProps {
     action: ActionProposal;
     onApprove: () => void;
     onDeny: (reason: string) => void;
+    onHold: () => void;
     isLoading: boolean;
 }
 
-export default function ApprovalModal({ action, onApprove, onDeny, isLoading }: ApprovalModalProps) {
+export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoading }: ApprovalModalProps) {
     const getActionIcon = (type: string) => {
         switch (type) {
             case "refund": return "💰";
@@ -96,6 +97,14 @@ export default function ApprovalModal({ action, onApprove, onDeny, isLoading }: 
                         className="btn-danger flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                         {isLoading ? <div className="spinner" /> : "✗"} Deny
+                    </button>
+                    <button
+                        onClick={onHold}
+                        disabled={isLoading}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 font-semibold text-sm transition-all hover:brightness-110 disabled:opacity-50"
+                        style={{ background: "rgba(245, 158, 11, 0.15)", border: "1px solid rgba(245, 158, 11, 0.4)", color: "#fbbf24" }}
+                    >
+                        ⏸ Hold
                     </button>
                     <button
                         onClick={onApprove}

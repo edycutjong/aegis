@@ -30,7 +30,7 @@ class SupabaseClient:
             response = await client.post(
                 f"{self.url}/rest/v1/rpc/execute_readonly_query",
                 headers=self.headers,
-                json={"query_text": query}
+                json={"query_text": query.rstrip().rstrip(";")}
             )
             
             if response.status_code == 200:

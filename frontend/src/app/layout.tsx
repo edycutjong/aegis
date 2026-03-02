@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
     title: "Aegis — Autonomous Enterprise Action Engine",
     description: "Multi-agent AI system with Human-in-the-Loop approval, dynamic model routing, semantic caching, and real-time observability.",
-    icons: { icon: "/favicon.svg" },
+    icons: { icon: "/favicon.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
