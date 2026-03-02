@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+/* ── Aegis Design System ── */
+:root {
+  --aegis-bg: #0a0e17;
+  --aegis-surface: #111827;
+  --aegis-surface-2: #1a2332;
+  --aegis-border: #1e293b;
+  --aegis-border-glow: #3b82f6;
+  --aegis-text: #e2e8f0;
+  --aegis-text-muted: #64748b;
+  --aegis-accent: #3b82f6;
+  --aegis-accent-glow: rgba(59, 130, 246, 0.15);
+  --aegis-success: #22c55e;
+  --aegis-warning: #f59e0b;
+  --aegis-danger: #ef4444;
+  --aegis-purple: #8b5cf6;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ── Base ── */
+html { color-scheme: dark; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--aegis-bg);
+  color: var(--aegis-text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--aegis-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--aegis-text-muted); }
+
+/* ── Glass Panel ── */
+.glass-panel {
+  background: linear-gradient(135deg, rgba(17, 24, 39, 0.8), rgba(26, 35, 50, 0.6));
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--aegis-border);
+  border-radius: 16px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-panel:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.05);
+}
+
+/* ── Thought Step Animation ── */
+.thought-step {
+  animation: slideIn 0.3s ease-out forwards;
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+@keyframes slideIn {
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Pulse for awaiting ── */
+.pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.4); }
+}
+
+/* ── Button styles ── */
+.btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  font-weight: 600;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+}
+
+.btn-primary:active { transform: translateY(0); }
+
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  font-weight: 600;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.btn-danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: white;
+  font-weight: 600;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.btn-success:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+}
+
+/* ── Metric Card ── */
+.metric-card {
+  background: linear-gradient(135deg, var(--aegis-surface), var(--aegis-surface-2));
+  border: 1px solid var(--aegis-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  transition: all 0.2s ease;
+}
+
+.metric-card:hover {
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+/* ── Loading spinner ── */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--aegis-border);
+  border-top-color: var(--aegis-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Status badge ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-processing { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+.badge-awaiting { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.badge-completed { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.badge-error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+.badge-cached { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }

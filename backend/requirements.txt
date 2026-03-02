@@ -1,0 +1,23 @@
+# Aegis Backend Dependencies
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+
+# LangGraph & LangChain
+langgraph==0.2.74
+langchain==0.3.14
+langchain-openai==0.3.0
+langchain-anthropic==0.3.3
+langchain-google-genai==2.0.8
+
+# Database
+supabase==2.11.0
+asyncpg==0.30.0
+
+# Redis cache
+redis==5.2.1
+
+# Utilities
+pydantic==2.10.4
+httpx==0.28.1
+sse-starlette==2.2.1

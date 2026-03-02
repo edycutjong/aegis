@@ -1,0 +1,144 @@
+/**
+ * Aegis API Client — Communicates with FastAPI backend
+ */
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export interface ChatResponse {
+    thread_id: string;
+    status: "processing" | "awaiting_approval" | "completed" | "cached" | "error";
+    cache_hit: boolean;
+}
+
+export interface ApprovalResponse {
+    thread_id: string;
+    status: string;
+    result: string | null;
+}
+
+export interface ActionProposal {
+    type: string;
+    amount: number | null;
+    customer_id: number | null;
+    customer_name: string;
+    description: string;
+    reason: string;
+}
+
+export interface ThreadState {
+    message: string;
+    status: string;
+    thought_log: string[];
+    proposed_action: ActionProposal | null;
+    final_response: string | null;
+}
+
+export interface AgentMetrics {
+    total_requests: number;
+    avg_cost_usd: number;
+    avg_duration_seconds: number;
+    total_cost_usd: number;
+    total_tokens: number;
+    model_distribution: Record<string, number>;
+    recent_requests: Array<{
+        thread_id: string;
+        total_cost_usd: number;
+        total_tokens: number;
+        duration_seconds: number;
+        models_used: Record<string, number>;
+        cache_hit: boolean;
+    }>;
+}
+
+export interface CacheMetrics {
+    hits: number;
+    misses: number;
+    total_requests: number;
+    hit_rate_percent: number;
+    connected: boolean;
+}
+
+export interface Metrics {
+    agent_metrics: AgentMetrics;
+    cache_metrics: CacheMetrics;
+}
+
+/** Start a new agent workflow */
+export async function startChat(message: string): Promise<ChatResponse> {
+    const res = await fetch(`${API_URL}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+    });
+    if (!res.ok) throw new Error(`Chat failed: ${res.statusText}`);
+    return res.json();
+}
+
+/** Get current thread state */
+export async function getThread(threadId: string): Promise<ThreadState> {
+    const res = await fetch(`${API_URL}/api/thread/${threadId}`);
+    if (!res.ok) throw new Error(`Thread fetch failed: ${res.statusText}`);
+    return res.json();
+}
+
+/** Approve or deny an action */
+export async function approveAction(
+    threadId: string,
+    approved: boolean,
+    reason: string = ""
+): Promise<ApprovalResponse> {
+    const res = await fetch(`${API_URL}/api/approve/${threadId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved, reason }),
+    });
+    if (!res.ok) throw new Error(`Approval failed: ${res.statusText}`);
+    return res.json();
+}
+
+/** Get observability metrics */
+export async function getMetrics(): Promise<Metrics> {
+    const res = await fetch(`${API_URL}/api/metrics`);
+    if (!res.ok) throw new Error(`Metrics fetch failed: ${res.statusText}`);
+    return res.json();
+}
+
+/** Create SSE connection to stream agent thoughts */
+export function connectSSE(
+    threadId: string,
+    onThought: (step: string) => void,
+    onApprovalRequired: (action: ActionProposal) => void,
+    onCompleted: (response: string, thoughtLog: string[]) => void,
+    onError: (error: string) => void
+): EventSource {
+    const es = new EventSource(`${API_URL}/api/stream/${threadId}`);
+
+    es.addEventListener("thought", (e) => {
+        const data = JSON.parse(e.data);
+        onThought(data.step);
+    });
+
+    es.addEventListener("approval_required", (e) => {
+        const data = JSON.parse(e.data);
+        onApprovalRequired(data.action);
+        es.close();
+    });
+
+    es.addEventListener("completed", (e) => {
+        const data = JSON.parse(e.data);
+        onCompleted(data.response, data.thought_log);
+        es.close();
+    });
+
+    es.addEventListener("error", (e) => {
+        if (e instanceof MessageEvent) {
+            const data = JSON.parse(e.data);
+            onError(data.error);
+        } else {
+            onError("Connection lost");
+        }
+        es.close();
+    });
+
+    return es;
+}
