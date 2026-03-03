@@ -7,7 +7,11 @@ import asyncio
 import json
 import os
 import uuid
+import warnings
 from contextlib import asynccontextmanager
+
+# Suppress deprecated google.generativeai FutureWarning from langchain-google-genai
+warnings.filterwarnings("ignore", category=FutureWarning, module="langchain_google_genai")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -195,13 +199,18 @@ async def _run_agent(thread_id: str, message: str):
             thread_store[thread_id]["status"] = "awaiting_approval"
         else:
             thread_store[thread_id]["status"] = "completed"
-            # Cache the result (Flex 3)
-            cache = await get_cache()
-            await cache.set(message, {
-                "thread_id": thread_id,
-                "response": thread_store[thread_id].get("final_response"),
-                "thought_log": thread_store[thread_id].get("thought_log"),
-            })
+            # Cache the result — but only for successful resolutions (Flex 3)
+            # Don't cache failures (customer not found, etc.) so retries hit fresh data
+            final_resp = thread_store[thread_id].get("final_response")
+            thought_log = thread_store[thread_id].get("thought_log", [])
+            has_failure = any("✗" in t or "not found" in t.lower() for t in thought_log)
+            if final_resp and not has_failure:
+                cache = await get_cache()
+                await cache.set(message, {
+                    "thread_id": thread_id,
+                    "response": final_resp,
+                    "thought_log": thought_log,
+                })
             # Complete observability tracking
             tracker = get_tracker()
             tracker.complete_request(thread_id)
@@ -312,13 +321,17 @@ async def approve_action(thread_id: str, request: ApprovalRequest):
         
         thread_store[thread_id]["status"] = "completed"
         
-        # Cache the complete result
-        cache = await get_cache()
-        await cache.set(thread["message"], {
-            "thread_id": thread_id,
-            "response": thread_store[thread_id].get("final_response"),
-            "thought_log": thread_store[thread_id].get("thought_log"),
-        })
+        # Cache — only successful resolutions
+        final_resp = thread_store[thread_id].get("final_response")
+        thought_log = thread_store[thread_id].get("thought_log", [])
+        has_failure = any("✗" in t or "not found" in t.lower() for t in thought_log)
+        if final_resp and not has_failure:
+            cache = await get_cache()
+            await cache.set(thread["message"], {
+                "thread_id": thread_id,
+                "response": final_resp,
+                "thought_log": thought_log,
+            })
         
         # Complete observability tracking
         tracker = get_tracker()

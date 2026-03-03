@@ -77,6 +77,15 @@ END;
 $$;
 
 -- =============================================
+-- IDEMPOTENT RESET: Truncate all data & reset sequences
+-- =============================================
+TRUNCATE customers, billing, support_tickets, internal_docs CASCADE;
+ALTER SEQUENCE customers_id_seq RESTART WITH 1;
+ALTER SEQUENCE billing_id_seq RESTART WITH 1;
+ALTER SEQUENCE support_tickets_id_seq RESTART WITH 1;
+ALTER SEQUENCE internal_docs_id_seq RESTART WITH 1;
+
+-- =============================================
 -- SEED DATA: 50 Customers
 -- =============================================
 INSERT INTO customers (name, email, plan, status, company) VALUES

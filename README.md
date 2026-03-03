@@ -16,8 +16,9 @@
 |---|---|
 | **Human-in-the-Loop (HITL)** | Agent pauses execution and waits for human approval before taking destructive actions |
 | **Dynamic Model Routing** | Routes simple tasks to fast/cheap models, complex tasks to powerful models — optimizing cost |
-| **Semantic Caching** | Identical queries served from Redis cache in <50ms. Cost: $0.00 |
+| **Semantic Caching** | Identical queries served from Redis cache in <50ms — failures are never cached |
 | **Real-time Streaming** | Watch the agent's thought process step-by-step via Server-Sent Events |
+| **Dual-Mode ThoughtStream** | Toggle between clean User mode and detailed Dev mode with agent badges |
 | **Observability Dashboard** | Track token usage, cost per request, cache hit ratio, and model distribution |
 
 ## 🏗️ Architecture
@@ -79,8 +80,10 @@ cp .env.example .env.local
 npm run dev
 
 # Terminal 3: Redis
-docker run -d -p 6379:6379 redis:7-alpine
+docker run -d -p 6379:6379 redis:alpine redis-server --requirepass aegis-dev
 ```
+
+> **Note:** When running Redis manually, set `REDIS_URL=redis://:aegis-dev@localhost:6379` in `backend/.env`.
 
 ### 4. Open the dashboard
 
@@ -95,6 +98,28 @@ Visit `http://localhost:3000` and submit a support ticket.
 | GPT-4.1 / Claude | SQL generation + reasoning | ~$0.008 |
 | **Total avg per ticket** | | **~$0.009** |
 | **With semantic cache hit** | | **$0.00** |
+
+## 🤖 Multi-Agent Architecture
+
+Aegis organizes its workflow as **4 specialized agents** collaborating in sequence. Each agent has a clear responsibility and reports its progress via the real-time thought stream:
+
+| Agent | Role | Nodes |
+|---|---|---|
+| 🏷 **Triage Agent** | Classifies incoming tickets into billing, technical, account, or general | `classify_intent` |
+| 🔍 **Investigator Agent** | Validates customer identity (8 edge cases), generates & executes SQL with self-healing retry | `validate_customer`, `write_sql`, `execute_sql` |
+| 📚 **Knowledge Agent** | Searches internal docs for relevant policies, procedures, and guidelines | `search_docs` |
+| ⚡ **Resolution Agent** | Proposes actions, manages HITL approval, executes approved actions, generates summary | `propose_action`, `await_approval`, `execute_action`, `generate_response` |
+
+```
+[Triage] Classified intent: billing (95%)
+  → [Investigator] Customer validated: #8 David Martinez (pro, active)
+  → [Investigator] SQL executed successfully — found 3 records
+  → [Knowledge] Found 2 relevant internal documents
+  → [Resolution] Proposed action: refund — Refund $29.99 duplicate charge
+  → [Resolution] ⏸ Awaiting human approval...
+  → [Resolution] Action executed: Refund processed (TXN-04821)
+  → [Resolution] Generated resolution summary
+```
 
 ## 🛠 Tech Stack
 
@@ -158,14 +183,17 @@ python -m pytest tests/test_agent_nodes.py -v
 
 | Module | Stmts | Cover |
 |---|---|---|
-| `nodes.py` (agent workflow) | 257 | 100% |
-| `main.py` (API + SSE + HITL) | 170 | 100% |
+| `classifier.py` (Triage Agent) | 25 | 100% |
+| `investigator.py` (Investigator Agent) | 139 | 100% |
+| `researcher.py` (Knowledge Agent) | 14 | 100% |
+| `resolver.py` (Resolution Agent) | 102 | 100% |
+| `main.py` (API + SSE + HITL) | 176 | 100% |
 | `model_router.py` | 32 | 100% |
 | `semantic.py` (cache) | 58 | 100% |
 | `tracker.py` (observability) | 62 | 100% |
 | `supabase.py` | 45 | 100% |
-| All other modules | 107 | 100% |
-| **Total** | **731** | **100%** |
+| All other modules | 120 | 100% |
+| **Total** | **773** | **100%** |
 
 ## 📄 License
 

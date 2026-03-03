@@ -55,6 +55,9 @@ class AgentState(TypedDict, total=False):
     # Execution
     execution_result: str
     
+    # Multi-agent tracking
+    active_agent: str  # Which agent is currently working (Triage, Investigator, Knowledge, Resolution)
+    
     # Observability
     thought_log: list[str]
     token_usage: list[TokenUsage]

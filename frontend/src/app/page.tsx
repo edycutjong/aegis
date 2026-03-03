@@ -15,28 +15,37 @@ import {
     type CustomerCandidate,
 } from "@/lib/api";
 
-// Demo ticket presets for quick testing — most common production scenarios first
-const DEMO_TICKETS = [
+// Quick Test presets — real intents matching seed data, most common first
+const REAL_INTENTS = [
     {
         label: "Refund",
         icon: "💳",
         message: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and process a refund if confirmed.",
     },
     {
+        label: "Technical",
+        icon: "🔧",
+        message: "Customer #3 Maria Garcia reports getting 429 API rate limiting errors. Their enterprise plan should support 10K requests/min but they're hitting limits at 5K.",
+    },
+    {
+        label: "Billing",
+        icon: "📄",
+        message: "Customer #1 Sarah Chen asks if there's a discount for switching from monthly to annual billing on her Enterprise plan.",
+    },
+    {
         label: "Upgrade",
         icon: "⬆️",
-        message: "Customer #3 Sarah Chen wants to upgrade from Basic to Enterprise plan. Please process the plan change and confirm the new billing amount.",
+        message: "Customer #17 Sophia Lewis wants to upgrade from the Free plan to Pro. She wants to know if she'll lose any existing data during the upgrade.",
     },
     {
-        label: "Account Issue",
-        icon: "🔧",
-        message: "Customer #2 Jane Smith reports she cannot access her dashboard after the latest update. Her enterprise account should have full access.",
-    },
-    {
-        label: "Suspended",
-        icon: "🔒",
+        label: "Reactivate",
+        icon: "🔓",
         message: "Customer #5 Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
     },
+];
+
+// Edge Case presets — validation and error scenarios
+const EDGE_CASES = [
     {
         label: "Not Found",
         icon: "👻",
@@ -56,6 +65,11 @@ const DEMO_TICKETS = [
         label: "Name Only",
         icon: "👤",
         message: "Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
+    },
+    {
+        label: "Cancelled",
+        icon: "🚫",
+        message: "Customer #20 William Allen wants to know why his account was cancelled. He says he never requested cancellation and needs access restored.",
     },
 ];
 
@@ -79,6 +93,9 @@ export default function Dashboard() {
     const [candidates, setCandidates] = useState<CustomerCandidate[]>([]);
     const [disambiguationMessage, setDisambiguationMessage] = useState<string | null>(null);
     const [originalMessage, setOriginalMessage] = useState<string>("");
+
+    // Tab state for demo presets
+    const [activeTab, setActiveTab] = useState<"intents" | "edge">("intents");
 
     // Fetch metrics periodically
     useEffect(() => {
@@ -256,13 +273,36 @@ export default function Dashboard() {
                         </h2>
                     </div>
 
-                    {/* Demo Presets */}
+                    {/* Demo Presets — Tabbed */}
                     <div className="mb-4">
-                        <span className="text-xs font-medium mb-2 block" style={{ color: "var(--aegis-text-muted)" }}>Quick Test:</span>
+                        <div className="flex gap-1 mb-3">
+                            <button
+                                onClick={() => setActiveTab("intents")}
+                                className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                                style={{
+                                    background: activeTab === "intents" ? "rgba(59,130,246,0.15)" : "transparent",
+                                    color: activeTab === "intents" ? "#60a5fa" : "var(--aegis-text-muted)",
+                                    border: activeTab === "intents" ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
+                                }}
+                            >
+                                Quick Test
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("edge")}
+                                className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                                style={{
+                                    background: activeTab === "edge" ? "rgba(245,158,11,0.15)" : "transparent",
+                                    color: activeTab === "edge" ? "#fbbf24" : "var(--aegis-text-muted)",
+                                    border: activeTab === "edge" ? "1px solid rgba(245,158,11,0.3)" : "1px solid transparent",
+                                }}
+                            >
+                                Edge Cases
+                            </button>
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                            {DEMO_TICKETS.map((t, i) => (
+                            {(activeTab === "intents" ? REAL_INTENTS : EDGE_CASES).map((t, i) => (
                                 <button
-                                    key={i}
+                                    key={`${activeTab}-${i}`}
                                     onClick={() => {
                                         setMessage(t.message);
                                         handleSubmit(t.message);

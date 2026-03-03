@@ -187,7 +187,7 @@ class TestValidateCustomerAsync:
     @pytest.mark.asyncio
     async def test_case1_id_and_name_match(self):
         """Case 1: ID + Name match → customer_found=True."""
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(DAVID)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(DAVID)):
             result = await validate_customer(_make_state("Customer #8 David Martinez was charged twice"))
         assert result["customer_found"] is True
         assert any("validated" in t for t in result["thought_log"])
@@ -195,7 +195,7 @@ class TestValidateCustomerAsync:
     @pytest.mark.asyncio
     async def test_case2_id_and_name_mismatch(self):
         """Case 2: ID exists + wrong name → customer_found=False."""
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(DAVID)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(DAVID)):
             result = await validate_customer(_make_state("Customer #8 Sarah Chen was charged twice"))
         assert result["customer_found"] is False
         assert "David Martinez" in result["final_response"]
@@ -204,7 +204,7 @@ class TestValidateCustomerAsync:
     @pytest.mark.asyncio
     async def test_case3_fuzzy_typo(self):
         """Case 3: ID + typo name → auto-correct, customer_found=True."""
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(DAVID)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(DAVID)):
             result = await validate_customer(_make_state("Customer #8 Davd Martines was charged twice"))
         assert result["customer_found"] is True
         assert any("typo" in t.lower() for t in result["thought_log"])
@@ -212,7 +212,7 @@ class TestValidateCustomerAsync:
     @pytest.mark.asyncio
     async def test_case4_id_only(self):
         """Case 4: ID only, no name → customer_found=True."""
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(DAVID)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(DAVID)):
             result = await validate_customer(_make_state("Customer #8 has been charged twice"))
         assert result["customer_found"] is True
 
@@ -220,8 +220,8 @@ class TestValidateCustomerAsync:
     async def test_case5_name_only_single_match(self):
         """Case 5: No ID + name → single match found, customer_found=True."""
         mock_db = _mock_db_with_customer(None)  # No ID lookup needed
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db), \
-             patch("app.agent.nodes._search_customers_by_name", new_callable=AsyncMock, return_value=[EMILY]):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db), \
+             patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock, return_value=[EMILY]):
             result = await validate_customer(_make_state("Refund requested for Emily Davis"))
         assert result["customer_found"] is True
         assert any("found by name" in t for t in result["thought_log"])
@@ -230,8 +230,8 @@ class TestValidateCustomerAsync:
     async def test_case5_name_only_multiple_matches(self):
         """Case 5: No ID + name → multiple matches, returns candidates for disambiguation."""
         emily2 = {"id": 15, "name": "Emily Davidson", "email": "e2@example.com", "plan": "basic", "status": "active"}
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(None)), \
-             patch("app.agent.nodes._search_customers_by_name", new_callable=AsyncMock, return_value=[EMILY, emily2]):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(None)), \
+             patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock, return_value=[EMILY, emily2]):
             result = await validate_customer(_make_state("Refund requested for Emily Davis"))
         assert result["customer_found"] is False
         assert "customer_candidates" in result
@@ -247,8 +247,8 @@ class TestValidateCustomerAsync:
     async def test_case7_id_not_found_name_fallback(self):
         """Case 7: ID not found but name given → fallback to name search."""
         mock_db = _mock_db_with_customer(None)  # ID #999 not found
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db), \
-             patch("app.agent.nodes._search_customers_by_name", new_callable=AsyncMock, return_value=[DAVID]):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db), \
+             patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock, return_value=[DAVID]):
             result = await validate_customer(_make_state("Customer #999 David Martinez has an issue"))
         assert result["customer_found"] is True
         assert any("not found" in t.lower() for t in result["thought_log"])
@@ -256,7 +256,7 @@ class TestValidateCustomerAsync:
     @pytest.mark.asyncio
     async def test_case8_both_not_found(self):
         """Case 8: ID not found + name not found → stop."""
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(None)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(None)):
             result = await validate_customer(_make_state("Customer #999 has a billing issue"))
         assert result["customer_found"] is False
         assert "not found" in result["final_response"].lower()
@@ -264,7 +264,7 @@ class TestValidateCustomerAsync:
     @pytest.mark.asyncio
     async def test_suspended_customer_warning(self):
         """Status check: suspended customer proceeds with warning."""
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(EMILY)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(EMILY)):
             result = await validate_customer(_make_state("Customer #5 Emily Davis needs help"))
         assert result["customer_found"] is True
         assert any("SUSPENDED" in t for t in result["thought_log"])
@@ -304,8 +304,8 @@ class TestClassifyIntentAsync:
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.classifier.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.classifier.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await classify_intent(_make_full_state("I was charged twice"))
 
@@ -318,8 +318,8 @@ class TestClassifyIntentAsync:
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.classifier.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.classifier.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await classify_intent(_make_full_state("random"))
 
@@ -334,8 +334,8 @@ class TestClassifyIntentAsync:
         mock_llm.model_name = "llama-3.1-8b-instant"
 
         mock_metrics = MagicMock()
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.classifier.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.classifier.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await classify_intent(_make_full_state("Server is slow", "t1"))
 
@@ -359,8 +359,8 @@ class TestWriteSqlAsync:
         state = _make_full_state("Customer #8 billing issue")
         state["intent"] = "billing"
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await write_sql(state)
 
@@ -377,8 +377,8 @@ class TestWriteSqlAsync:
         state["sql_error"] = "relation 'users' does not exist"
         state["sql_query"] = "SELECT * FROM users"
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             await write_sql(state)
 
@@ -407,7 +407,7 @@ class TestExecuteSqlAsync:
         state = _make_full_state("query")
         state["sql_query"] = "SELECT * FROM customers WHERE id = 8"
 
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
             result = await execute_sql(state)
 
         assert result["sql_result"] == [{"id": 8, "name": "David"}]
@@ -426,7 +426,7 @@ class TestExecuteSqlAsync:
         state["sql_query"] = "SELECT * FROM nonexistent"
         state["sql_retry_count"] = 1
 
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
             result = await execute_sql(state)
 
         assert result["sql_result"] == []
@@ -451,7 +451,7 @@ class TestExecuteSqlAsync:
         state = _make_full_state("query")
         state["sql_query"] = "SELECT 1"
 
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
             result = await execute_sql(state)
 
         assert "permission denied" in result["thought_log"][-1]
@@ -467,7 +467,7 @@ class TestExecuteSqlAsync:
         state = _make_full_state("query")
         state["sql_query"] = "SELECT bad_col FROM customers"
 
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
             result = await execute_sql(state)
 
         assert "column not found" in result["thought_log"][-1]
@@ -491,7 +491,7 @@ class TestSearchDocsAsync:
         state = _make_full_state("refund question")
         state["intent"] = "billing"
 
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+        with patch("app.agent.agents.researcher.get_supabase", return_value=mock_db):
             result = await search_docs(state)
 
         assert "Refund Policy" in result["docs_context"]
@@ -505,7 +505,7 @@ class TestSearchDocsAsync:
         state = _make_full_state("obscure question")
         state["intent"] = "general"
 
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+        with patch("app.agent.agents.researcher.get_supabase", return_value=mock_db):
             result = await search_docs(state)
 
         assert "No internal documentation" in result["docs_context"]
@@ -539,8 +539,8 @@ class TestProposeActionAsync:
         state["sql_result"] = [{"id": 8, "name": "David Martinez", "amount": 29.99}]
         state["docs_context"] = "Refund policy..."
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await propose_action(state)
 
@@ -567,8 +567,8 @@ class TestProposeActionAsync:
         state["sql_result"] = []  # No customer found
         state["docs_context"] = ""
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await propose_action(state)
 
@@ -585,8 +585,8 @@ class TestProposeActionAsync:
         state["sql_result"] = []
         state["docs_context"] = ""
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await propose_action(state)
 
@@ -606,7 +606,7 @@ class TestExecuteActionAsync:
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "amount": 29.99, "customer_name": "David"}
 
-        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
@@ -618,7 +618,7 @@ class TestExecuteActionAsync:
         state = _make_full_state("credit")
         state["proposed_action"] = {"type": "credit", "amount": 10.0, "customer_name": "Alice"}
 
-        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
@@ -629,7 +629,7 @@ class TestExecuteActionAsync:
         state = _make_full_state("escalate")
         state["proposed_action"] = {"type": "escalate", "customer_name": "Bob"}
 
-        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
@@ -640,7 +640,7 @@ class TestExecuteActionAsync:
         state = _make_full_state("resolve")
         state["proposed_action"] = {"type": "resolve"}
 
-        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
@@ -651,7 +651,7 @@ class TestExecuteActionAsync:
         state = _make_full_state("tier change")
         state["proposed_action"] = {"type": "tier_change", "customer_name": "Charlie"}
 
-        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
@@ -680,8 +680,8 @@ class TestGenerateResponseAsync:
         state["sql_result"] = [{"id": 1}]
         state["customer_found"] = True
 
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await generate_response(state)
 
@@ -779,7 +779,7 @@ class TestValidateCustomerSuspendedCases:
     async def test_case4_id_only_suspended(self):
         """Case 4 + suspended: ID only, no name, suspended customer (L197)."""
         suspended_david = {**DAVID, "status": "suspended"}
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
             result = await validate_customer(_make_state("Customer #8 has a billing issue"))
         assert result["customer_found"] is True
         assert any("SUSPENDED" in t for t in result["thought_log"])
@@ -788,7 +788,7 @@ class TestValidateCustomerSuspendedCases:
     async def test_case3_fuzzy_typo_suspended(self):
         """Case 3 + suspended: Fuzzy match with status warning (L223)."""
         suspended_david = {**DAVID, "status": "suspended"}
-        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
             result = await validate_customer(_make_state("Customer #8 Davd Martines was charged twice"))
         assert result["customer_found"] is True
         assert any("typo" in t.lower() for t in result["thought_log"])
@@ -798,8 +798,8 @@ class TestValidateCustomerSuspendedCases:
     async def test_case5_name_only_no_matches(self):
         """Case 5 name-only → 0 matches → customer not found (L294-306)."""
         mock_db = _mock_db_with_customer(None)
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db), \
-             patch("app.agent.nodes._search_customers_by_name", new_callable=AsyncMock, return_value=[]):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db), \
+             patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock, return_value=[]):
             result = await validate_customer(_make_state("Refund requested for Nobody Here"))
         assert result["customer_found"] is False
         assert "Nobody Here" in result["final_response"]
@@ -823,7 +823,7 @@ class TestExecuteSqlNonStringError:
         })
         state = _make_full_state("query")
         state["sql_query"] = "SELECT 1"
-        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
             result = await execute_sql(state)
         assert result["sql_result"] == []
         assert "42" in result["thought_log"][-1]
@@ -848,8 +848,8 @@ class TestWriteSqlTokenTracking:
         state["intent"] = "billing"
 
         mock_metrics = MagicMock()
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await write_sql(state)
 
@@ -877,8 +877,8 @@ class TestProposeActionTokenTracking:
         state["docs_context"] = "Refund policy"
 
         mock_metrics = MagicMock()
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await propose_action(state)
 
@@ -904,8 +904,8 @@ class TestGenerateResponseTokenTracking:
         state["customer_found"] = True
 
         mock_metrics = MagicMock()
-        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
-             patch("app.agent.nodes.get_tracker") as mock_tracker:
+        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await generate_response(state)
 
@@ -938,7 +938,7 @@ class TestAwaitApprovalAsync:
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
 
-        with patch("app.agent.nodes.interrupt", return_value={"approved": True, "reason": ""}):
+        with patch("app.agent.agents.resolver.interrupt", return_value={"approved": True, "reason": ""}):
             result = await await_approval(state)
         assert result["approval_status"] == "approved"
         assert result["denial_reason"] == ""
@@ -949,7 +949,7 @@ class TestAwaitApprovalAsync:
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
 
-        with patch("app.agent.nodes.interrupt", return_value={"approved": False, "reason": "Too expensive"}):
+        with patch("app.agent.agents.resolver.interrupt", return_value={"approved": False, "reason": "Too expensive"}):
             result = await await_approval(state)
         assert result["approval_status"] == "denied"
         assert result["denial_reason"] == "Too expensive"
@@ -960,7 +960,7 @@ class TestAwaitApprovalAsync:
         state = _make_full_state("escalate")
         state["proposed_action"] = {"type": "escalate", "description": "Escalate"}
 
-        with patch("app.agent.nodes.interrupt", return_value=True):
+        with patch("app.agent.agents.resolver.interrupt", return_value=True):
             result = await await_approval(state)
         assert result["approval_status"] == "approved"
 
@@ -970,7 +970,7 @@ class TestAwaitApprovalAsync:
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "description": "Refund"}
 
-        with patch("app.agent.nodes.interrupt", return_value=False):
+        with patch("app.agent.agents.resolver.interrupt", return_value=False):
             result = await await_approval(state)
         assert result["approval_status"] == "denied"
         assert result["denial_reason"] == ""

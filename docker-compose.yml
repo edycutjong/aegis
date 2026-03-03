@@ -11,7 +11,7 @@ services:
       - ./backend/.env
     environment:
       # Override Redis URL to use Docker service name
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:aegis-dev@redis:6379
       - FRONTEND_URL=http://localhost:3000
     depends_on:
       - redis
@@ -32,8 +32,7 @@ services:
 
   redis:
     image: redis:alpine
-    ports:
-      - "6379:6379"
+    command: redis-server --requirepass aegis-dev
     volumes:
       - redis_data:/data
     restart: unless-stopped

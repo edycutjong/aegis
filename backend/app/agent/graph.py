@@ -2,20 +2,28 @@
 
 This is the brain of the system — a stateful graph that orchestrates
 the multi-agent support workflow with HITL interrupts.
+
+Agents:
+  - Triage Agent       → classify_intent
+  - Investigator Agent → validate_customer, write_sql, execute_sql
+  - Knowledge Agent    → search_docs
+  - Resolution Agent   → propose_action, await_approval, execute_action, generate_response
 """
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent.state import AgentState
-from app.agent.nodes import (
-    classify_intent,
+from app.agent.agents.classifier import classify_intent
+from app.agent.agents.investigator import (
     validate_customer,
     should_proceed_after_validation,
     write_sql,
     execute_sql,
     should_retry_sql,
-    search_docs,
+)
+from app.agent.agents.researcher import search_docs
+from app.agent.agents.resolver import (
     propose_action,
     await_approval,
     should_execute,

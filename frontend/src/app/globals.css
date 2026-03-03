@@ -33,6 +33,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Ensure Tailwind font-mono maps to JetBrains Mono */
+.font-mono,
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;
