@@ -18,28 +18,30 @@
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Next.js Frontend (SSE Streaming + HITL Approval UI)        │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ REST + SSE
-┌──────────────────────────▼──────────────────────────────────┐
-│  FastAPI Backend                                             │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │ Model Router │  │ Redis Cache  │  │ Cost Tracker      │  │
-│  └──────┬──────┘  └──────┬───────┘  └────────┬──────────┘  │
-│         │                │                    │              │
-│  ┌──────▼────────────────▼────────────────────▼──────────┐  │
-│  │              LangGraph Agent Workflow                  │  │
-│  │                                                        │  │
-│  │  Classify → Write SQL → Execute → Search Docs          │  │
-│  │     → Propose Action → ⏸ HITL Interrupt → Execute      │  │
-│  └───────────────────────┬────────────────────────────────┘  │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────────┐
-│  Supabase PostgreSQL (customers, billing, support_tickets)   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Frontend["Next.js Frontend"]
+        UI["SSE Streaming + HITL Approval UI"]
+    end
+
+    subgraph Backend["FastAPI Backend"]
+        direction TB
+        subgraph Services
+            MR["Model Router"] ~~~ RC["Redis Cache"] ~~~ CT["Cost Tracker"]
+        end
+        subgraph Graph["LangGraph Agent Workflow"]
+            C["Classify"] --> V["Validate Customer"] --> WS["Write SQL"] --> ES["Execute SQL"] --> SD["Search Docs"]
+            SD --> PA["Propose Action"] --> HA["⏸ HITL Approval"] --> EA["Execute Action"] --> GR["Generate Response"]
+        end
+        Services --> Graph
+    end
+
+    subgraph DB["Supabase PostgreSQL"]
+        Tables["customers · billing · support_tickets · internal_docs"]
+    end
+
+    Frontend -- "REST + SSE" --> Backend
+    Backend -- "SQL Queries" --> DB
 ```
 
 ## 🚀 Quick Start
@@ -47,9 +49,12 @@
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 18+
+- Node.js 22+
 - Docker & Docker Compose (for Redis)
-- API keys: Groq (free tier) + OpenAI or Anthropic + Gemini (for model routing)
+- **API keys (minimum 2):**
+  - [Groq](https://console.groq.com/keys) — free tier, handles fast tasks (classification, docs, response)
+  - [OpenAI](https://platform.openai.com/api-keys) **or** [Anthropic](https://console.anthropic.com/settings/keys) — one is enough for complex tasks (SQL, action proposal)
+  - [Google AI / Gemini](https://aistudio.google.com/apikey) — optional fallback
 
 ### 1. Clone & Setup
 
@@ -103,7 +108,7 @@ Visit `http://localhost:3000` and submit a support ticket.
 ## 🛠 Tech Stack
 
 - **Backend:** Python, FastAPI, LangGraph, LangChain
-- **Frontend:** Next.js 15, React, Tailwind CSS
+- **Frontend:** Next.js 16, React, Tailwind CSS
 - **Database:** Supabase (PostgreSQL)
 - **Cache:** Redis
 - **LLMs:** Groq/Llama-3 (fast), GPT-4o/Claude (complex), Gemini (fallback)
