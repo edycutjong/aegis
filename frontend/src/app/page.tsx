@@ -18,18 +18,22 @@ import {
 const DEMO_TICKETS = [
     {
         label: "Double Charge",
+        icon: "💳",
         message: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
     },
     {
         label: "Account Suspended",
+        icon: "🔒",
         message: "Customer #5 Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
     },
     {
         label: "API Rate Limit",
+        icon: "⚡",
         message: "Customer #3 Maria Garcia from DataForge Analytics is hitting API rate limits at 5000 requests per minute. Their enterprise plan should support 10000. Can you investigate?",
     },
     {
         label: "Refund Request",
+        icon: "💰",
         message: "Customer #10 Chris Johnson wants a refund for the duplicate $49 charge on their Pro subscription from 2 days ago.",
     },
 ];
@@ -184,6 +188,11 @@ export default function Dashboard() {
                 </div>
             </nav>
 
+            {/* ── Status Bar ── */}
+            <div className="status-bar">
+                <div className={`status-bar-fill ${status}`} />
+            </div>
+
             {/* ── Main Dashboard ── */}
             <div className="flex-1 p-4 grid gap-4" style={{ gridTemplateColumns: "1fr 1.2fr 320px", gridTemplateRows: "1fr auto" }}>
 
@@ -212,13 +221,9 @@ export default function Dashboard() {
                                         handleSubmit(t.message);
                                     }}
                                     disabled={status === "processing"}
-                                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-[1.02] disabled:opacity-50"
-                                    style={{
-                                        background: "var(--aegis-surface-2)",
-                                        border: "1px solid var(--aegis-border)",
-                                        color: "var(--aegis-text)",
-                                    }}
+                                    className="demo-btn"
                                 >
+                                    <span>{t.icon}</span>
                                     {t.label}
                                 </button>
                             ))}
@@ -270,8 +275,14 @@ export default function Dashboard() {
 
                     {/* Final Response */}
                     {finalResponse && (
-                        <div className="mt-4 p-4 rounded-xl" style={{ background: "var(--aegis-accent-glow)", border: "1px solid rgba(59, 130, 246, 0.2)" }}>
-                            <span className="text-xs font-semibold block mb-2" style={{ color: "#60a5fa" }}>Resolution</span>
+                        <div className="response-card mt-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                    <path d="M22 4L12 14.01l-3-3" />
+                                </svg>
+                                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#4ade80" }}>Resolution Complete</span>
+                            </div>
                             <p className="text-sm leading-relaxed" style={{ color: "var(--aegis-text)" }}>{finalResponse}</p>
                         </div>
                     )}

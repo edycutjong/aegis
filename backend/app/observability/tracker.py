@@ -2,6 +2,13 @@
 
 Flex 4: Track exactly how many tokens agents burn.
 "The average cost to resolve a complex ticket is exactly $0.012."
+
+Architecture Note:
+    Current: In-memory storage (resets on restart) — sufficient for demos.
+    Production: Persist to Redis TimeSeries for real-time dashboards,
+    or Postgres/TimescaleDB for historical analytics, alerting on cost
+    anomalies, and SLA tracking. The aggregate_stats() API surface
+    stays identical — only the storage backend changes.
 """
 
 import time
