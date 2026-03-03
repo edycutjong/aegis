@@ -11,6 +11,7 @@ from app.agent.nodes import (
     _extract_customer_info,
     _fuzzy_name_match,
     _status_warning,
+    _search_customers_by_name,
     should_proceed_after_validation,
     validate_customer,
     classify_intent,
@@ -20,6 +21,7 @@ from app.agent.nodes import (
     propose_action,
     execute_action,
     generate_response,
+    await_approval,
 )
 
 
@@ -709,4 +711,268 @@ class TestGenerateResponseAsync:
 
         assert "0 results" in result["final_response"]
         assert "No records" in result["thought_log"][-1]
+
+
+# ─────────────────────────────────────────────────────────────
+# _search_customers_by_name (L122-140)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestSearchCustomersByName:
+    """Test _search_customers_by_name helper."""
+
+    @pytest.mark.asyncio
+    async def test_multi_word_name(self):
+        """Multi-word name → splits into first/last for query."""
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": [{"id": 8, "name": "David Martinez"}],
+        })
+        result = await _search_customers_by_name(mock_db, "David Martinez")
+        assert len(result) == 1
+        assert result[0]["name"] == "David Martinez"
+        # Verify the SQL used both first and last name
+        call_sql = mock_db.execute_sql.call_args[0][0]
+        assert "david" in call_sql.lower()
+        assert "martinez" in call_sql.lower()
+
+    @pytest.mark.asyncio
+    async def test_single_word_name(self):
+        """Single-word name → LIKE '%name%' query (L131-136)."""
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": [{"id": 5, "name": "Emily"}],
+        })
+        result = await _search_customers_by_name(mock_db, "Emily")
+        assert len(result) == 1
+        call_sql = mock_db.execute_sql.call_args[0][0]
+        assert "emily" in call_sql.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_results(self):
+        """When execute_sql succeeds but returns empty data (L139-140)."""
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": []})
+        result = await _search_customers_by_name(mock_db, "Nobody Here")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_query_failure_returns_empty(self):
+        """When execute_sql fails, return empty list."""
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={"success": False, "error": "timeout"})
+        result = await _search_customers_by_name(mock_db, "Test User")
+        assert result == []
+
+
+# ─────────────────────────────────────────────────────────────
+# validate_customer edge cases for status warnings (L197, L223)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestValidateCustomerSuspendedCases:
+    """Cover warning branches that weren't exercised."""
+
+    @pytest.mark.asyncio
+    async def test_case4_id_only_suspended(self):
+        """Case 4 + suspended: ID only, no name, suspended customer (L197)."""
+        suspended_david = {**DAVID, "status": "suspended"}
+        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
+            result = await validate_customer(_make_state("Customer #8 has a billing issue"))
+        assert result["customer_found"] is True
+        assert any("SUSPENDED" in t for t in result["thought_log"])
+
+    @pytest.mark.asyncio
+    async def test_case3_fuzzy_typo_suspended(self):
+        """Case 3 + suspended: Fuzzy match with status warning (L223)."""
+        suspended_david = {**DAVID, "status": "suspended"}
+        with patch("app.agent.nodes.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
+            result = await validate_customer(_make_state("Customer #8 Davd Martines was charged twice"))
+        assert result["customer_found"] is True
+        assert any("typo" in t.lower() for t in result["thought_log"])
+        assert any("SUSPENDED" in t for t in result["thought_log"])
+
+    @pytest.mark.asyncio
+    async def test_case5_name_only_no_matches(self):
+        """Case 5 name-only → 0 matches → customer not found (L294-306)."""
+        mock_db = _mock_db_with_customer(None)
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db), \
+             patch("app.agent.nodes._search_customers_by_name", new_callable=AsyncMock, return_value=[]):
+            result = await validate_customer(_make_state("Refund requested for Nobody Here"))
+        assert result["customer_found"] is False
+        assert "Nobody Here" in result["final_response"]
+
+
+# ─────────────────────────────────────────────────────────────
+# execute_sql — non-string/non-dict error type (L431)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestExecuteSqlNonStringError:
+    """Cover the else branch for error types that aren't str or dict."""
+
+    @pytest.mark.asyncio
+    async def test_error_non_string_type(self):
+        """Error is an int → falls through to str(raw_error)[:100] (L431)."""
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": False,
+            "error": 42,  # Neither str nor dict
+        })
+        state = _make_full_state("query")
+        state["sql_query"] = "SELECT 1"
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+            result = await execute_sql(state)
+        assert result["sql_result"] == []
+        assert "42" in result["thought_log"][-1]
+
+
+# ─────────────────────────────────────────────────────────────
+# Token tracking for write_sql, propose_action, generate_response
+# ─────────────────────────────────────────────────────────────
+
+
+class TestWriteSqlTokenTracking:
+    """Cover L366: write_sql token tracking branch."""
+
+    @pytest.mark.asyncio
+    async def test_tracks_tokens(self):
+        mock_response = _mock_llm_response("SELECT * FROM customers LIMIT 20")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_llm.model_name = "gpt-4.1"
+
+        state = _make_full_state("Customer #8 billing")
+        state["intent"] = "billing"
+
+        mock_metrics = MagicMock()
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await write_sql(state)
+
+        mock_metrics.add_step.assert_called_once_with("write_sql", "gpt-4.1", 100, 50)
+
+
+class TestProposeActionTokenTracking:
+    """Cover L561: propose_action token tracking branch."""
+
+    @pytest.mark.asyncio
+    async def test_tracks_tokens(self):
+        action_json = json.dumps({
+            "type": "refund", "amount": 29.99, "customer_id": 8,
+            "customer_name": "David Martinez",
+            "description": "Refund", "reason": "Double charge",
+        })
+        mock_response = _mock_llm_response(action_json)
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_llm.model_name = "gpt-4.1"
+
+        state = _make_full_state("I was double charged")
+        state["intent"] = "billing"
+        state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["docs_context"] = "Refund policy"
+
+        mock_metrics = MagicMock()
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await propose_action(state)
+
+        mock_metrics.add_step.assert_called_once_with("propose_action", "gpt-4.1", 100, 50)
+
+
+class TestGenerateResponseTokenTracking:
+    """Cover L763: generate_response token tracking branch."""
+
+    @pytest.mark.asyncio
+    async def test_tracks_tokens(self):
+        mock_response = _mock_llm_response("Resolved.")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_llm.model_name = "llama-3.1-8b-instant"
+
+        state = _make_full_state("billing issue")
+        state["intent"] = "billing"
+        state["proposed_action"] = {"description": "Refund $29.99"}
+        state["approval_status"] = "approved"
+        state["execution_result"] = "Refund processed"
+        state["sql_result"] = [{"id": 1}]
+        state["customer_found"] = True
+
+        mock_metrics = MagicMock()
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await generate_response(state)
+
+        mock_metrics.add_step.assert_called_once_with(
+            "generate_response", "llama-3.1-8b-instant", 100, 50
+        )
+
+
+# ─────────────────────────────────────────────────────────────
+# await_approval (L627-656)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestAwaitApprovalAsync:
+    """Test await_approval covering auto-approve and interrupt paths."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_auto_approves(self):
+        """Non-destructive 'resolve' action auto-approves (L627-636)."""
+        state = _make_full_state("resolved")
+        state["proposed_action"] = {"type": "resolve", "description": "Resolved"}
+
+        result = await await_approval(state)
+        assert result["approval_status"] == "approved"
+        assert any("auto-approved" in t.lower() for t in result["thought_log"])
+
+    @pytest.mark.asyncio
+    async def test_dict_decision_approved(self):
+        """Destructive action with dict decision → approved (L639-662)."""
+        state = _make_full_state("refund")
+        state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
+
+        with patch("app.agent.nodes.interrupt", return_value={"approved": True, "reason": ""}):
+            result = await await_approval(state)
+        assert result["approval_status"] == "approved"
+        assert result["denial_reason"] == ""
+
+    @pytest.mark.asyncio
+    async def test_dict_decision_denied(self):
+        """Destructive action with dict decision → denied with reason (L647-662)."""
+        state = _make_full_state("refund")
+        state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
+
+        with patch("app.agent.nodes.interrupt", return_value={"approved": False, "reason": "Too expensive"}):
+            result = await await_approval(state)
+        assert result["approval_status"] == "denied"
+        assert result["denial_reason"] == "Too expensive"
+
+    @pytest.mark.asyncio
+    async def test_bool_decision(self):
+        """Destructive action with bool decision (not dict) (L650-652)."""
+        state = _make_full_state("escalate")
+        state["proposed_action"] = {"type": "escalate", "description": "Escalate"}
+
+        with patch("app.agent.nodes.interrupt", return_value=True):
+            result = await await_approval(state)
+        assert result["approval_status"] == "approved"
+
+    @pytest.mark.asyncio
+    async def test_bool_decision_denied(self):
+        """Bool False → denied with empty reason."""
+        state = _make_full_state("refund")
+        state["proposed_action"] = {"type": "refund", "description": "Refund"}
+
+        with patch("app.agent.nodes.interrupt", return_value=False):
+            result = await await_approval(state)
+        assert result["approval_status"] == "denied"
+        assert result["denial_reason"] == ""
+
 

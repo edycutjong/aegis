@@ -11,6 +11,12 @@ venv/
 .venv/
 env/
 
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # Node
 node_modules/
 .next/

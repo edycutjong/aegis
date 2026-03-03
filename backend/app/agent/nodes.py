@@ -303,7 +303,7 @@ async def validate_customer(state: AgentState) -> dict:
             }
     
     # Fallback — should not reach here
-    return {
+    return {  # pragma: no cover
         "customer_found": True,
         "thought_log": thoughts + ["✓ Proceeding with investigation"],
     }

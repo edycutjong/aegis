@@ -36,7 +36,18 @@ jobs:
       - name: Run tests with coverage
         working-directory: backend
         run: |
-          pytest --cov=app.routing --cov=app.config --cov=app.observability --cov-report=term-missing --cov-fail-under=80 -v
+          pytest --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=100 -v
+
+      - name: Coverage badge
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: coverage.json
+          label: coverage
+          message: 100%
+          color: brightgreen
 
   frontend:
     name: Frontend

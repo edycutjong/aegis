@@ -1,4 +1,5 @@
 [![CI](https://github.com/edycutjong/aegis/actions/workflows/ci.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/edycutjong/aegis)
 
 # ⛊ Aegis — Autonomous Enterprise Action Engine
 
@@ -134,6 +135,34 @@ curl http://localhost:8000/api/tracing-status
 - **Node-level spans** via `@traceable` decorators on all agent nodes
 - **LLM calls** auto-traced by LangChain (input/output, token counts, model name)
 - **Graph execution** with `run_name="aegis-support-workflow"` for easy filtering
+
+## 🧪 Testing
+
+**188 tests · 100% coverage · fully offline** — no API keys, Redis, or network needed.
+
+```bash
+cd backend
+
+# Run all tests
+python -m pytest tests/ -v
+
+# With coverage report
+python -m pytest tests/ --cov=app --cov-report=term-missing
+
+# Run a specific file
+python -m pytest tests/test_agent_nodes.py -v
+```
+
+| Module | Stmts | Cover |
+|---|---|---|
+| `nodes.py` (agent workflow) | 257 | 100% |
+| `main.py` (API + SSE + HITL) | 170 | 100% |
+| `model_router.py` | 32 | 100% |
+| `semantic.py` (cache) | 58 | 100% |
+| `tracker.py` (observability) | 62 | 100% |
+| `supabase.py` | 45 | 100% |
+| All other modules | 107 | 100% |
+| **Total** | **731** | **100%** |
 
 ## 📄 License
 

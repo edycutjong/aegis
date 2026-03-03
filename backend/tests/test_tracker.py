@@ -101,6 +101,41 @@ class TestObservabilityTracker:
         assert stats["total_cost_usd"] > 0
         assert "llama-3.1-8b-instant" in stats["model_distribution"]
 
+    def test_aggregate_stats_averaging_math(self):
+        """avg_cost_usd and avg_duration_seconds should equal total / count."""
+        tracker = ObservabilityTracker()
+
+        for i in range(4):
+            m = tracker.start_request(f"t{i}")
+            m.started_at = 1000.0
+            m.add_step("classify", "llama-3.1-8b-instant", 1_000_000, 1_000_000)
+            tracker.complete_request(f"t{i}")
+
+        stats = tracker.get_aggregate_stats()
+        per_request_cost = round(0.05 + 0.08, 6)
+        assert stats["avg_cost_usd"] == per_request_cost
+        assert stats["total_cost_usd"] == round(per_request_cost * 4, 6)
+
+    def test_model_distribution_multi_model(self):
+        """model_distribution should aggregate counts across multiple requests."""
+        tracker = ObservabilityTracker()
+
+        m1 = tracker.start_request("t1")
+        m1.add_step("classify", "llama-3.1-8b-instant", 100, 50)
+        m1.add_step("write_sql", "gpt-4.1", 500, 200)
+        tracker.complete_request("t1")
+
+        m2 = tracker.start_request("t2")
+        m2.add_step("classify", "llama-3.1-8b-instant", 100, 50)
+        m2.add_step("propose", "gpt-4.1", 500, 200)
+        m2.add_step("respond", "llama-3.1-8b-instant", 100, 50)
+        tracker.complete_request("t2")
+
+        stats = tracker.get_aggregate_stats()
+        dist = stats["model_distribution"]
+        assert dist["llama-3.1-8b-instant"] == 3  # 1 + 2
+        assert dist["gpt-4.1"] == 2  # 1 + 1
+
 
 class TestGetTracker:
     def test_returns_singleton(self):

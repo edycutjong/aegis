@@ -98,6 +98,17 @@ class TestTaskModelMap:
         for task in ["write_sql", "propose_action"]:
             assert TASK_MODEL_MAP[task] == "smart", f"{task} should route to 'smart'"
 
+    def test_covers_all_llm_node_names(self):
+        """TASK_MODEL_MAP should cover every agent node that calls an LLM."""
+        expected_llm_nodes = {
+            "classify_intent",
+            "write_sql",
+            "search_docs",
+            "propose_action",
+            "generate_response",
+        }
+        assert expected_llm_nodes == set(TASK_MODEL_MAP.keys())
+
 
 # ─────────────────────────────────────────────────────────────
 # get_model

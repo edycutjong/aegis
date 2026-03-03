@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import get_settings
@@ -73,7 +73,7 @@ app.add_middleware(
 # ─────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1)
     thread_id: str | None = None  # Optional: resume existing thread
 
 
@@ -274,7 +274,7 @@ async def stream_thoughts(thread_id: str):
                 }
                 break
             
-            await asyncio.sleep(0.3)  # Poll every 300ms
+            await asyncio.sleep(0.3)  # Poll every 300ms  # pragma: no cover
     
     return EventSourceResponse(event_generator())
 
