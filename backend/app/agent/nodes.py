@@ -401,11 +401,12 @@ async def execute_sql(state: AgentState) -> dict:
     result = await db.execute_sql(sql)
     
     if result["success"]:
+        records = result["data"] if isinstance(result["data"], list) else [result["data"]]
         return {
-            "sql_result": result["data"] if isinstance(result["data"], list) else [result["data"]],
+            "sql_result": records,
             "sql_error": "",
             "thought_log": state.get("thought_log", []) + [
-                f"✓ SQL executed successfully — found {len(result.get('data', []))} records"
+                f"✓ SQL executed successfully — found {len(records)} records"
             ],
         }
     else:
@@ -435,9 +436,15 @@ async def execute_sql(state: AgentState) -> dict:
 
 
 def should_retry_sql(state: AgentState) -> str:
-    """Conditional edge: retry SQL or proceed to docs search."""
+    """Conditional edge: retry SQL, short-circuit on 0 records, or proceed."""
     if state.get("sql_error") and state.get("sql_retry_count", 0) < 3:
         return "write_sql"  # Self-healing loop
+    
+    # If SQL succeeded but returned 0 records, short-circuit
+    records = state.get("sql_result", [])
+    if not state.get("sql_error") and len(records) == 0:
+        return "generate_response"  # No data found
+    
     return "search_docs"
 
 
@@ -704,6 +711,18 @@ async def generate_response(state: AgentState) -> dict:
         return {
             "thought_log": state.get("thought_log", []) + [
                 "✓ Response already set by validation — skipping LLM generation"
+            ],
+        }
+    
+    # If SQL returned 0 records, generate a clear "not found" response without LLM
+    sql_result = state.get("sql_result", [])
+    if not state.get("sql_error") and len(sql_result) == 0 and state.get("customer_found") is True:
+        return {
+            "final_response": f"No matching billing or transaction records were found for Customer #{state.get('user_message', '')}. "
+                              f"The database query returned 0 results. This could mean the reported issue doesn't have a matching record, "
+                              f"or the details provided may need clarification.",
+            "thought_log": state.get("thought_log", []) + [
+                "⚠ No records found in database — no action required"
             ],
         }
     

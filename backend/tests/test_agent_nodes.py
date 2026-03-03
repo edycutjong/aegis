@@ -4,7 +4,7 @@ from app.agent.nodes import should_retry_sql, should_execute
 
 
 class TestShouldRetrySql:
-    """Conditional edge: retry SQL on error (up to 3 attempts)."""
+    """Conditional edge: retry SQL on error (up to 3 attempts), 0-records guard."""
 
     def test_retries_when_error_and_under_limit(self):
         state = {"sql_error": "relation does not exist", "sql_retry_count": 1}
@@ -14,13 +14,17 @@ class TestShouldRetrySql:
         state = {"sql_error": "syntax error", "sql_retry_count": 3}
         assert should_retry_sql(state) == "search_docs"
 
-    def test_proceeds_when_no_error(self):
-        state = {"sql_error": "", "sql_retry_count": 0}
+    def test_proceeds_when_has_data(self):
+        state = {"sql_error": "", "sql_retry_count": 0, "sql_result": [{"id": 1}]}
         assert should_retry_sql(state) == "search_docs"
+
+    def test_zero_records_short_circuits(self):
+        state = {"sql_error": "", "sql_retry_count": 0, "sql_result": []}
+        assert should_retry_sql(state) == "generate_response"
 
     def test_proceeds_when_error_is_none(self):
         state = {}
-        assert should_retry_sql(state) == "search_docs"
+        assert should_retry_sql(state) == "generate_response"  # No data = 0 records
 
 
 class TestShouldExecute:

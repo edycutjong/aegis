@@ -69,13 +69,14 @@ def build_agent_graph():
     )
     builder.add_edge("write_sql", "execute_sql")
     
-    # Self-healing SQL loop
+    # Self-healing SQL loop + zero-results guard
     builder.add_conditional_edges(
         "execute_sql",
         should_retry_sql,
         {
-            "write_sql": "write_sql",     # Retry on error
-            "search_docs": "search_docs",  # Success → continue
+            "write_sql": "write_sql",               # Retry on error
+            "search_docs": "search_docs",            # Has data → continue
+            "generate_response": "generate_response", # 0 records → short-circuit
         },
     )
     
