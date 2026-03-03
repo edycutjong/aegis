@@ -28,6 +28,7 @@ flowchart TD
     F --> G["Classify → Validate → Write SQL → Execute"]
     G --> H["Search Docs → Propose → ⏸ Approve → Execute → Respond"]
     H --> I["Supabase PostgreSQL"]
+    F -. traces .-> J["LangSmith"]
 ```
 
 ## 🚀 Quick Start
