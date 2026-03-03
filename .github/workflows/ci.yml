@@ -38,16 +38,15 @@ jobs:
         run: |
           pytest --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=100 -v
 
-      - name: Coverage badge
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: schneegans/dynamic-badges-action@v1.7.0
-        with:
-          auth: ${{ secrets.GIST_SECRET }}
-          gistID: ${{ vars.COVERAGE_GIST_ID }}
-          filename: coverage.json
-          label: coverage
-          message: 100%
-          color: brightgreen
+      - name: Coverage summary
+        if: always()
+        working-directory: backend
+        run: |
+          echo "## 🧪 Backend Test Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          python -m coverage report --format=text >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
   frontend:
     name: Frontend

@@ -1,10 +1,8 @@
 """Tests for app.main — FastAPI endpoints with mocked dependencies."""
 
-import asyncio
-import json
 import os
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock, PropertyMock
+from unittest.mock import patch, AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
