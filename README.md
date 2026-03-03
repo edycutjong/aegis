@@ -21,13 +21,13 @@
 ```mermaid
 flowchart TD
     A["Next.js Frontend"] -- REST + SSE --> B["FastAPI Backend"]
-    B --> C["Model Router"]
-    B --> D["Redis Cache"]
-    B --> E["Cost Tracker"]
-    C & D & E --> F["LangGraph Agent"]
+    B -- cache check --> D["Redis Cache"]
+    B -- cache miss --> F["LangGraph Agent"]
     F --> G["Classify → Validate → Write SQL → Execute"]
-    G --> H["Search Docs → Propose → ⏸ Approve → Execute → Respond"]
-    H --> I["Supabase PostgreSQL"]
+    G --> G2["Search Docs → Propose → ⏸ HITL Approval"]
+    G2 --> G3["Execute Action → Respond → Frontend"]
+    F --> C["Model Router → LLM APIs"]
+    G --> I["Supabase PostgreSQL"]
     F -. traces .-> J["LangSmith"]
 ```
 
