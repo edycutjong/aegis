@@ -15,12 +15,22 @@ import {
     type CustomerCandidate,
 } from "@/lib/api";
 
-// Demo ticket presets for quick testing
+// Demo ticket presets for quick testing — most common production scenarios first
 const DEMO_TICKETS = [
     {
-        label: "Valid",
+        label: "Refund",
         icon: "💳",
-        message: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
+        message: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and process a refund if confirmed.",
+    },
+    {
+        label: "Upgrade",
+        icon: "⬆️",
+        message: "Customer #3 Sarah Chen wants to upgrade from Basic to Enterprise plan. Please process the plan change and confirm the new billing amount.",
+    },
+    {
+        label: "Account Issue",
+        icon: "🔧",
+        message: "Customer #2 Jane Smith reports she cannot access her dashboard after the latest update. Her enterprise account should have full access.",
     },
     {
         label: "Suspended",
