@@ -322,11 +322,12 @@ async def approve_action(thread_id: str, request: ApprovalRequest):
         
         thread_store[thread_id]["status"] = "completed"
         
-        # Cache — only successful resolutions
+        # Cache — only successful, approved resolutions
+        # Skip cache for denied actions so the same request can be retried fresh
         final_resp = thread_store[thread_id].get("final_response")
         thought_log = thread_store[thread_id].get("thought_log", [])
         has_failure = any("✗" in t or "not found" in t.lower() for t in thought_log)
-        if final_resp and not has_failure:
+        if final_resp and not has_failure and request.approved:
             cache = await get_cache()
             await cache.set(thread["message"], {
                 "thread_id": thread_id,

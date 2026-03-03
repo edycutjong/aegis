@@ -599,33 +599,87 @@ class TestProposeActionAsync:
 
 
 class TestExecuteActionAsync:
-    """Test execute_action for all action types."""
+    """Test execute_action with recommendation-only output (no DB writes)."""
 
     @pytest.mark.asyncio
-    async def test_refund(self):
+    async def test_refund_result(self):
         state = _make_full_state("refund")
-        state["proposed_action"] = {"type": "refund", "amount": 29.99, "customer_name": "David"}
-
+        state["proposed_action"] = {
+            "type": "refund", "amount": 29.99,
+            "customer_id": 8, "customer_name": "David",
+            "description": "Refund duplicate charge",
+        }
         with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
-        assert "29.99" in result["execution_result"]
-        assert "David" in result["execution_result"]
+        assert "Refund" in result["execution_result"]
+        assert "$29.99" in result["execution_result"]
+        assert "recommended" in result["execution_result"]
 
     @pytest.mark.asyncio
-    async def test_credit(self):
+    async def test_credit_result(self):
         state = _make_full_state("credit")
-        state["proposed_action"] = {"type": "credit", "amount": 10.0, "customer_name": "Alice"}
-
+        state["proposed_action"] = {
+            "type": "credit", "amount": 10.0,
+            "customer_id": 3, "customer_name": "Alice",
+            "description": "Apply courtesy credit",
+        }
         with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
         assert "credit" in result["execution_result"].lower()
+        assert "$10.00" in result["execution_result"]
 
     @pytest.mark.asyncio
-    async def test_escalate(self):
+    async def test_suspend_result(self):
+        state = _make_full_state("suspend")
+        state["proposed_action"] = {
+            "type": "suspend", "customer_id": 5,
+            "customer_name": "Emily",
+            "description": "Suspend account for policy violation",
+        }
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "suspension" in result["execution_result"].lower()
+        assert "Emily" in result["execution_result"]
+
+    @pytest.mark.asyncio
+    async def test_reactivate_result(self):
+        state = _make_full_state("reactivate")
+        state["proposed_action"] = {
+            "type": "reactivate", "customer_id": 5,
+            "customer_name": "Emily",
+            "description": "Reactivate after payment update",
+        }
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "reactivation" in result["execution_result"].lower()
+        assert "Emily" in result["execution_result"]
+
+    @pytest.mark.asyncio
+    async def test_tier_change_result(self):
+        state = _make_full_state("tier change")
+        state["proposed_action"] = {
+            "type": "tier_change", "customer_id": 3,
+            "customer_name": "Charlie",
+            "description": "Change to enterprise plan",
+        }
+        with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "Plan change" in result["execution_result"]
+        assert "Charlie" in result["execution_result"]
+
+    @pytest.mark.asyncio
+    async def test_escalate_without_customer_id(self):
+        """Escalate returns descriptive message."""
         state = _make_full_state("escalate")
         state["proposed_action"] = {"type": "escalate", "customer_name": "Bob"}
 
@@ -636,7 +690,8 @@ class TestExecuteActionAsync:
         assert "escalated" in result["execution_result"].lower()
 
     @pytest.mark.asyncio
-    async def test_resolve(self):
+    async def test_resolve_result(self):
+        """Resolve returns descriptive message."""
         state = _make_full_state("resolve")
         state["proposed_action"] = {"type": "resolve"}
 
@@ -647,15 +702,16 @@ class TestExecuteActionAsync:
         assert "resolved" in result["execution_result"].lower()
 
     @pytest.mark.asyncio
-    async def test_tier_change(self):
-        state = _make_full_state("tier change")
-        state["proposed_action"] = {"type": "tier_change", "customer_name": "Charlie"}
+    async def test_unknown_action_type(self):
+        """Unknown action type returns generic message."""
+        state = _make_full_state("unknown")
+        state["proposed_action"] = {"type": "unknown_action"}
 
         with patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = MagicMock()
             result = await execute_action(state)
 
-        assert "Charlie" in result["execution_result"]
+        assert result["execution_result"] == "Action completed."
 
 
 # ─────────────────────────────────────────────────────────────
@@ -924,7 +980,7 @@ class TestAwaitApprovalAsync:
 
     @pytest.mark.asyncio
     async def test_resolve_auto_approves(self):
-        """Non-destructive 'resolve' action auto-approves (L627-636)."""
+        """Non-destructive 'resolve' action auto-approves."""
         state = _make_full_state("resolved")
         state["proposed_action"] = {"type": "resolve", "description": "Resolved"}
 
@@ -933,8 +989,18 @@ class TestAwaitApprovalAsync:
         assert any("auto-approved" in t.lower() for t in result["thought_log"])
 
     @pytest.mark.asyncio
+    async def test_reactivate_auto_approves(self):
+        """Non-destructive 'reactivate' action auto-approves."""
+        state = _make_full_state("reactivate")
+        state["proposed_action"] = {"type": "reactivate", "description": "Reactivate account"}
+
+        result = await await_approval(state)
+        assert result["approval_status"] == "approved"
+        assert any("auto-approved" in t.lower() for t in result["thought_log"])
+
+    @pytest.mark.asyncio
     async def test_dict_decision_approved(self):
-        """Destructive action with dict decision → approved (L639-662)."""
+        """Destructive action with dict decision → approved."""
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
 
@@ -945,7 +1011,7 @@ class TestAwaitApprovalAsync:
 
     @pytest.mark.asyncio
     async def test_dict_decision_denied(self):
-        """Destructive action with dict decision → denied with reason (L647-662)."""
+        """Destructive action with dict decision → denied with reason."""
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
 
@@ -956,7 +1022,7 @@ class TestAwaitApprovalAsync:
 
     @pytest.mark.asyncio
     async def test_bool_decision(self):
-        """Destructive action with bool decision (not dict) (L650-652)."""
+        """Destructive action with bool decision (not dict)."""
         state = _make_full_state("escalate")
         state["proposed_action"] = {"type": "escalate", "description": "Escalate"}
 
@@ -975,4 +1041,14 @@ class TestAwaitApprovalAsync:
         assert result["approval_status"] == "denied"
         assert result["denial_reason"] == ""
 
+    @pytest.mark.asyncio
+    async def test_suspend_requires_hitl(self):
+        """Destructive 'suspend' action requires HITL approval."""
+        state = _make_full_state("suspend")
+        state["proposed_action"] = {"type": "suspend", "description": "Suspend account"}
+
+        with patch("app.agent.agents.resolver.interrupt", return_value={"approved": True, "reason": ""}) as mock_interrupt:
+            result = await await_approval(state)
+        mock_interrupt.assert_called_once()
+        assert result["approval_status"] == "approved"
 

@@ -296,7 +296,47 @@ class TestApproveEndpoint:
         data = response.json()
         assert data["status"] == "completed"
         assert data["result"] == "Refund done"
+        # Verify cache was called for approved action
+        mock_cache.set.assert_called_once()
         del thread_store["approval-test"]
+
+    def test_deny_skips_cache(self, client):
+        """Denied actions should NOT be cached so user can retry fresh."""
+        from app.main import thread_store
+
+        thread_store["deny-cache-test"] = {
+            "message": "refund request",
+            "status": "awaiting_approval",
+            "thought_log": ["✓ Proposed refund"],
+            "proposed_action": {"type": "refund", "amount": 29.99},
+            "final_response": None,
+        }
+
+        async def mock_astream(*args, **kwargs):
+            yield {"generate_response": {"thought_log": ["✗ Denied"], "final_response": "Action denied by manager"}}
+
+        mock_graph = MagicMock()
+        mock_graph.astream = mock_astream
+
+        mock_cache = AsyncMock()
+        mock_cache.set = AsyncMock()
+
+        mock_tracker = MagicMock()
+        mock_tracker.get_request.return_value = MagicMock()
+        mock_tracker.complete_request = MagicMock()
+
+        with patch("app.main.agent_graph", mock_graph), \
+             patch("app.main.get_cache", new_callable=AsyncMock, return_value=mock_cache), \
+             patch("app.main.get_tracker", return_value=mock_tracker):
+            response = client.post(
+                "/api/approve/deny-cache-test",
+                json={"approved": False, "reason": "Too expensive"},
+            )
+
+        assert response.status_code == 200
+        # Cache should NOT be called for denied actions
+        mock_cache.set.assert_not_called()
+        del thread_store["deny-cache-test"]
 
     def test_approve_exception_returns_500(self, client):
         """Cover L336-337: Exception during approval raises 500."""

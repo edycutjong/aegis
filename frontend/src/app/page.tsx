@@ -42,6 +42,11 @@ const REAL_INTENTS = [
         icon: "🔓",
         message: "Customer #5 Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
     },
+    {
+        label: "Suspend",
+        icon: "🔒",
+        message: "Customer #20 William Allen has violated our terms of service by sharing his API keys publicly. Please suspend his account immediately.",
+    },
 ];
 
 // Edge Case presets — validation and error scenarios
@@ -83,7 +88,7 @@ export default function Dashboard() {
 
     // HITL state
     const [pendingAction, setPendingAction] = useState<ActionProposal | null>(null);
-    const [heldAction, setHeldAction] = useState<ActionProposal | null>(null);
+
     const [approvalLoading, setApprovalLoading] = useState(false);
 
     // Metrics state
@@ -197,23 +202,7 @@ export default function Dashboard() {
         setApprovalLoading(false);
     }, [threadId]);
 
-    // Handle HITL hold (defer decision)
-    const handleHold = useCallback(() => {
-        setHeldAction(pendingAction);
-        setPendingAction(null);
-        setStatus("on_hold");
-        setThoughts((prev) => [...prev, "⏸ Decision deferred — action held for review"]);
-    }, [pendingAction]);
 
-    // Resume a held action
-    const handleResume = useCallback(() => {
-        if (heldAction) {
-            setPendingAction(heldAction);
-            setHeldAction(null);
-            setStatus("awaiting_approval");
-            setThoughts((prev) => [...prev, "Resuming review of held action"]);
-        }
-    }, [heldAction]);
 
     // Handle customer disambiguation selection
     const handleSelectCustomer = useCallback((candidate: CustomerCandidate) => {
@@ -429,15 +418,7 @@ export default function Dashboard() {
             <footer className="px-6 py-3 flex items-center justify-between text-xs" style={{ borderTop: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)", minHeight: "48px" }}>
                 <span>Aegis v1.0 — Autonomous Enterprise Action Engine</span>
                 <div className="flex items-center gap-4">
-                    {heldAction && (
-                        <button
-                            onClick={handleResume}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:brightness-110"
-                            style={{ background: "rgba(245, 158, 11, 0.15)", border: "1px solid rgba(245, 158, 11, 0.4)", color: "#fbbf24" }}
-                        >
-                            ⏸ Resume Review ({heldAction.type})
-                        </button>
-                    )}
+
                     <span>FastAPI + LangGraph + Next.js</span>
                     {threadId && <span className="font-mono">Thread: {threadId.slice(0, 8)}...</span>}
                 </div>
@@ -449,7 +430,7 @@ export default function Dashboard() {
                     action={pendingAction}
                     onApprove={handleApprove}
                     onDeny={handleDeny}
-                    onHold={handleHold}
+
                     isLoading={approvalLoading}
                 />
             )}

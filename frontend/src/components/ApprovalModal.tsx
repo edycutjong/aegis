@@ -7,11 +7,10 @@ interface ApprovalModalProps {
     action: ActionProposal;
     onApprove: () => void;
     onDeny: (reason: string) => void;
-    onHold: () => void;
     isLoading: boolean;
 }
 
-export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoading }: ApprovalModalProps) {
+export default function ApprovalModal({ action, onApprove, onDeny, isLoading }: ApprovalModalProps) {
     const [closing, setClosing] = useState(false);
 
     const animateOut = useCallback((callback: () => void) => {
@@ -25,6 +24,8 @@ export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoa
             case "credit": return "🎁";
             case "tier_change": return "📊";
             case "escalate": return "🚨";
+            case "suspend": return "🔒";
+            case "reactivate": return "🔓";
             default: return "⚡";
         }
     };
@@ -35,6 +36,8 @@ export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoa
             case "credit": return "border-emerald-500/30 bg-emerald-500/5";
             case "tier_change": return "border-blue-500/30 bg-blue-500/5";
             case "escalate": return "border-red-500/30 bg-red-500/5";
+            case "suspend": return "border-orange-500/30 bg-orange-500/5";
+            case "reactivate": return "border-teal-500/30 bg-teal-500/5";
             default: return "border-purple-500/30 bg-purple-500/5";
         }
     };
@@ -111,14 +114,6 @@ export default function ApprovalModal({ action, onApprove, onDeny, onHold, isLoa
                         className="btn-danger flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                         {isLoading ? <div className="spinner" /> : "✗"} Deny
-                    </button>
-                    <button
-                        onClick={() => animateOut(onHold)}
-                        disabled={isLoading || closing}
-                        className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 font-semibold text-sm transition-all hover:brightness-110 disabled:opacity-50"
-                        style={{ background: "rgba(245, 158, 11, 0.15)", border: "1px solid rgba(245, 158, 11, 0.4)", color: "#fbbf24" }}
-                    >
-                        ⏸ Hold
                     </button>
                     <button
                         onClick={() => animateOut(onApprove)}

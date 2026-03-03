@@ -67,7 +67,9 @@ Set customer_id to null and customer_name to "Not Found"."""
 Available action types:
 - refund: Issue a monetary refund (specify amount)
 - credit: Apply account credit (specify amount)
-- tier_change: Change subscription tier (specify target tier)
+- tier_change: Change subscription tier (specify target tier in description, e.g. "Change to pro plan")
+- suspend: Suspend customer account
+- reactivate: Reactivate a suspended/cancelled customer account
 - escalate: Escalate to human manager (for complex/sensitive cases)
 - resolve: Mark as resolved with explanation (no action needed)
 {customer_guard}
@@ -136,13 +138,13 @@ Propose the best action:"""),
     if real_customer_id is not None:
         action["customer_id"] = real_customer_id
         action["customer_name"] = real_customer_name
-    elif action.get("type") in ("refund", "credit", "tier_change"):
-        # No real customer found but LLM proposed a financial action — force escalate
+    elif action.get("type") in ("refund", "credit", "tier_change", "suspend", "reactivate"):
+        # No real customer found but LLM proposed a mutating action — force escalate
         action["type"] = "escalate"
         action["customer_id"] = None
         action["customer_name"] = "Not Found"
         action["description"] = f"Customer not found in database — escalating for manual review. Original proposal: {action.get('description', '')}"
-        action["reason"] = "Cannot execute financial actions for unverified customers."
+        action["reason"] = "Cannot execute actions for unverified customers."
     
     return {
         "proposed_action": action,
@@ -168,12 +170,13 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
     action = state.get("proposed_action", {})
     
     # Non-destructive actions can auto-approve
-    if action.get("type") == "resolve":
+    auto_approve_types = {"resolve", "reactivate"}
+    if action.get("type") in auto_approve_types:
         return {
             "approval_status": "approved",
             "active_agent": AGENT_NAME,
             "thought_log": state.get("thought_log", []) + [
-                f"✓ [{AGENT_NAME}] Auto-approved: resolution requires no destructive action"
+                f"✓ [{AGENT_NAME}] Auto-approved: {action.get('type')} is non-destructive"
             ],
         }
     
@@ -213,35 +216,39 @@ def should_execute(state: AgentState) -> str:
 
 
 # ─────────────────────────────────────────────────────────────
-# Node: Action Execution (mock)
+# Node: Action Execution (recommendation-only, no DB writes)
 # ─────────────────────────────────────────────────────────────
+
 
 @traceable(name="execute_action")
 async def execute_action(state: AgentState, config: dict | None = None) -> dict:
-    """Execute the approved action (mock implementation).
-    
-    In production, this would call real APIs (Stripe, billing system, etc.)
+    """Execute the approved action (recommendation-only — no database writes).
+
+    Returns a descriptive result string based on the proposed action type.
+    The system is intentionally read-only: actions are recommendations, not mutations.
     """
     action = state.get("proposed_action", {})
     action_type = action.get("type", "unknown")
-    
-    # Mock execution results
-    mock_results = {
-        "refund": f"Refund of ${(action.get('amount') or 0):.2f} processed successfully for customer {action.get('customer_name', 'Unknown')}. Transaction ID: TXN-{hash(str(action)) % 100000:05d}",
-        "credit": f"Account credit of ${(action.get('amount') or 0):.2f} applied to customer {action.get('customer_name', 'Unknown')}'s account.",
-        "tier_change": f"Subscription tier changed for customer {action.get('customer_name', 'Unknown')}. Changes take effect immediately.",
-        "escalate": f"Ticket escalated to senior support manager. Reference: ESC-{hash(str(action)) % 10000:04d}",
+    customer_name = action.get("customer_name", "Unknown")
+    amount = action.get("amount") or 0
+
+    results = {
+        "refund": f"Refund of ${amount:.2f} recommended for {customer_name}. Awaiting finance team processing.",
+        "credit": f"Account credit of ${amount:.2f} recommended for {customer_name}. Awaiting finance team processing.",
+        "tier_change": f"Plan change recommended for {customer_name}. Awaiting account team processing.",
+        "suspend": f"Account suspension recommended for {customer_name}. Awaiting compliance team processing.",
+        "reactivate": f"Account reactivation recommended for {customer_name}. Awaiting account team processing.",
+        "escalate": f"Ticket escalated to senior support manager for {customer_name}.",
         "resolve": "Ticket resolved. No further action required.",
     }
-    
-    result = mock_results.get(action_type, "Action completed.")
-    
+    result = results.get(action_type, "Action completed.")
+
     # Track in observability
     tracker = get_tracker()
     metrics = tracker.get_request(state["thread_id"])
     if metrics:
         metrics.approved = True
-    
+
     return {
         "execution_result": result,
         "active_agent": AGENT_NAME,
