@@ -83,6 +83,28 @@ class SemanticCache:
         except Exception as e:
             print(f"[Cache] Failed to cache: {e}")
     
+    async def clear(self) -> int:
+        """Clear all cached responses and reset stats.
+        
+        Returns the number of keys deleted.
+        """
+        deleted = 0
+        if self.redis:
+            try:
+                cursor = "0"
+                while cursor:
+                    cursor, keys = await self.redis.scan(
+                        cursor=cursor, match="aegis:cache:*", count=100
+                    )
+                    if keys:
+                        deleted += await self.redis.delete(*keys)
+                    if cursor == "0":
+                        break
+            except Exception as e:
+                print(f"[Cache] Failed to clear: {e}")
+        self.stats = {"hits": 0, "misses": 0}
+        return deleted
+    
     def get_stats(self) -> dict:
         """Return cache statistics."""
         total = self.stats["hits"] + self.stats["misses"]

@@ -58,6 +58,32 @@ class TestMetricsEndpoint:
         assert "cache_metrics" in data
 
 
+class TestClearCacheEndpoint:
+    """DELETE /api/cache should clear all cached responses."""
+
+    def test_clears_cache(self, client):
+        mock_cache = AsyncMock()
+        mock_cache.clear = AsyncMock(return_value=5)
+
+        with patch("app.main.get_cache", new_callable=AsyncMock, return_value=mock_cache):
+            response = client.delete("/api/cache")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "cleared"
+            assert data["keys_deleted"] == 5
+
+    def test_clears_empty_cache(self, client):
+        mock_cache = AsyncMock()
+        mock_cache.clear = AsyncMock(return_value=0)
+
+        with patch("app.main.get_cache", new_callable=AsyncMock, return_value=mock_cache):
+            response = client.delete("/api/cache")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "cleared"
+            assert data["keys_deleted"] == 0
+
+
 class TestTracingStatusEndpoint:
     """GET /api/tracing-status should return LangSmith status."""
 

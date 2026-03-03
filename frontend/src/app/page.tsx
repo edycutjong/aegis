@@ -420,7 +420,9 @@ export default function Dashboard() {
                 <ThoughtStream thoughts={thoughts} status={status} />
 
                 {/* Right Panel: Metrics */}
-                <MetricsPanel metrics={metrics} />
+                <MetricsPanel metrics={metrics} onCacheCleared={async () => {
+                    try { setMetrics(await getMetrics()); } catch { }
+                }} />
             </div>
 
             {/* ── Footer ── */}

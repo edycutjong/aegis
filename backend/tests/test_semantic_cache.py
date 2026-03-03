@@ -196,3 +196,51 @@ class TestGetCacheSingleton:
 
         cache_mod._cache = None
 
+
+class TestSemanticCacheClear:
+    """Tests for the clear() method."""
+
+    async def test_clear_with_keys(self):
+        cache = SemanticCache.__new__(SemanticCache)
+        cache.stats = {"hits": 5, "misses": 3}
+        cache.redis = AsyncMock()
+        # Simulate scan returning 3 keys then done
+        cache.redis.scan = AsyncMock(
+            return_value=("0", ["aegis:cache:abc", "aegis:cache:def", "aegis:cache:ghi"])
+        )
+        cache.redis.delete = AsyncMock(return_value=3)
+
+        deleted = await cache.clear()
+        assert deleted == 3
+        assert cache.stats == {"hits": 0, "misses": 0}
+        cache.redis.delete.assert_called_once()
+
+    async def test_clear_no_keys(self):
+        cache = SemanticCache.__new__(SemanticCache)
+        cache.stats = {"hits": 2, "misses": 1}
+        cache.redis = AsyncMock()
+        cache.redis.scan = AsyncMock(return_value=("0", []))
+
+        deleted = await cache.clear()
+        assert deleted == 0
+        assert cache.stats == {"hits": 0, "misses": 0}
+
+    async def test_clear_without_redis(self):
+        cache = SemanticCache.__new__(SemanticCache)
+        cache.redis = None
+        cache.stats = {"hits": 10, "misses": 5}
+
+        deleted = await cache.clear()
+        assert deleted == 0
+        assert cache.stats == {"hits": 0, "misses": 0}
+
+    async def test_clear_redis_error(self):
+        cache = SemanticCache.__new__(SemanticCache)
+        cache.stats = {"hits": 1, "misses": 1}
+        cache.redis = AsyncMock()
+        cache.redis.scan = AsyncMock(side_effect=Exception("Connection lost"))
+
+        deleted = await cache.clear()
+        assert deleted == 0
+        assert cache.stats == {"hits": 0, "misses": 0}
+

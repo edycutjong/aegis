@@ -111,6 +111,35 @@ export async function getMetrics(): Promise<Metrics> {
     return res.json();
 }
 
+/** Clear semantic cache */
+export async function clearCache(): Promise<{ status: string; keys_deleted: number }> {
+    const res = await fetch(`${API_URL}/api/cache`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`Cache clear failed: ${res.statusText}`);
+    return res.json();
+}
+
+/** Database status types */
+export interface TableStatus {
+    count: number;
+    latest?: string | null;
+    error?: string;
+}
+export type DbStatus = Record<string, TableStatus>;
+
+/** Get database record counts and freshness */
+export async function getDbStatus(): Promise<DbStatus> {
+    const res = await fetch(`${API_URL}/api/db-status`);
+    if (!res.ok) throw new Error(`DB status fetch failed: ${res.statusText}`);
+    return res.json();
+}
+
+/** Get rows from a database table */
+export async function getTableData(table: string): Promise<{ table: string; rows: Record<string, unknown>[] }> {
+    const res = await fetch(`${API_URL}/api/tables/${table}`);
+    if (!res.ok) throw new Error(`Table fetch failed: ${res.statusText}`);
+    return res.json();
+}
+
 /** Create SSE connection to stream agent thoughts */
 export function connectSSE(
     threadId: string,

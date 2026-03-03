@@ -21,6 +21,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.config import get_settings
 from app.agent.graph import agent_graph
 from app.cache.semantic import get_cache
+from app.db.supabase import get_supabase
 from app.observability.tracker import get_tracker
 from langgraph.types import Command
 
@@ -372,6 +373,77 @@ async def get_metrics():
         "agent_metrics": tracker.get_aggregate_stats(),
         "cache_metrics": cache.get_stats(),
     }
+
+
+@app.delete("/api/cache")
+async def clear_cache():
+    """Clear all cached responses from Redis.
+    
+    Removes all aegis:cache:* keys and resets hit/miss counters.
+    """
+    cache = await get_cache()
+    deleted = await cache.clear()
+    return {
+        "status": "cleared",
+        "keys_deleted": deleted,
+    }
+
+
+@app.get("/api/db-status")
+async def db_status():
+    """Return record counts and data freshness for all tables.
+
+    Useful for verifying seed data is loaded and timestamps are current.
+    """
+    db = get_supabase()
+    tables = {
+        "customers": "SELECT COUNT(*) as count, MAX(created_at) as latest FROM customers",
+        "billing": "SELECT COUNT(*) as count, MAX(created_at) as latest FROM billing",
+        "support_tickets": "SELECT COUNT(*) as count, MAX(created_at) as latest FROM support_tickets",
+        "internal_docs": "SELECT COUNT(*) as count FROM internal_docs",
+    }
+    result = {}
+    for table, query in tables.items():
+        try:
+            res = await db.execute_sql(query)
+            if res["success"] and res.get("data"):
+                row = res["data"][0] if isinstance(res["data"], list) else res["data"]
+                result[table] = {
+                    "count": row.get("count", 0),
+                    "latest": row.get("latest"),
+                }
+            else:
+                result[table] = {"count": 0, "latest": None, "error": res.get("error")}
+        except Exception as e:
+            result[table] = {"count": 0, "latest": None, "error": str(e)}
+
+    return result
+
+
+ALLOWED_TABLES = {"customers", "billing", "support_tickets", "internal_docs"}
+
+
+@app.get("/api/tables/{name}")
+async def get_table_data(name: str):
+    """Return rows from a seed data table.
+
+    Only allows reading from the four known tables.
+    """
+    if name not in ALLOWED_TABLES:
+        raise HTTPException(status_code=400, detail=f"Unknown table: {name}")
+
+    db = get_supabase()
+    query = f"SELECT * FROM {name} ORDER BY id LIMIT 100"
+    try:
+        res = await db.execute_sql(query)
+        if res["success"]:
+            return {"table": name, "rows": res.get("data", []) or []}
+        else:
+            raise HTTPException(status_code=500, detail=res.get("error", "Query failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/tracing-status")
