@@ -19,29 +19,27 @@
 ## 🏗️ Architecture
 
 ```mermaid
-flowchart TB
-    subgraph Frontend["Next.js Frontend"]
-        UI["SSE Streaming + HITL Approval UI"]
+flowchart LR
+    subgraph Frontend["🖥️ Next.js Frontend"]
+        UI["SSE Stream + HITL UI"]
     end
 
-    subgraph Backend["FastAPI Backend"]
-        direction TB
-        subgraph Services
-            MR["Model Router"] ~~~ RC["Redis Cache"] ~~~ CT["Cost Tracker"]
+    subgraph Backend["⚙️ FastAPI Backend"]
+        MR["Model Router"] & RC["Redis Cache"] & CT["Cost Tracker"]
+        MR & RC & CT --> Agent
+        subgraph Agent["LangGraph Agent"]
+            direction LR
+            C["Classify"] --> V["Validate"] --> WS["Write SQL"] --> ES["Execute"]
+            ES --> SD["Search Docs"] --> PA["Propose"] --> HA["⏸ Approve"] --> EA["Execute"] --> GR["Respond"]
         end
-        subgraph Graph["LangGraph Agent Workflow"]
-            C["Classify"] --> V["Validate Customer"] --> WS["Write SQL"] --> ES["Execute SQL"] --> SD["Search Docs"]
-            SD --> PA["Propose Action"] --> HA["⏸ HITL Approval"] --> EA["Execute Action"] --> GR["Generate Response"]
-        end
-        Services --> Graph
     end
 
-    subgraph DB["Supabase PostgreSQL"]
-        Tables["customers · billing · support_tickets · internal_docs"]
+    subgraph DB["🗄️ Supabase PostgreSQL"]
+        T["customers · billing · tickets · docs"]
     end
 
-    Frontend -- "REST + SSE" --> Backend
-    Backend -- "SQL Queries" --> DB
+    Frontend <-- "REST + SSE" --> Backend
+    Backend <-- "SQL" --> DB
 ```
 
 ## 🚀 Quick Start
@@ -99,9 +97,9 @@ Visit `http://localhost:3000` and submit a support ticket.
 
 | Model | Used For | Cost per Request |
 |---|---|---|
-| Llama-3 (Groq) | Intent classification, search, response | ~$0.00003 |
-| Gemini Flash | Fallback fast tasks | ~$0.0001 |
-| GPT-4o / Claude | SQL generation + reasoning | ~$0.008 |
+| Llama-3.1-8B (Groq) | Intent classification, search, response | ~$0.00003 |
+| Gemini 2.5 Flash | Fallback fast tasks | ~$0.0001 |
+| GPT-4.1 / Claude | SQL generation + reasoning | ~$0.008 |
 | **Total avg per ticket** | | **~$0.009** |
 | **With semantic cache hit** | | **$0.00** |
 
@@ -111,7 +109,7 @@ Visit `http://localhost:3000` and submit a support ticket.
 - **Frontend:** Next.js 16, React, Tailwind CSS
 - **Database:** Supabase (PostgreSQL)
 - **Cache:** Redis
-- **LLMs:** Groq/Llama-3 (fast), GPT-4o/Claude (complex), Gemini (fallback)
+- **LLMs:** Groq/Llama-3 (fast), GPT-4.1/Claude (complex), Gemini (fallback)
 - **Observability:** LangSmith tracing + built-in token/cost tracking
 
 ## 🔭 Observability
