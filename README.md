@@ -19,27 +19,15 @@
 ## 🏗️ Architecture
 
 ```mermaid
-flowchart LR
-    subgraph Frontend["🖥️ Next.js Frontend"]
-        UI["SSE Stream + HITL UI"]
-    end
-
-    subgraph Backend["⚙️ FastAPI Backend"]
-        MR["Model Router"] & RC["Redis Cache"] & CT["Cost Tracker"]
-        MR & RC & CT --> Agent
-        subgraph Agent["LangGraph Agent"]
-            direction LR
-            C["Classify"] --> V["Validate"] --> WS["Write SQL"] --> ES["Execute"]
-            ES --> SD["Search Docs"] --> PA["Propose"] --> HA["⏸ Approve"] --> EA["Execute"] --> GR["Respond"]
-        end
-    end
-
-    subgraph DB["🗄️ Supabase PostgreSQL"]
-        T["customers · billing · tickets · docs"]
-    end
-
-    Frontend <-- "REST + SSE" --> Backend
-    Backend <-- "SQL" --> DB
+flowchart TD
+    A["Next.js Frontend"] -- REST + SSE --> B["FastAPI Backend"]
+    B --> C["Model Router"]
+    B --> D["Redis Cache"]
+    B --> E["Cost Tracker"]
+    C & D & E --> F["LangGraph Agent"]
+    F --> G["Classify → Validate → Write SQL → Execute"]
+    G --> H["Search Docs → Propose → ⏸ Approve → Execute → Respond"]
+    H --> I["Supabase PostgreSQL"]
 ```
 
 ## 🚀 Quick Start
