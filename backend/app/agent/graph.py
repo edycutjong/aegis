@@ -10,6 +10,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from app.agent.state import AgentState
 from app.agent.nodes import (
     classify_intent,
+    validate_customer,
+    should_proceed_after_validation,
     write_sql,
     execute_sql,
     should_retry_sql,
@@ -26,21 +28,24 @@ def build_agent_graph():
     """Build and compile the Aegis agent graph.
     
     The workflow:
-    1. classify_intent    → Determine ticket category (fast model)
-    2. write_sql          → Generate investigation query (smart model)
-    3. execute_sql        → Run query on Supabase
-       ↳ on error        → write_sql (self-healing loop, max 3 retries)
-    4. search_docs        → Find relevant internal documentation
-    5. propose_action     → Synthesize findings into action (smart model)
-    6. await_approval     → HITL interrupt — pause for human decision
-       ↳ approved         → execute_action → generate_response → END
-       ↳ denied           → generate_response → END
+    1. classify_intent       → Determine ticket category (fast model)
+    2. validate_customer     → Check customer exists in DB
+       ↳ not found          → generate_response → END (short-circuit)
+    3. write_sql             → Generate investigation query (smart model)
+    4. execute_sql           → Run query on Supabase
+       ↳ on error           → write_sql (self-healing loop, max 3 retries)
+    5. search_docs           → Find relevant internal documentation
+    6. propose_action        → Synthesize findings into action (smart model)
+    7. await_approval        → HITL interrupt — pause for human decision
+       ↳ approved            → execute_action → generate_response → END
+       ↳ denied              → generate_response → END
     """
     
     builder = StateGraph(AgentState)
     
     # Add all nodes
     builder.add_node("classify_intent", classify_intent)
+    builder.add_node("validate_customer", validate_customer)
     builder.add_node("write_sql", write_sql)
     builder.add_node("execute_sql", execute_sql)
     builder.add_node("search_docs", search_docs)
@@ -51,7 +56,17 @@ def build_agent_graph():
     
     # Define edges
     builder.add_edge(START, "classify_intent")
-    builder.add_edge("classify_intent", "write_sql")
+    builder.add_edge("classify_intent", "validate_customer")
+    
+    # Customer validation gate
+    builder.add_conditional_edges(
+        "validate_customer",
+        should_proceed_after_validation,
+        {
+            "write_sql": "write_sql",               # Customer found → investigate
+            "generate_response": "generate_response", # Not found → short-circuit
+        },
+    )
     builder.add_edge("write_sql", "execute_sql")
     
     # Self-healing SQL loop

@@ -12,29 +12,40 @@ import {
     type ActionProposal,
     type Metrics,
     type ChatResponse,
+    type CustomerCandidate,
 } from "@/lib/api";
 
 // Demo ticket presets for quick testing
 const DEMO_TICKETS = [
     {
-        label: "Double Charge",
+        label: "Valid",
         icon: "💳",
         message: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
     },
     {
-        label: "Account Suspended",
+        label: "Suspended",
         icon: "🔒",
         message: "Customer #5 Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
     },
     {
-        label: "API Rate Limit",
-        icon: "⚡",
-        message: "Customer #3 Maria Garcia from DataForge Analytics is hitting API rate limits at 5000 requests per minute. Their enterprise plan should support 10000. Can you investigate?",
+        label: "Not Found",
+        icon: "👻",
+        message: "Customer #999 John Phantom wants a refund for the duplicate $49 charge on their Pro subscription from 2 days ago.",
     },
     {
-        label: "Refund Request",
-        icon: "💰",
-        message: "Customer #10 Chris Johnson wants a refund for the duplicate $49 charge on their Pro subscription from 2 days ago.",
+        label: "Mismatch",
+        icon: "🔀",
+        message: "Customer #8 Sarah Chen says she was charged $49 twice this month for her Pro plan. Please investigate.",
+    },
+    {
+        label: "Typo",
+        icon: "✍️",
+        message: "Customer #8 Davd Martines says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
+    },
+    {
+        label: "Name Only",
+        icon: "👤",
+        message: "Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
     },
 ];
 
@@ -53,6 +64,11 @@ export default function Dashboard() {
 
     // Metrics state
     const [metrics, setMetrics] = useState<Metrics | null>(null);
+
+    // Disambiguation state
+    const [candidates, setCandidates] = useState<CustomerCandidate[]>([]);
+    const [disambiguationMessage, setDisambiguationMessage] = useState<string | null>(null);
+    const [originalMessage, setOriginalMessage] = useState<string>("");
 
     // Fetch metrics periodically
     useEffect(() => {
@@ -77,6 +93,9 @@ export default function Dashboard() {
         setThoughts([]);
         setFinalResponse(null);
         setPendingAction(null);
+        setCandidates([]);
+        setDisambiguationMessage(null);
+        setOriginalMessage(ticketMessage);
         setStatus("processing");
 
         try {
@@ -106,6 +125,11 @@ export default function Dashboard() {
                 (error) => {
                     setThoughts((prev) => [...prev, `✗ Error: ${error}`]);
                     setStatus("error");
+                },
+                (customerCandidates, response) => {
+                    setCandidates(customerCandidates);
+                    setDisambiguationMessage(response);
+                    setStatus("disambiguation");
                 }
             );
         } catch (err) {
@@ -163,6 +187,19 @@ export default function Dashboard() {
             setThoughts((prev) => [...prev, "Resuming review of held action"]);
         }
     }, [heldAction]);
+
+    // Handle customer disambiguation selection
+    const handleSelectCustomer = useCallback((candidate: CustomerCandidate) => {
+        // Replace any Customer #ID in the original message with the selected one
+        const correctedMessage = originalMessage.replace(
+            /[Cc]ustomer\s*#?\d+\s*[A-Za-z ]*/,
+            `Customer #${candidate.id} ${candidate.name}`
+        );
+        setCandidates([]);
+        setDisambiguationMessage(null);
+        setMessage(correctedMessage);
+        handleSubmit(correctedMessage);
+    }, [originalMessage, handleSubmit]);
 
     return (
         <div className="min-h-screen flex flex-col" style={{ background: "var(--aegis-bg)" }}>
@@ -273,6 +310,47 @@ export default function Dashboard() {
                         </button>
                     </div>
 
+                    {/* Disambiguation Selector */}
+                    {candidates.length > 0 && (
+                        <div className="response-card mt-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M12 16v-4" />
+                                    <path d="M12 8h.01" />
+                                </svg>
+                                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#f59e0b" }}>Select Customer</span>
+                            </div>
+                            <p className="text-sm mb-3" style={{ color: "var(--aegis-text-muted)" }}>{disambiguationMessage}</p>
+                            <div className="space-y-2">
+                                {candidates.map((c) => (
+                                    <button
+                                        key={c.id}
+                                        onClick={() => handleSelectCustomer(c)}
+                                        className="w-full text-left rounded-lg p-3 transition-all hover:brightness-125"
+                                        style={{
+                                            background: "var(--aegis-surface)",
+                                            border: "1px solid var(--aegis-border)",
+                                        }}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <span className="text-sm font-semibold" style={{ color: "var(--aegis-text)" }}>#{c.id} {c.name}</span>
+                                                {c.email && <span className="text-xs ml-2" style={{ color: "var(--aegis-text-muted)" }}>{c.email}</span>}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {c.plan && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}>{c.plan}</span>}
+                                                {c.status && c.status !== "active" && (
+                                                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.15)", color: "#f87171" }}>{c.status}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Final Response */}
                     {finalResponse && (
                         <div className="response-card mt-4">
@@ -296,7 +374,7 @@ export default function Dashboard() {
             </div>
 
             {/* ── Footer ── */}
-            <footer className="px-6 py-3 flex items-center justify-between text-xs" style={{ borderTop: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)" }}>
+            <footer className="px-6 py-3 flex items-center justify-between text-xs" style={{ borderTop: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)", minHeight: "48px" }}>
                 <span>Aegis v1.0 — Autonomous Enterprise Action Engine</span>
                 <div className="flex items-center gap-4">
                     {heldAction && (

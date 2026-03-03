@@ -40,6 +40,8 @@ class AgentState(TypedDict, total=False):
     sql_result: list[dict]
     sql_error: str
     sql_retry_count: int
+    customer_found: bool
+    customer_candidates: list[dict]
     
     # Documentation search
     docs_context: str

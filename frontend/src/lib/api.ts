@@ -25,6 +25,14 @@ export interface ActionProposal {
     reason: string;
 }
 
+export interface CustomerCandidate {
+    id: number;
+    name: string;
+    email?: string;
+    plan?: string;
+    status?: string;
+}
+
 export interface ThreadState {
     message: string;
     status: string;
@@ -109,7 +117,8 @@ export function connectSSE(
     onThought: (step: string) => void,
     onApprovalRequired: (action: ActionProposal) => void,
     onCompleted: (response: string, thoughtLog: string[]) => void,
-    onError: (error: string) => void
+    onError: (error: string) => void,
+    onDisambiguation?: (candidates: CustomerCandidate[], response: string) => void
 ): EventSource {
     const es = new EventSource(`${API_URL}/api/stream/${threadId}`);
 
@@ -126,7 +135,11 @@ export function connectSSE(
 
     es.addEventListener("completed", (e) => {
         const data = JSON.parse(e.data);
-        onCompleted(data.response, data.thought_log);
+        if (data.customer_candidates && data.customer_candidates.length > 0 && onDisambiguation) {
+            onDisambiguation(data.customer_candidates, data.response);
+        } else {
+            onCompleted(data.response, data.thought_log);
+        }
         es.close();
     });
 

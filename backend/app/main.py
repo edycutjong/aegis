@@ -174,6 +174,8 @@ async def _run_agent(thread_id: str, message: str):
                         thread_store[thread_id]["proposed_action"] = update["proposed_action"]
                     if "final_response" in update:
                         thread_store[thread_id]["final_response"] = update["final_response"]
+                    if "customer_candidates" in update:
+                        thread_store[thread_id]["customer_candidates"] = update["customer_candidates"]
         
         # Check if we hit an interrupt (HITL)
         state = agent_graph.get_state(config)
@@ -248,6 +250,7 @@ async def stream_thoughts(thread_id: str):
                     "data": json.dumps({
                         "response": thread.get("final_response"),
                         "thought_log": current_log,
+                        "customer_candidates": thread.get("customer_candidates"),
                     }),
                 }
                 break
