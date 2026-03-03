@@ -67,3 +67,40 @@ class TestGetSettingsCaching:
         s1 = get_settings()
         s2 = get_settings()
         assert s1 is s2
+
+
+class TestLangSmithSettings:
+    """LangSmith observability settings."""
+
+    def test_default_tracing_disabled(self):
+        with patch.dict(os.environ, {}, clear=True):
+            s = Settings()
+            assert s.langchain_tracing_v2 is False
+
+    def test_default_project_name(self):
+        with patch.dict(os.environ, {}, clear=True):
+            s = Settings()
+            assert s.langchain_project == "aegis"
+
+    def test_default_api_key_empty(self):
+        with patch.dict(os.environ, {}, clear=True):
+            s = Settings()
+            assert s.langchain_api_key == ""
+
+    def test_tracing_enabled_from_env(self):
+        with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "true"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.langchain_tracing_v2 is True
+
+    def test_api_key_from_env(self):
+        with patch.dict(os.environ, {"LANGCHAIN_API_KEY": "lsv2_pt_test"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.langchain_api_key == "lsv2_pt_test"
+
+    def test_project_from_env(self):
+        with patch.dict(os.environ, {"LANGCHAIN_PROJECT": "my-project"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.langchain_project == "my-project"

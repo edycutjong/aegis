@@ -1,6 +1,26 @@
 """Tests for pure-logic functions in app.agent.nodes."""
 
-from app.agent.nodes import should_retry_sql, should_execute
+import json
+
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
+
+from app.agent.nodes import (
+    should_retry_sql,
+    should_execute,
+    _extract_customer_info,
+    _fuzzy_name_match,
+    _status_warning,
+    should_proceed_after_validation,
+    validate_customer,
+    classify_intent,
+    write_sql,
+    execute_sql,
+    search_docs,
+    propose_action,
+    execute_action,
+    generate_response,
+)
 
 
 class TestShouldRetrySql:
@@ -50,13 +70,6 @@ class TestShouldExecute:
 # ─────────────────────────────────────────────────────────────
 # Customer Validation Tests
 # ─────────────────────────────────────────────────────────────
-
-from app.agent.nodes import (
-    _extract_customer_info,
-    _fuzzy_name_match,
-    _status_warning,
-    should_proceed_after_validation,
-)
 
 
 class TestExtractCustomerInfo:
@@ -145,9 +158,6 @@ class TestStatusWarning:
 # Async Integration Tests — validate_customer (mocked DB)
 # ─────────────────────────────────────────────────────────────
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from app.agent.nodes import validate_customer
 
 
 def _make_state(msg: str) -> dict:
@@ -256,3 +266,447 @@ class TestValidateCustomerAsync:
             result = await validate_customer(_make_state("Customer #5 Emily Davis needs help"))
         assert result["customer_found"] is True
         assert any("SUSPENDED" in t for t in result["thought_log"])
+
+
+# ─────────────────────────────────────────────────────────────
+# Async Node Tests — classify_intent (mocked LLM)
+# ─────────────────────────────────────────────────────────────
+
+
+def _mock_llm_response(content: str, input_tokens=100, output_tokens=50):
+    """Create a mock LLM response with usage metadata."""
+    mock = MagicMock()
+    mock.content = content
+    mock.usage_metadata = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
+    return mock
+
+
+def _make_full_state(msg: str, thread_id: str = "test-thread") -> dict:
+    """Create a full AgentState dict for testing."""
+    return {
+        "user_message": msg,
+        "thread_id": thread_id,
+        "thought_log": [],
+    }
+
+
+class TestClassifyIntentAsync:
+    """Test classify_intent with mocked LLM."""
+
+    @pytest.mark.asyncio
+    async def test_successful_classification(self):
+        mock_response = _mock_llm_response('{"intent": "billing", "confidence": 0.95}')
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await classify_intent(_make_full_state("I was charged twice"))
+
+        assert result["intent"] == "billing"
+        assert result["intent_confidence"] == 0.95
+
+    @pytest.mark.asyncio
+    async def test_json_parse_error_fallback(self):
+        mock_response = _mock_llm_response("something unparseable")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await classify_intent(_make_full_state("random"))
+
+        assert result["intent"] == "general"
+        assert result["intent_confidence"] == 0.3
+
+    @pytest.mark.asyncio
+    async def test_tracks_tokens(self):
+        mock_response = _mock_llm_response('{"intent": "technical", "confidence": 0.8}')
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_llm.model_name = "llama-3.1-8b-instant"
+
+        mock_metrics = MagicMock()
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await classify_intent(_make_full_state("Server is slow", "t1"))
+
+        mock_metrics.add_step.assert_called_once()
+
+
+# ─────────────────────────────────────────────────────────────
+# Async Node Tests — write_sql (mocked LLM)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestWriteSqlAsync:
+    """Test write_sql with mocked LLM."""
+
+    @pytest.mark.asyncio
+    async def test_generates_sql(self):
+        mock_response = _mock_llm_response("SELECT * FROM customers WHERE id = 8 LIMIT 20")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("Customer #8 billing issue")
+        state["intent"] = "billing"
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await write_sql(state)
+
+        assert "SELECT" in result["sql_query"]
+
+    @pytest.mark.asyncio
+    async def test_includes_error_context_on_retry(self):
+        mock_response = _mock_llm_response("SELECT * FROM customers LIMIT 20")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("Customer issue")
+        state["intent"] = "billing"
+        state["sql_error"] = "relation 'users' does not exist"
+        state["sql_query"] = "SELECT * FROM users"
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            await write_sql(state)
+
+        # LLM should have been called with the error context
+        call_args = mock_llm.ainvoke.call_args[0][0]
+        system_msg = call_args[0].content
+        assert "relation" in system_msg or "error" in system_msg.lower()
+
+
+# ─────────────────────────────────────────────────────────────
+# Async Node Tests — execute_sql (mocked DB)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestExecuteSqlAsync:
+    """Test execute_sql with mocked Supabase."""
+
+    @pytest.mark.asyncio
+    async def test_success(self):
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": [{"id": 8, "name": "David"}]
+        })
+
+        state = _make_full_state("query")
+        state["sql_query"] = "SELECT * FROM customers WHERE id = 8"
+
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+            result = await execute_sql(state)
+
+        assert result["sql_result"] == [{"id": 8, "name": "David"}]
+        assert result["sql_error"] == ""
+
+    @pytest.mark.asyncio
+    async def test_failure_increments_retry(self):
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": False,
+            "error": "relation does not exist",
+            "status_code": 400
+        })
+
+        state = _make_full_state("query")
+        state["sql_query"] = "SELECT * FROM nonexistent"
+        state["sql_retry_count"] = 1
+
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+            result = await execute_sql(state)
+
+        assert result["sql_result"] == []
+        assert result["sql_retry_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_query(self):
+        state = _make_full_state("query")
+        state["sql_query"] = ""
+
+        result = await execute_sql(state)
+        assert result["sql_error"] == "No SQL query generated"
+
+    @pytest.mark.asyncio
+    async def test_error_json_string(self):
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": False,
+            "error": '{"message": "permission denied"}',
+        })
+
+        state = _make_full_state("query")
+        state["sql_query"] = "SELECT 1"
+
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+            result = await execute_sql(state)
+
+        assert "permission denied" in result["thought_log"][-1]
+
+    @pytest.mark.asyncio
+    async def test_error_dict(self):
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": False,
+            "error": {"message": "column not found"},
+        })
+
+        state = _make_full_state("query")
+        state["sql_query"] = "SELECT bad_col FROM customers"
+
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+            result = await execute_sql(state)
+
+        assert "column not found" in result["thought_log"][-1]
+
+
+# ─────────────────────────────────────────────────────────────
+# Async Node Tests — search_docs (mocked DB)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestSearchDocsAsync:
+    """Test search_docs with mocked Supabase."""
+
+    @pytest.mark.asyncio
+    async def test_docs_found(self):
+        mock_db = MagicMock()
+        mock_db.search_docs = AsyncMock(return_value=[
+            {"title": "Refund Policy", "category": "billing", "content": "Refunds are processed within 5 business days."}
+        ])
+
+        state = _make_full_state("refund question")
+        state["intent"] = "billing"
+
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+            result = await search_docs(state)
+
+        assert "Refund Policy" in result["docs_context"]
+        assert result["relevant_docs"] == ["Refund Policy"]
+
+    @pytest.mark.asyncio
+    async def test_no_docs_found(self):
+        mock_db = MagicMock()
+        mock_db.search_docs = AsyncMock(return_value=[])
+
+        state = _make_full_state("obscure question")
+        state["intent"] = "general"
+
+        with patch("app.agent.nodes.get_supabase", return_value=mock_db):
+            result = await search_docs(state)
+
+        assert "No internal documentation" in result["docs_context"]
+        assert result["relevant_docs"] == []
+
+
+# ─────────────────────────────────────────────────────────────
+# Async Node Tests — propose_action (mocked LLM)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestProposeActionAsync:
+    """Test propose_action with mocked LLM."""
+
+    @pytest.mark.asyncio
+    async def test_valid_proposal(self):
+        action_json = json.dumps({
+            "type": "refund",
+            "amount": 29.99,
+            "customer_id": 8,
+            "customer_name": "David Martinez",
+            "description": "Refund duplicate charge",
+            "reason": "Customer was charged twice",
+        })
+        mock_response = _mock_llm_response(action_json)
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("I was double charged")
+        state["intent"] = "billing"
+        state["sql_result"] = [{"id": 8, "name": "David Martinez", "amount": 29.99}]
+        state["docs_context"] = "Refund policy..."
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["type"] == "refund"
+        assert result["proposed_action"]["customer_id"] == 8
+
+    @pytest.mark.asyncio
+    async def test_no_customer_forces_escalate(self):
+        """If no valid customer in SQL, refund should be forced to escalate."""
+        action_json = json.dumps({
+            "type": "refund",
+            "amount": 50.0,
+            "customer_id": 999,
+            "customer_name": "Fake Person",
+            "description": "Refund request",
+            "reason": "Test",
+        })
+        mock_response = _mock_llm_response(action_json)
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("refund please")
+        state["intent"] = "billing"
+        state["sql_result"] = []  # No customer found
+        state["docs_context"] = ""
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["type"] == "escalate"
+
+    @pytest.mark.asyncio
+    async def test_json_parse_error_escalates(self):
+        mock_response = _mock_llm_response("I think we should refund them")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("refund")
+        state["intent"] = "billing"
+        state["sql_result"] = []
+        state["docs_context"] = ""
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["type"] == "escalate"
+
+
+# ─────────────────────────────────────────────────────────────
+# Async Node Tests — execute_action
+# ─────────────────────────────────────────────────────────────
+
+
+class TestExecuteActionAsync:
+    """Test execute_action for all action types."""
+
+    @pytest.mark.asyncio
+    async def test_refund(self):
+        state = _make_full_state("refund")
+        state["proposed_action"] = {"type": "refund", "amount": 29.99, "customer_name": "David"}
+
+        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "29.99" in result["execution_result"]
+        assert "David" in result["execution_result"]
+
+    @pytest.mark.asyncio
+    async def test_credit(self):
+        state = _make_full_state("credit")
+        state["proposed_action"] = {"type": "credit", "amount": 10.0, "customer_name": "Alice"}
+
+        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "credit" in result["execution_result"].lower()
+
+    @pytest.mark.asyncio
+    async def test_escalate(self):
+        state = _make_full_state("escalate")
+        state["proposed_action"] = {"type": "escalate", "customer_name": "Bob"}
+
+        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "escalated" in result["execution_result"].lower()
+
+    @pytest.mark.asyncio
+    async def test_resolve(self):
+        state = _make_full_state("resolve")
+        state["proposed_action"] = {"type": "resolve"}
+
+        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "resolved" in result["execution_result"].lower()
+
+    @pytest.mark.asyncio
+    async def test_tier_change(self):
+        state = _make_full_state("tier change")
+        state["proposed_action"] = {"type": "tier_change", "customer_name": "Charlie"}
+
+        with patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = MagicMock()
+            result = await execute_action(state)
+
+        assert "Charlie" in result["execution_result"]
+
+
+# ─────────────────────────────────────────────────────────────
+# Async Node Tests — generate_response (mocked LLM)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestGenerateResponseAsync:
+    """Test generate_response with mocked LLM."""
+
+    @pytest.mark.asyncio
+    async def test_llm_generation(self):
+        mock_response = _mock_llm_response("Your refund has been processed.")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("double charge")
+        state["intent"] = "billing"
+        state["proposed_action"] = {"description": "Refund $29.99"}
+        state["approval_status"] = "approved"
+        state["execution_result"] = "Refund processed"
+        state["sql_result"] = [{"id": 1}]
+        state["customer_found"] = True
+
+        with patch("app.agent.nodes.get_model", return_value=mock_llm), \
+             patch("app.agent.nodes.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await generate_response(state)
+
+        assert result["final_response"] == "Your refund has been processed."
+
+    @pytest.mark.asyncio
+    async def test_early_return_for_validation_failure(self):
+        """When validate_customer already set final_response, skip LLM."""
+        state = _make_full_state("Customer #999 needs help")
+        state["customer_found"] = False
+        state["final_response"] = "Customer not found"
+
+        result = await generate_response(state)
+
+        assert "final_response" not in result  # Should not overwrite
+        assert "skipping llm generation" in result["thought_log"][-1].lower()
+
+    @pytest.mark.asyncio
+    async def test_zero_records_path(self):
+        """When SQL returned 0 records, generate clear message without LLM."""
+        state = _make_full_state("Check billing")
+        state["sql_result"] = []
+        state["sql_error"] = None
+        state["customer_found"] = True
+
+        result = await generate_response(state)
+
+        assert "0 results" in result["final_response"]
+        assert "No records" in result["thought_log"][-1]
+

@@ -4,7 +4,7 @@
 
 > A multi-agent AI system that acts as a Tier-2 Support Engineer. Investigates complex issues via SQL + documentation, proposes financial/technical actions, and **waits for human approval** before executing.
 
-![Architecture](docs/architecture.png)
+
 
 ## ✨ Key Features
 
@@ -54,7 +54,7 @@
 ### 1. Clone & Setup
 
 ```bash
-git clone https://github.com/edycudev/aegis.git
+git clone https://github.com/edycutjong/aegis.git
 cd aegis
 ```
 
@@ -107,7 +107,41 @@ Visit `http://localhost:3000` and submit a support ticket.
 - **Database:** Supabase (PostgreSQL)
 - **Cache:** Redis
 - **LLMs:** Groq/Llama-3 (fast), GPT-4o/Claude (complex), Gemini (fallback)
-- **Observability:** Built-in token + cost tracking
+- **Observability:** LangSmith tracing + built-in token/cost tracking
+
+## 🔭 Observability
+
+Every LangGraph run produces a full trace in [LangSmith](https://smith.langchain.com/) showing the complete pipeline with token counts and latency per step:
+
+```
+classify_intent → validate_customer → write_sql → execute_sql
+  → search_docs → propose_action → await_approval → execute_action → generate_response
+```
+
+### Setup
+
+1. Create a free account at [smith.langchain.com](https://smith.langchain.com/)
+2. Get your API key from **Settings → API Keys**
+3. Add to your `backend/.env`:
+
+```bash
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_...
+LANGCHAIN_PROJECT=aegis
+```
+
+4. Verify connectivity:
+
+```bash
+curl http://localhost:8000/api/tracing-status
+# → {"enabled": true, "project": "aegis", "connected": true}
+```
+
+### What's Traced
+
+- **Node-level spans** via `@traceable` decorators on all agent nodes
+- **LLM calls** auto-traced by LangChain (input/output, token counts, model name)
+- **Graph execution** with `run_name="aegis-support-workflow"` for easy filtering
 
 ## 📄 License
 

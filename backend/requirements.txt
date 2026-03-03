@@ -23,6 +23,9 @@ pydantic==2.10.4
 httpx==0.28.1
 sse-starlette==2.2.1
 
+# Observability
+langsmith
+
 # Testing
 pytest==8.3.4
 pytest-cov==6.0.0

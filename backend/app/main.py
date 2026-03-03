@@ -5,6 +5,7 @@ The main entry point for the Autonomous Enterprise Action Engine.
 
 import asyncio
 import json
+import os
 import uuid
 from contextlib import asynccontextmanager
 
@@ -26,7 +27,18 @@ from langgraph.types import Command
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize Redis cache on startup, close on shutdown."""
+    """Initialize Redis cache and LangSmith tracing on startup."""
+    settings = get_settings()
+    
+    # Initialize LangSmith tracing — sets env vars that LangChain reads automatically
+    if settings.langchain_tracing_v2 and settings.langchain_api_key:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = settings.langchain_api_key
+        os.environ["LANGCHAIN_PROJECT"] = settings.langchain_project
+        print(f"🔭 LangSmith tracing enabled → project: {settings.langchain_project}")
+    else:
+        print("🔭 LangSmith tracing disabled (no API key or LANGCHAIN_TRACING_V2 != true)")
+    
     cache = await get_cache()
     print("🛡️  Aegis backend started")
     yield
@@ -346,6 +358,28 @@ async def get_metrics():
     return {
         "agent_metrics": tracker.get_aggregate_stats(),
         "cache_metrics": cache.get_stats(),
+    }
+
+
+@app.get("/api/tracing-status")
+async def tracing_status():
+    """Check LangSmith tracing status and connectivity."""
+    settings = get_settings()
+    enabled = settings.langchain_tracing_v2 and bool(settings.langchain_api_key)
+    
+    connected = False
+    if enabled:
+        try:
+            from langsmith import Client
+            client = Client()
+            connected = client.info is not None
+        except Exception:
+            connected = False
+    
+    return {
+        "enabled": enabled,
+        "project": settings.langchain_project,
+        "connected": connected,
     }
 
 

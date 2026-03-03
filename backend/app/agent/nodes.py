@@ -8,6 +8,7 @@ Together they form the Tier-2 Support Engineer pipeline:
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
+from langsmith import traceable
 
 from app.agent.state import AgentState
 from app.routing.model_router import get_model
@@ -19,6 +20,7 @@ from app.observability.tracker import get_tracker
 # Node 1: Intent Classification
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="classify_intent")
 async def classify_intent(state: AgentState) -> dict:
     """Classify the user's support ticket into a category.
     
@@ -148,6 +150,7 @@ def _status_warning(customer: dict) -> str | None:
     return None
 
 
+@traceable(name="validate_customer")
 async def validate_customer(state: AgentState) -> dict:
     """Validate customer identity before investigation.
     
@@ -317,6 +320,7 @@ def should_proceed_after_validation(state: AgentState) -> str:
 # Node 2: SQL Query Generation
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="write_sql")
 async def write_sql(state: AgentState) -> dict:
     """Generate a SQL query to investigate the user's issue.
     
@@ -380,6 +384,7 @@ Respond with ONLY the SQL query, no explanation, no markdown fences."""),
 # Node 3: SQL Execution (with self-healing)
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="execute_sql")
 async def execute_sql(state: AgentState) -> dict:
     """Execute the generated SQL against Supabase.
     
@@ -452,6 +457,7 @@ def should_retry_sql(state: AgentState) -> str:
 # Node 4: Documentation Search
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="search_docs")
 async def search_docs(state: AgentState) -> dict:
     """Search internal documentation for relevant policies/procedures."""
     db = get_supabase()
@@ -486,6 +492,7 @@ async def search_docs(state: AgentState) -> dict:
 # Node 5: Action Proposal (triggers HITL)
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="propose_action")
 async def propose_action(state: AgentState) -> dict:
     """Synthesize all findings and propose an action.
     
@@ -609,6 +616,7 @@ Propose the best action:"""),
 # Node 6: HITL Interrupt — Wait for Human Approval
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="await_approval")
 async def await_approval(state: AgentState) -> dict:
     """Pause the workflow and wait for human approval.
     
@@ -665,6 +673,7 @@ def should_execute(state: AgentState) -> str:
 # Node 7: Action Execution (mock)
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="execute_action")
 async def execute_action(state: AgentState) -> dict:
     """Execute the approved action (mock implementation).
     
@@ -702,6 +711,7 @@ async def execute_action(state: AgentState) -> dict:
 # Node 8: Final Response Generation
 # ─────────────────────────────────────────────────────────────
 
+@traceable(name="generate_response")
 async def generate_response(state: AgentState) -> dict:
     """Generate a final human-readable summary response."""
     

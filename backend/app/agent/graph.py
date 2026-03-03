@@ -98,7 +98,7 @@ def build_agent_graph():
     
     # Compile with checkpointer for HITL state persistence
     checkpointer = MemorySaver()
-    graph = builder.compile(checkpointer=checkpointer)
+    graph = builder.compile(checkpointer=checkpointer, name="aegis-support-workflow")
     
     return graph
 

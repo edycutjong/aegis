@@ -31,6 +31,11 @@ class Settings:
     # CORS
     frontend_url: str = "http://localhost:3000"
     
+    # LangSmith (Observability)
+    langchain_tracing_v2: bool = False
+    langchain_api_key: str = ""
+    langchain_project: str = "aegis"
+    
     # App
     debug: bool = False
 
@@ -52,6 +57,11 @@ class Settings:
         self.smart_model = os.getenv("SMART_MODEL", self.smart_model)
         
         self.frontend_url = os.getenv("FRONTEND_URL", self.frontend_url)
+        
+        self.langchain_tracing_v2 = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+        self.langchain_api_key = os.getenv("LANGCHAIN_API_KEY", self.langchain_api_key)
+        self.langchain_project = os.getenv("LANGCHAIN_PROJECT", self.langchain_project)
+        
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
 
 
