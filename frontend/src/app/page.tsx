@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import ThoughtStream from "@/components/ThoughtStream";
 import ApprovalModal from "@/components/ApprovalModal";
 import MetricsPanel from "@/components/MetricsPanel";
+import TicketHistory from "@/components/TicketHistory";
+import { useTicketHistory } from "@/hooks/useTicketHistory";
 import {
     startChat,
     connectSSE,
@@ -102,6 +104,10 @@ export default function Dashboard() {
     // Tab state for demo presets
     const [activeTab, setActiveTab] = useState<"intents" | "edge">("intents");
 
+    // Ticket history
+    const { entries: historyEntries, addEntry: addHistoryEntry, clearHistory } = useTicketHistory();
+    const lastRecordedStatus = useRef<string>("idle");
+
     // Fetch metrics periodically
     useEffect(() => {
         const fetchMetrics = async () => {
@@ -116,6 +122,28 @@ export default function Dashboard() {
         const interval = setInterval(fetchMetrics, 5000);
         return () => clearInterval(interval);
     }, []);
+
+    // Record ticket to history when status transitions to completed/error
+    useEffect(() => {
+        if (
+            (status === "completed" || status === "error") &&
+            lastRecordedStatus.current !== status &&
+            originalMessage.trim()
+        ) {
+            const preview =
+                status === "completed" && finalResponse
+                    ? finalResponse.slice(0, 100)
+                    : status === "error" && thoughts.length > 0
+                        ? thoughts[thoughts.length - 1].slice(0, 100)
+                        : "";
+            addHistoryEntry({
+                message: originalMessage,
+                status: status as "completed" | "error",
+                responsePreview: preview,
+            });
+        }
+        lastRecordedStatus.current = status;
+    }, [status, originalMessage, finalResponse, thoughts, addHistoryEntry]);
 
     // Submit a support ticket
     const handleSubmit = useCallback(async (msg?: string) => {
@@ -305,6 +333,13 @@ export default function Dashboard() {
                             ))}
                         </div>
                     </div>
+
+                    {/* Ticket History */}
+                    <TicketHistory
+                        entries={historyEntries}
+                        onSelect={setMessage}
+                        onClear={clearHistory}
+                    />
 
                     {/* Text Input */}
                     <div className="flex-1 flex flex-col">
