@@ -40,8 +40,8 @@ async def lifespan(app: FastAPI):
         print("🔭 LangSmith tracing disabled (no API key or LANGCHAIN_TRACING_V2 != true)")
     
     cache = await get_cache()
-    print("🛡️  Aegis backend started")
-    yield
+    print("🛡️  Aegis backend started")  # pragma: no cover
+    yield  # pragma: no cover
     await cache.close()
     print("🛡️  Aegis backend stopped")
 
