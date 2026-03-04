@@ -13,7 +13,9 @@ const STORAGE_KEY = "aegis-ticket-history";
 const MAX_ENTRIES = 10;
 
 function loadEntries(): TicketHistoryEntry[] {
+    /* v8 ignore start: unreachable in jsdom */
     if (typeof window === "undefined") return [];
+    /* v8 ignore stop */
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         return raw ? JSON.parse(raw) : [];

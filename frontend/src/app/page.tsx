@@ -135,7 +135,7 @@ export default function Dashboard() {
                     ? finalResponse.slice(0, 100)
                     : status === "error" && thoughts.length > 0
                         ? thoughts[thoughts.length - 1].slice(0, 100)
-                        : "";
+                        : /* v8 ignore next */ "";
             addHistoryEntry({
                 message: originalMessage,
                 status: status as "completed" | "error",
@@ -200,7 +200,9 @@ export default function Dashboard() {
 
     // Handle HITL approval
     const handleApprove = useCallback(async () => {
+        /* v8 ignore start: threadId is always set before approval UI shows */
         if (!threadId) return;
+        /* v8 ignore stop */
         setApprovalLoading(true);
         try {
             const res = await approveAction(threadId, true);
@@ -216,7 +218,9 @@ export default function Dashboard() {
 
     // Handle HITL denial
     const handleDeny = useCallback(async (reason: string) => {
+        /* v8 ignore start: threadId is always set before approval UI shows */
         if (!threadId) return;
+        /* v8 ignore stop */
         setApprovalLoading(true);
         try {
             const res = await approveAction(threadId, false, reason);

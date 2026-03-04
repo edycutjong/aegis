@@ -15,6 +15,7 @@ env/
 .coverage
 .coverage.*
 htmlcov/
+coverage/
 coverage.xml
 
 # Node

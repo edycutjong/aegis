@@ -366,5 +366,88 @@ describe("MetricsPanel", () => {
         expect(screen.getByText("15%")).toBeInTheDocument();
         expect(screen.getByText("5%")).toBeInTheDocument();
     });
+
+    // ── High Cache Hit Rate Color ──
+    it("shows green color when cache hit rate exceeds 50%", () => {
+        const highHitMetrics: Metrics = {
+            ...FULL_METRICS,
+            cache_metrics: {
+                ...FULL_METRICS.cache_metrics,
+                hit_rate_percent: 75.0,
+            },
+        };
+        render(<MetricsPanel metrics={highHitMetrics} />);
+        const hitRateEl = screen.getByText("75.0%");
+        expect(hitRateEl).toHaveStyle({ color: "#4ade80" });
+    });
+
+    // ── timeAgo: stale hours (> 3 hours) ──
+    it("shows stale warning for db data older than 3 hours", async () => {
+        const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+        vi.mocked(getDbStatus).mockResolvedValue({
+            customers: { count: 5, latest: fiveHoursAgo },
+        });
+
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        await waitFor(() => {
+            expect(screen.getByText("Customers")).toBeInTheDocument();
+        });
+        expect(screen.getByText(/5h ago/)).toBeInTheDocument();
+        // Stale should show ⚠ icon
+        expect(screen.getByText(/⚠/)).toBeInTheDocument();
+    });
+
+    // ── timeAgo: minutes branch ──
+    it("shows minutes-old freshness when db data is minutes old", async () => {
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        vi.mocked(getDbStatus).mockResolvedValue({
+            customers: { count: 5, latest: tenMinutesAgo },
+        });
+
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        await waitFor(() => {
+            expect(screen.getByText("Customers")).toBeInTheDocument();
+        });
+        expect(screen.getByText(/10m ago/)).toBeInTheDocument();
+    });
+
+    // ── getTableData returning undefined rows ──
+    it("handles getTableData returning no rows property", async () => {
+        const user = userEvent.setup();
+        vi.mocked(getDbStatus).mockResolvedValue({
+            customers: { count: 3, latest: new Date().toISOString() },
+        });
+        vi.mocked(getTableData).mockResolvedValue({
+            table: "customers",
+            // rows is undefined — tests the `data.rows || []` fallback
+        } as any);
+
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+        await waitFor(() => {
+            expect(screen.getByText("Customers")).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByText("Customers"));
+
+        await waitFor(() => {
+            expect(screen.getByText("No records")).toBeInTheDocument();
+        });
+    });
+
+    // ── Clear cache without onCacheCleared ──
+    it("clears cache successfully when onCacheCleared is not provided", async () => {
+        const user = userEvent.setup();
+        vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 2 });
+
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        await user.click(screen.getByTitle("Clear cache"));
+
+        await waitFor(() => {
+            expect(screen.getByText("Cleared! (2 keys)")).toBeInTheDocument();
+        });
+    });
 });
 

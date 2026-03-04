@@ -135,4 +135,17 @@ describe("useTicketHistory", () => {
 
         Storage.prototype.setItem = originalSet;
     });
+
+    it("returns empty entries when localStorage.getItem throws (SSR-like)", () => {
+        // Simulates the SSR path — when window/localStorage is inaccessible,
+        // loadEntries() catches and returns []
+        const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+            throw new Error("window is not defined");
+        });
+
+        const { result } = renderHook(() => useTicketHistory());
+        expect(result.current.entries).toEqual([]);
+
+        spy.mockRestore();
+    });
 });

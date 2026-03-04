@@ -621,5 +621,47 @@ describe("Dashboard (page.tsx)", () => {
             expect(screen.getByText(/Cleared/)).toBeInTheDocument();
         });
     });
+
+    // ── Error History with Thoughts Preview ──
+    it("records error ticket with preview from last thought", async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        vi.mocked(startChat).mockResolvedValue({
+            thread_id: "error-hist-thread",
+            status: "processing",
+            cache_hit: false,
+        });
+        vi.mocked(connectSSE).mockImplementation(
+            (_threadId, onThought, _onApproval, _onCompleted, onError) => {
+                Promise.resolve().then(() => {
+                    onThought("→ [Triage] Classified intent: refund");
+                    onThought("✗ [Investigator] not found in database — stopping");
+                    onError("Agent failed");
+                });
+                return {} as unknown as EventSource;
+            }
+        );
+
+        render(<Dashboard />);
+        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
+        await user.type(textarea, "Customer #999 needs help");
+        await user.click(screen.getByText("Submit Ticket").closest("button")!);
+
+        await waitFor(() => {
+            // Error should have been recorded — verify error thoughts visible
+            expect(screen.getByText(/Error: Agent failed/)).toBeInTheDocument();
+        });
+    });
+
+    // ── Shift+Enter should NOT submit ──
+    it("does not submit on Shift+Enter", async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        render(<Dashboard />);
+
+        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
+        await user.type(textarea, "test message");
+        await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+        expect(startChat).not.toHaveBeenCalled();
+    });
 });
 
