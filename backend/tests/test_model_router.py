@@ -218,7 +218,7 @@ class TestGetModelForIntent:
     def test_groq_failure_falls_back_to_gemini(self, mock_create, mock_settings):
         """If Groq model creation fails, fall back to Gemini."""
         mock_create.side_effect = [Exception("Groq API key missing"), MagicMock()]
-        result = get_model_for_intent("generate_response", "groq")
+        _result = get_model_for_intent("generate_response", "groq")
         assert mock_create.call_count == 2
         assert mock_create.call_args_list[0].args[0] == INTENT_MODEL_MAP["groq"]
         assert mock_create.call_args_list[1].args[0] == INTENT_MODEL_MAP["gemini"]
