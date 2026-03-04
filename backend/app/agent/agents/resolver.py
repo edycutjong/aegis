@@ -16,7 +16,7 @@ from langgraph.types import interrupt
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model
+from app.routing.model_router import get_model_for_intent
 from app.observability.tracker import get_tracker
 
 
@@ -38,7 +38,7 @@ async def propose_action(state: AgentState, config: dict | None = None) -> dict:
     
     Uses the SMART model for critical reasoning.
     """
-    llm = get_model("propose_action")
+    llm = get_model_for_intent("propose_action", state.get("model_provider"))
     
     sql_data = json.dumps(state.get("sql_result", []), indent=2, default=str)
     docs = state.get("docs_context", "None")
@@ -289,7 +289,7 @@ async def generate_response(state: AgentState, config: dict | None = None) -> di
             ],
         }
     
-    llm = get_model("generate_response")
+    llm = get_model_for_intent("generate_response", state.get("model_provider"))
     
     action = state.get("proposed_action", {})
     approved = state.get("approval_status") == "approved"

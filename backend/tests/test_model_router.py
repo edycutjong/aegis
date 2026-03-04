@@ -5,7 +5,9 @@ from unittest.mock import patch, MagicMock
 from app.routing.model_router import (
     MODEL_PRICING,
     TASK_MODEL_MAP,
+    INTENT_MODEL_MAP,
     get_model,
+    get_model_for_intent,
     get_cost_per_token,
     calculate_cost,
     _create_model,
@@ -181,3 +183,51 @@ class TestCreateModel:
         _create_model("o3-mini")
         mock_cls.assert_called_once()
         assert mock_cls.call_args.kwargs["model"] == "o3-mini"
+
+
+# ─────────────────────────────────────────────────────────────
+# get_model_for_intent (intent-based routing)
+# ─────────────────────────────────────────────────────────────
+
+class TestGetModelForIntent:
+    """Test intent-aware model routing with Groq/Gemini split."""
+
+    @patch("app.routing.model_router._create_model")
+    def test_simple_intent_routes_to_groq(self, mock_create, mock_settings):
+        """model_provider='groq' should route to Groq Llama-3.3-70b."""
+        mock_create.return_value = MagicMock()
+        get_model_for_intent("generate_response", "groq")
+        mock_create.assert_called_once_with(INTENT_MODEL_MAP["groq"])
+
+    @patch("app.routing.model_router._create_model")
+    def test_complex_intent_routes_to_gemini(self, mock_create, mock_settings):
+        """model_provider='gemini' should route to Gemini."""
+        mock_create.return_value = MagicMock()
+        get_model_for_intent("propose_action", "gemini")
+        mock_create.assert_called_once_with(INTENT_MODEL_MAP["gemini"])
+
+    @patch("app.routing.model_router._create_model")
+    def test_none_provider_falls_back_to_default(self, mock_create, mock_settings):
+        """When model_provider is None, falls back to standard get_model routing."""
+        mock_create.return_value = MagicMock()
+        get_model_for_intent("classify_intent", None)
+        # Should use the standard FAST_MODEL for classify_intent
+        mock_create.assert_called_once_with("llama-3.1-8b-instant")
+
+    @patch("app.routing.model_router._create_model")
+    def test_groq_failure_falls_back_to_gemini(self, mock_create, mock_settings):
+        """If Groq model creation fails, fall back to Gemini."""
+        mock_create.side_effect = [Exception("Groq API key missing"), MagicMock()]
+        result = get_model_for_intent("generate_response", "groq")
+        assert mock_create.call_count == 2
+        assert mock_create.call_args_list[0].args[0] == INTENT_MODEL_MAP["groq"]
+        assert mock_create.call_args_list[1].args[0] == INTENT_MODEL_MAP["gemini"]
+
+    @patch("app.routing.model_router._create_model")
+    def test_non_routable_task_uses_default(self, mock_create, mock_settings):
+        """Tasks like classify_intent or write_sql bypass intent routing."""
+        mock_create.return_value = MagicMock()
+        get_model_for_intent("write_sql", "groq")
+        # Should use smart model for write_sql, not groq
+        mock_create.assert_called_once_with("gpt-4.1")
+

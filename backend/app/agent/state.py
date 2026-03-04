@@ -58,6 +58,9 @@ class AgentState(TypedDict, total=False):
     # Multi-agent tracking
     active_agent: str  # Which agent is currently working (Triage, Investigator, Knowledge, Resolution)
     
+    # Model routing (set by classifier based on intent)
+    model_provider: Literal["groq", "gemini"]  # groq = simple intents, gemini = complex
+    
     # Observability
     thought_log: list[str]
     token_usage: list[TokenUsage]

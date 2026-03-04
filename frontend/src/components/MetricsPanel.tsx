@@ -202,42 +202,90 @@ export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelPr
                 </div>
 
                 {/* Model Distribution */}
-                {agent?.model_distribution && modelTotal > 0 && (
-                    <div className="space-y-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
-                            Model Usage
-                        </h3>
+                {agent?.model_distribution && modelTotal > 0 && (() => {
+                    // Compute provider-level aggregation
+                    const providers: Record<string, { count: number; color: string; icon: string }> = {};
+                    const providerMap: Record<string, { label: string; color: string; icon: string }> = {
+                        gemini: { label: "Gemini", color: "#4285f4", icon: "🧠" },
+                        llama: { label: "Groq", color: "#f97316", icon: "⚡" },
+                        gpt: { label: "OpenAI", color: "#10b981", icon: "🟢" },
+                        o: { label: "OpenAI", color: "#10b981", icon: "🟢" },
+                        claude: { label: "Anthropic", color: "#d946ef", icon: "🟣" },
+                    };
+
+                    for (const [model, count] of Object.entries(agent.model_distribution)) {
+                        const prefix = Object.keys(providerMap).find((p) => model.startsWith(p)) || "other";
+                        const meta = providerMap[prefix] || { label: "Other", color: "#94a3b8", icon: "⬜" };
+                        const key = meta.label;
+                        if (!providers[key]) providers[key] = { count: 0, color: meta.color, icon: meta.icon };
+                        providers[key].count += count;
+                    }
+
+                    return (
                         <div className="space-y-2">
-                            {Object.entries(agent.model_distribution).map(([model, count]) => {
-                                const pct = ((count / modelTotal) * 100).toFixed(0);
-                                const isExpensive = model.includes("gpt-4o") || model.includes("claude") || model.includes("pro");
-                                return (
-                                    <div key={model} className="metric-card py-2 px-3">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-xs font-mono truncate" style={{ color: "var(--aegis-text)" }}>
-                                                {model}
+                            <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
+                                Model Usage
+                            </h3>
+
+                            {/* Provider split bar */}
+                            <div className="metric-card py-2 px-3">
+                                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                    {Object.entries(providers).map(([label, { count, color, icon }]) => {
+                                        const pct = ((count / modelTotal) * 100).toFixed(0);
+                                        return (
+                                            <span key={label} className="flex items-center gap-1 text-xs font-semibold" style={{ color }}>
+                                                {icon} {label} {pct}%
                                             </span>
-                                            <span className="text-xs font-semibold ml-2" style={{ color: isExpensive ? "#fbbf24" : "#4ade80" }}>
-                                                {pct}%
-                                            </span>
+                                        );
+                                    })}
+                                </div>
+                                <div className="w-full h-2 rounded-full flex overflow-hidden" style={{ background: "var(--aegis-border)" }}>
+                                    {Object.entries(providers).map(([label, { count, color }]) => (
+                                        <div
+                                            key={label}
+                                            className="h-full transition-all duration-500"
+                                            style={{
+                                                width: `${((count / modelTotal) * 100).toFixed(1)}%`,
+                                                background: color,
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Per-model breakdown */}
+                            <div className="space-y-2">
+                                {Object.entries(agent.model_distribution).map(([model, count]) => {
+                                    const pct = ((count / modelTotal) * 100).toFixed(0);
+                                    const isExpensive = model.includes("gpt-4o") || model.includes("claude") || model.includes("pro");
+                                    return (
+                                        <div key={model} className="metric-card py-2 px-3">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-xs font-mono truncate" style={{ color: "var(--aegis-text)" }}>
+                                                    {model}
+                                                </span>
+                                                <span className="text-xs font-semibold ml-2" style={{ color: isExpensive ? "#fbbf24" : "#4ade80" }}>
+                                                    {pct}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-1.5 rounded-full" style={{ background: "var(--aegis-border)" }}>
+                                                <div
+                                                    className="h-full rounded-full transition-all duration-500"
+                                                    style={{
+                                                        width: `${pct}%`,
+                                                        background: isExpensive
+                                                            ? "linear-gradient(90deg, #f59e0b, #ef4444)"
+                                                            : "linear-gradient(90deg, #22c55e, #3b82f6)",
+                                                    }}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="w-full h-1.5 rounded-full" style={{ background: "var(--aegis-border)" }}>
-                                            <div
-                                                className="h-full rounded-full transition-all duration-500"
-                                                style={{
-                                                    width: `${pct}%`,
-                                                    background: isExpensive
-                                                        ? "linear-gradient(90deg, #f59e0b, #ef4444)"
-                                                        : "linear-gradient(90deg, #22c55e, #3b82f6)",
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
                 {/* Avg Duration */}
                 <div className="metric-card">

@@ -341,6 +341,38 @@ class TestClassifyIntentAsync:
 
         mock_metrics.add_step.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_simple_intent_adds_groq_indicator(self):
+        """Simple intent should add ⚡ Groq routing indicator to thought_log."""
+        mock_response = _mock_llm_response('{"intent": "billing", "confidence": 0.9}')
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        with patch("app.agent.agents.classifier.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.classifier.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await classify_intent(_make_full_state("Check my balance"))
+
+        assert result["model_provider"] == "groq"
+        assert any("⚡" in t for t in result["thought_log"])
+        assert any("Groq" in t for t in result["thought_log"])
+
+    @pytest.mark.asyncio
+    async def test_complex_intent_adds_gemini_indicator(self):
+        """Complex intent should add 🧠 Gemini routing indicator to thought_log."""
+        mock_response = _mock_llm_response('{"intent": "technical", "confidence": 0.85}')
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        with patch("app.agent.agents.classifier.get_model", return_value=mock_llm), \
+             patch("app.agent.agents.classifier.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await classify_intent(_make_full_state("Server keeps crashing"))
+
+        assert result["model_provider"] == "gemini"
+        assert any("🧠" in t for t in result["thought_log"])
+        assert any("Gemini" in t for t in result["thought_log"])
+
 
 # ─────────────────────────────────────────────────────────────
 # Async Node Tests — write_sql (mocked LLM)
@@ -359,7 +391,7 @@ class TestWriteSqlAsync:
         state = _make_full_state("Customer #8 billing issue")
         state["intent"] = "billing"
 
-        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await write_sql(state)
@@ -377,7 +409,7 @@ class TestWriteSqlAsync:
         state["sql_error"] = "relation 'users' does not exist"
         state["sql_query"] = "SELECT * FROM users"
 
-        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             await write_sql(state)
@@ -539,7 +571,7 @@ class TestProposeActionAsync:
         state["sql_result"] = [{"id": 8, "name": "David Martinez", "amount": 29.99}]
         state["docs_context"] = "Refund policy..."
 
-        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await propose_action(state)
@@ -567,7 +599,7 @@ class TestProposeActionAsync:
         state["sql_result"] = []  # No customer found
         state["docs_context"] = ""
 
-        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await propose_action(state)
@@ -585,7 +617,7 @@ class TestProposeActionAsync:
         state["sql_result"] = []
         state["docs_context"] = ""
 
-        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await propose_action(state)
@@ -736,7 +768,7 @@ class TestGenerateResponseAsync:
         state["sql_result"] = [{"id": 1}]
         state["customer_found"] = True
 
-        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await generate_response(state)
@@ -904,7 +936,7 @@ class TestWriteSqlTokenTracking:
         state["intent"] = "billing"
 
         mock_metrics = MagicMock()
-        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await write_sql(state)
@@ -933,7 +965,7 @@ class TestProposeActionTokenTracking:
         state["docs_context"] = "Refund policy"
 
         mock_metrics = MagicMock()
-        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await propose_action(state)
@@ -960,7 +992,7 @@ class TestGenerateResponseTokenTracking:
         state["customer_found"] = True
 
         mock_metrics = MagicMock()
-        with patch("app.agent.agents.resolver.get_model", return_value=mock_llm), \
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await generate_response(state)

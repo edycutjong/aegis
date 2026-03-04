@@ -66,11 +66,19 @@ Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0
         intent = "general"
         confidence = 0.3
     
+    # Intent-based model routing: simple → Groq, complex → Gemini
+    SIMPLE_INTENTS = {"billing", "general"}
+    is_simple = intent in SIMPLE_INTENTS
+    model_provider = "groq" if is_simple else "gemini"
+    model_label = "⚡ Routed to Groq Llama-3.3" if is_simple else "🧠 Routed to Gemini 2.0 Flash"
+    
     return {
         "intent": intent,
         "intent_confidence": confidence,
+        "model_provider": model_provider,
         "active_agent": AGENT_NAME,
         "thought_log": state.get("thought_log", []) + [
-            f"✓ [{AGENT_NAME}] Classified intent: {intent} (confidence: {confidence:.0%})"
+            f"✓ [{AGENT_NAME}] Classified intent: {intent} (confidence: {confidence:.0%})",
+            model_label,
         ],
     }

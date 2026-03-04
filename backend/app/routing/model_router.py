@@ -35,6 +35,12 @@ TASK_MODEL_MAP = {
     "generate_response": "fast",    # Response formatting → Llama-3 via Groq
 }
 
+# Intent → Model provider routing (set by classifier)
+INTENT_MODEL_MAP = {
+    "groq": "llama-3.3-70b-versatile",     # Simple intents (billing, general)
+    "gemini": "gemini-2.5-flash",           # Complex intents (technical, account)
+}
+
 
 def get_model(task: str, override_model: str | None = None):
     """Get the appropriate LLM for a given task.
@@ -55,6 +61,33 @@ def get_model(task: str, override_model: str | None = None):
         model_name = settings.smart_model if complexity == "smart" else settings.fast_model
     
     return _create_model(model_name)
+
+
+def get_model_for_intent(task: str, model_provider: str | None = None):
+    """Get the appropriate LLM for a task, routed by intent classification.
+    
+    For tasks like 'propose_action' and 'generate_response', uses the
+    model_provider set by the classifier (groq for simple intents,
+    gemini for complex). Falls back to Gemini if Groq is unavailable.
+    
+    Args:
+        task: The agent task name
+        model_provider: 'groq' or 'gemini', set by classify_intent
+    """
+    # Only route downstream agents; classification/SQL keep their defaults
+    routable_tasks = {"propose_action", "generate_response"}
+    
+    if model_provider and task in routable_tasks:
+        model_name = INTENT_MODEL_MAP.get(model_provider)
+        if model_name:
+            try:
+                return _create_model(model_name)
+            except Exception:
+                # Fallback to Gemini if Groq is unavailable
+                return _create_model("gemini-2.5-flash")
+    
+    # Default: use standard task→model routing
+    return get_model(task)
 
 
 def _create_model(model_name: str):

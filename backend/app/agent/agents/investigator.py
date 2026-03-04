@@ -14,7 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model
+from app.routing.model_router import get_model, get_model_for_intent
 from app.db.supabase import get_supabase
 from app.observability.tracker import get_tracker
 
@@ -293,7 +293,7 @@ async def write_sql(state: AgentState, config: dict | None = None) -> dict:
     
     Uses the SMART/EXPENSIVE model — SQL generation is complex.
     """
-    llm = get_model("write_sql")
+    llm = get_model_for_intent("write_sql", state.get("intent"))
     
     error_context = ""
     if state.get("sql_error"):
