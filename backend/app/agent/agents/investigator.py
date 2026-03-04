@@ -8,7 +8,6 @@ Supabase, and implements a self-healing retry loop for failed queries.
 This agent produces the raw evidence that downstream agents use for decisions.
 """
 
-import json
 from difflib import SequenceMatcher
 
 from langchain_core.messages import HumanMessage, SystemMessage
