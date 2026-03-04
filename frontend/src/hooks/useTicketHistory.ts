@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 
 export interface TicketHistoryEntry {
     message: string;
@@ -33,12 +33,7 @@ function persistEntries(entries: TicketHistoryEntry[]) {
 }
 
 export function useTicketHistory() {
-    const [entries, setEntries] = useState<TicketHistoryEntry[]>([]);
-
-    // Load from localStorage on mount
-    useEffect(() => {
-        setEntries(loadEntries());
-    }, []);
+    const [entries, setEntries] = useState<TicketHistoryEntry[]>(loadEntries);
 
     const addEntry = useCallback(
         (entry: Omit<TicketHistoryEntry, "timestamp">) => {

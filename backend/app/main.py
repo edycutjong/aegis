@@ -10,9 +10,6 @@ import uuid
 import warnings
 from contextlib import asynccontextmanager
 
-# Suppress deprecated google.generativeai FutureWarning from langchain-google-genai
-warnings.filterwarnings("ignore", category=FutureWarning, module="langchain_google_genai")
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -24,6 +21,9 @@ from app.cache.semantic import get_cache
 from app.db.supabase import get_supabase
 from app.observability.tracker import get_tracker
 from langgraph.types import Command
+
+# Suppress deprecated google.generativeai FutureWarning from langchain-google-genai
+warnings.filterwarnings("ignore", category=FutureWarning, module="langchain_google_genai")
 
 
 # ─────────────────────────────────────────────────────────────

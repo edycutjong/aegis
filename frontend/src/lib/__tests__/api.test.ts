@@ -187,7 +187,6 @@ describe("api.ts", () => {
     describe("connectSSE", () => {
         let listeners: Record<string, (e: unknown) => void>;
         let mockES: { addEventListener: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let savedES: any;
 
         beforeEach(() => {
