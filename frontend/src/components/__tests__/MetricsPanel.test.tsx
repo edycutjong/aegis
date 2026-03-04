@@ -289,5 +289,82 @@ describe("MetricsPanel", () => {
         });
         expect(screen.getByText(/3d ago/)).toBeInTheDocument();
     });
+
+    // ── Amount Formatting in Table ──
+    it("formats amount column with dollar sign in billing table", async () => {
+        const user = userEvent.setup();
+        vi.mocked(getDbStatus).mockResolvedValue({
+            billing: { count: 2, latest: new Date().toISOString() },
+        });
+        vi.mocked(getTableData).mockResolvedValue({
+            table: "billing",
+            rows: [
+                { id: 1, customer_id: 8, amount: 49.0, type: "charge" },
+                { id: 2, customer_id: 3, amount: 199.99, type: "refund" },
+            ],
+        });
+
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+        await waitFor(() => {
+            expect(screen.getByText("Billing")).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByText("Billing"));
+        await waitFor(() => {
+            expect(screen.getByText("$49.00")).toBeInTheDocument();
+        });
+        expect(screen.getByText("$199.99")).toBeInTheDocument();
+        expect(screen.getByText("charge")).toBeInTheDocument();
+    });
+
+    // ── Truncate long values ──
+    it("truncates long cell values in table data", async () => {
+        const user = userEvent.setup();
+        vi.mocked(getDbStatus).mockResolvedValue({
+            customers: { count: 1, latest: new Date().toISOString() },
+        });
+        const longName = "A".repeat(50); // > 32 chars
+        vi.mocked(getTableData).mockResolvedValue({
+            table: "customers",
+            rows: [{ id: 1, name: longName, email: "a@b.com" }],
+        });
+
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+        await waitFor(() => {
+            expect(screen.getByText("Customers")).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByText("Customers"));
+        await waitFor(() => {
+            // Truncated to 32 chars + "…"
+            const truncated = "A".repeat(32) + "\u2026";
+            expect(screen.getByText(truncated)).toBeInTheDocument();
+        });
+    });
+
+    // ── Expensive model color ──
+    it("renders expensive model labels with amber color", () => {
+        const metricsWithExpensiveModels: Metrics = {
+            ...FULL_METRICS,
+            agent_metrics: {
+                ...FULL_METRICS.agent_metrics!,
+                model_distribution: {
+                    "gemini-2.0-flash": 80,
+                    "claude-3-5-sonnet": 15,
+                    "gpt-4o": 5,
+                },
+            },
+        };
+        render(<MetricsPanel metrics={metricsWithExpensiveModels} />);
+
+        // The expensive models should be rendered with amber color
+        expect(screen.getByText("gemini-2.0-flash")).toBeInTheDocument();
+        expect(screen.getByText("claude-3-5-sonnet")).toBeInTheDocument();
+        expect(screen.getByText("gpt-4o")).toBeInTheDocument();
+        // Check percentages
+        expect(screen.getByText("80%")).toBeInTheDocument();
+        expect(screen.getByText("15%")).toBeInTheDocument();
+        expect(screen.getByText("5%")).toBeInTheDocument();
+    });
 });
 

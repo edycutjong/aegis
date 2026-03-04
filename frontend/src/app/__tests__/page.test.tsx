@@ -32,7 +32,7 @@ vi.mock("@/lib/api", () => ({
     getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
 }));
 
-import { startChat, connectSSE, approveAction } from "@/lib/api";
+import { startChat, connectSSE, approveAction, getMetrics, clearCache } from "@/lib/api";
 
 describe("Dashboard (page.tsx)", () => {
     beforeEach(() => {
@@ -577,6 +577,49 @@ describe("Dashboard (page.tsx)", () => {
             expect(screen.getByText(/Identifying customer/)).toBeInTheDocument();
         });
         expect(screen.getByText(/Checking billing records/)).toBeInTheDocument();
+    });
+
+    // ── onCacheCleared error catch ──
+    it("handles getMetrics error in onCacheCleared callback silently", async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+        // First call ok (initial render), second call rejects (after cache clear)
+        vi.mocked(getMetrics)
+            .mockResolvedValueOnce({
+                agent_metrics: {
+                    total_requests: 0,
+                    avg_cost_usd: 0,
+                    avg_duration_seconds: 0,
+                    total_cost_usd: 0,
+                    total_tokens: 0,
+                    model_distribution: {},
+                    recent_requests: [],
+                },
+                cache_metrics: {
+                    hits: 0,
+                    misses: 0,
+                    total_requests: 0,
+                    hit_rate_percent: 0,
+                    connected: true,
+                },
+            })
+            .mockRejectedValueOnce(new Error("Metrics unavailable"));
+
+        vi.mocked(clearCache).mockResolvedValue({ status: "cleared", keys_deleted: 3 });
+
+        render(<Dashboard />);
+
+        // Wait for metrics to load, then click the clear cache button
+        await waitFor(() => {
+            expect(screen.getByTitle("Clear cache")).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByTitle("Clear cache"));
+
+        // The cache clear should succeed even though getMetrics rejects
+        await waitFor(() => {
+            expect(screen.getByText(/Cleared/)).toBeInTheDocument();
+        });
     });
 });
 

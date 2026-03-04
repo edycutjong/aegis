@@ -4,6 +4,7 @@ import os
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 
@@ -578,3 +579,166 @@ class TestStreamEndpoint:
         text = response.text
         assert "approval_required" in text
         del thread_store["stream-approval"]
+
+
+# ─────────────────────────────────────────────────────────────
+# db-status & table-data endpoint tests (L399-447)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestDbStatusEndpoint:
+    """GET /api/db-status should return record counts and freshness."""
+
+    def test_returns_counts_with_list_data(self, client):
+        """Cover L399-415: success path where data is a list."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": [{"count": 10, "latest": "2026-03-01T08:00:00Z"}],
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/db-status")
+            assert response.status_code == 200
+            data = response.json()
+            # Should have all 4 tables
+            assert "customers" in data
+            assert "billing" in data
+            assert "support_tickets" in data
+            assert "internal_docs" in data
+            assert data["customers"]["count"] == 10
+            assert data["customers"]["latest"] == "2026-03-01T08:00:00Z"
+
+    def test_returns_counts_with_dict_data(self, client):
+        """Cover L411: success path where data is a dict (not a list)."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": {"count": 5, "latest": "2026-03-01T00:00:00Z"},
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/db-status")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["customers"]["count"] == 5
+
+    def test_handles_query_failure(self, client):
+        """Cover L416-417: success=False returns error info."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": False,
+            "error": "relation does not exist",
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/db-status")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["customers"]["count"] == 0
+            assert data["customers"]["error"] == "relation does not exist"
+
+    def test_handles_exception(self, client):
+        """Cover L418-419: execute_sql throws exception."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(side_effect=Exception("Connection refused"))
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/db-status")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["customers"]["count"] == 0
+            assert data["customers"]["error"] == "Connection refused"
+
+    def test_handles_empty_data(self, client):
+        """Cover L410: success=True but empty data."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": None,
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/db-status")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["customers"]["count"] == 0
+
+
+class TestGetTableDataEndpoint:
+    """GET /api/tables/{name} should return rows from a seed table."""
+
+    def test_returns_rows_on_success(self, client):
+        """Cover L436-441: successful query returns rows."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": [
+                {"id": 1, "name": "Alice"},
+                {"id": 2, "name": "Bob"},
+            ],
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/tables/customers")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["table"] == "customers"
+            assert len(data["rows"]) == 2
+
+    def test_returns_empty_rows_when_data_is_none(self, client):
+        """Cover L441: data is None, should return empty list."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": None,
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/tables/billing")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["table"] == "billing"
+            assert data["rows"] == []
+
+    def test_unknown_table_returns_400(self, client):
+        """Cover L433-434: unknown table name returns 400."""
+        response = client.get("/api/tables/secret_table")
+        assert response.status_code == 400
+        assert "Unknown table" in response.json()["detail"]
+
+    def test_query_failure_returns_500(self, client):
+        """Cover L442-443: query returns success=False."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": False,
+            "error": "permission denied",
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/tables/customers")
+            assert response.status_code == 500
+            assert "permission denied" in response.json()["detail"]
+
+    def test_reraises_http_exception(self, client):
+        """Cover L444-445: HTTPException is re-raised without wrapping."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(side_effect=HTTPException(
+            status_code=503, detail="Service unavailable"
+        ))
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/tables/customers")
+            assert response.status_code == 503
+            assert "Service unavailable" in response.json()["detail"]
+
+    def test_general_exception_returns_500(self, client):
+        """Cover L446-447: general Exception is caught and returns 500."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(side_effect=RuntimeError("Database crashed"))
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            response = client.get("/api/tables/customers")
+            assert response.status_code == 500
+            assert "Database crashed" in response.json()["detail"]
+
