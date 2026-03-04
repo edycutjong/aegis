@@ -275,7 +275,7 @@ export default function Dashboard() {
             </div>
 
             {/* ── Main Dashboard ── */}
-            <div className="flex-1 p-4 grid gap-4" style={{ gridTemplateColumns: "1fr 1.2fr 320px", gridTemplateRows: "1fr auto" }}>
+            <div className="flex-1 p-4 grid gap-4 dashboard-grid">
 
                 {/* Left Panel: Ticket Submission */}
                 <div className="glass-panel p-6 flex flex-col">

@@ -183,4 +183,15 @@ describe("ThoughtStream", () => {
         render(<ThoughtStream thoughts={["→ step"]} status={status} />);
         expect(screen.getByText(badgeText)).toBeInTheDocument();
     });
+
+    // ── Typing Indicator ──
+    it("shows typing indicator when processing", () => {
+        render(<ThoughtStream thoughts={["→ step"]} status="processing" />);
+        expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
+    });
+
+    it("hides typing indicator when not processing", () => {
+        render(<ThoughtStream thoughts={["→ step"]} status="completed" />);
+        expect(screen.queryByTestId("typing-indicator")).not.toBeInTheDocument();
+    });
 });

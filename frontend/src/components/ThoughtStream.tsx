@@ -151,7 +151,7 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
                         const displayMessage = devMode ? message : simplifyForUser(message);
 
                         return (
-                            <div key={i} className="thought-step flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-white/2" style={{ animationDelay: `${i * 50}ms` }}>
+                            <div key={i} className="thought-step flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-white/2" style={{ animationDelay: `${i * 80}ms` }}>
                                 <span className={`text-lg font-bold flex-shrink-0 ${getColor(step)}`}>
                                     {getIcon(step)}
                                 </span>
@@ -169,6 +169,11 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
                             </div>
                         );
                     })
+                )}
+                {status === "processing" && (
+                    <div className="typing-indicator" data-testid="typing-indicator">
+                        <span /><span /><span />
+                    </div>
                 )}
             </div>
 
