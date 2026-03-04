@@ -8,6 +8,25 @@
 
 > A multi-agent AI system that acts as a Tier-2 Support Engineer. Investigates complex issues via SQL + documentation, proposes financial/technical actions, and **waits for human approval** before executing.
 
+## 📸 Demo
+
+<p align="center">
+  <img src="docs/screenshot-completed.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
+</p>
+
+<p align="center">
+  <em>Agent resolves a refund ticket end-to-end: intent classification → customer validation → SQL execution → policy search → human approval → resolution</em>
+</p>
+
+<details>
+<summary>🔒 Human-in-the-Loop Approval Modal</summary>
+<br>
+<p align="center">
+  <img src="docs/screenshot-approval.png" alt="HITL Approval Modal — Agent pauses for human authorization before executing destructive actions" width="80%">
+</p>
+<p align="center"><em>The agent pauses and waits for human authorization before executing any destructive action</em></p>
+</details>
+
 ## ✨ Key Features
 
 | Feature | Description |
