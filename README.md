@@ -1,6 +1,6 @@
 [![CI](https://github.com/edycutjong/aegis/actions/workflows/ci.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/edycutjong/aegis)
-[![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
@@ -111,7 +111,7 @@ aegis/
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - Node.js 22+
 - Docker & Docker Compose (for Redis)
 - **API keys (minimum 2):**
@@ -136,24 +136,26 @@ This starts the backend (port 8000), frontend (port 3000), and Redis.
 
 ### 3. Or run manually
 
+> **Important:** Start Redis **before** the backend to avoid connection race conditions.
+
 ```bash
-# Terminal 1: Backend
+# Terminal 1: Redis (must be running before backend starts)
+docker run -d -p 6379:6379 redis:alpine redis-server --requirepass aegis-dev
+
+# Terminal 2: Backend
 cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env  # Fill in your API keys
 uvicorn app.main:app --reload --port 8000
 
-# Terminal 2: Frontend
+# Terminal 3: Frontend
 cd frontend
 npm install
 npm run dev
-
-# Terminal 3: Redis
-docker run -d -p 6379:6379 redis:alpine redis-server --requirepass aegis-dev
 ```
 
-> **Note:** When running Redis manually, set `REDIS_URL=redis://:aegis-dev@localhost:6379` in `backend/.env`.
+> **Note:** Set `REDIS_URL=redis://:aegis-dev@localhost:6379` in `backend/.env`.
 
 ### 4. Seed the database
 
@@ -226,7 +228,7 @@ Groq unavailable?  →  Automatic fallback to Gemini
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Python 3.11+, FastAPI, LangGraph, LangChain |
+| **Backend** | Python 3.12+, FastAPI, LangGraph, LangChain |
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
 | **Database** | Supabase (PostgreSQL) |
 | **Cache** | Redis (semantic deduplication) |
