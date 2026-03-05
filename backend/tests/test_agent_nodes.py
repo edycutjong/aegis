@@ -12,7 +12,6 @@ from app.agent.nodes import (
     _fuzzy_name_match,
     _status_warning,
     _search_customers_by_name,
-    _detect_already_resolved,
     should_proceed_after_validation,
     validate_customer,
     classify_intent,

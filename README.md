@@ -11,12 +11,19 @@
 ## 📸 Demo
 
 <p align="center">
-  <img src="docs/screenshot-completed.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
+  <img src="docs/screenshot-dashboard.png" alt="Aegis Dashboard — Autonomous Enterprise Action Engine" width="100%">
 </p>
 
+<details>
+<summary>⚡ Full Resolution Workflow</summary>
+<br>
 <p align="center">
-  <em>Agent resolves a refund ticket end-to-end: intent classification → customer validation → SQL execution → policy search → human approval → resolution</em>
+  <img src="docs/screenshot-completed.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
 </p>
+<p align="center">
+  <em>Agent resolves a ticket end-to-end: intent classification → customer validation → SQL execution → policy search → human approval → resolution</em>
+</p>
+</details>
 
 <details>
 <summary>🔒 Human-in-the-Loop Approval Modal</summary>
@@ -24,7 +31,7 @@
 <p align="center">
   <img src="docs/screenshot-approval.png" alt="HITL Approval Modal — Agent pauses for human authorization before executing destructive actions" width="80%">
 </p>
-<p align="center"><em>The agent pauses and waits for human authorization before executing any destructive action</em></p>
+<p align="center"><em>The agent pauses and waits for human authorization before executing any action requiring strict oversight</em></p>
 </details>
 
 ## ✨ Key Features
