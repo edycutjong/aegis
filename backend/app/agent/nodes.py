@@ -25,6 +25,7 @@ from app.agent.agents.investigator import (  # noqa: F401
 )
 from app.agent.agents.researcher import search_docs  # noqa: F401
 from app.agent.agents.resolver import (  # noqa: F401
+    _detect_already_resolved,
     propose_action,
     await_approval,
     should_execute,

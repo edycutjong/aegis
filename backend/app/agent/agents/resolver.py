@@ -19,6 +19,7 @@ from app.agent.state import AgentState
 from app.routing.model_router import get_model_for_intent
 from app.observability.tracker import get_tracker
 
+import re
 
 AGENT_NAME = "Resolution"
 AGENT_DESCRIPTION = (
@@ -26,6 +27,52 @@ AGENT_DESCRIPTION = (
     "human approval gates, executes approved actions, and generates "
     "final response summaries."
 )
+
+
+def _detect_already_resolved(sql_results: list, user_message: str) -> dict | None:
+    """Check if billing data shows the issue was already resolved.
+
+    Scans SQL results for refund/credit records that indicate a prior
+    resolution (e.g., a 'Duplicate charge refund' already exists).
+    Returns a pre-built 'resolve' action dict, or None.
+    """
+    if not sql_results or not isinstance(sql_results, list):
+        return None
+
+    refunds = [
+        r for r in sql_results
+        if isinstance(r, dict) and r.get("type") in ("refund", "credit")
+    ]
+    if not refunds:
+        return None
+
+    for refund in refunds:
+        refund_amt = float(refund.get("amount", 0))
+        desc = (refund.get("description") or "").lower()
+        if "duplicate" in desc or "double" in desc:
+            # Extract customer info from the first record that has it
+            customer_id = None
+            customer_name = None
+            for row in sql_results:
+                if isinstance(row, dict) and (row.get("id") or row.get("customer_id")):
+                    customer_id = row.get("id") or row.get("customer_id")
+                    customer_name = row.get("name") or row.get("customer_name")
+                    break
+            return {
+                "type": "resolve",
+                "amount": None,
+                "customer_id": customer_id,
+                "customer_name": customer_name or "Unknown",
+                "description": (
+                    f"Issue already resolved — a refund of ${refund_amt:.2f} "
+                    f"was previously processed ({desc})"
+                ),
+                "reason": (
+                    "Billing records show a refund has already been applied "
+                    "for this issue. No further action needed."
+                ),
+            }
+    return None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -45,6 +92,18 @@ async def propose_action(state: AgentState, config: dict | None = None) -> dict:
     
     # Check if we actually found a valid customer in the SQL results
     sql_results = state.get("sql_result", [])
+
+    # ── Pre-check: already resolved? ──
+    already = _detect_already_resolved(sql_results, state["user_message"])
+    if already:
+        return {
+            "proposed_action": already,
+            "active_agent": AGENT_NAME,
+            "thought_log": state.get("thought_log", []) + [
+                f"✓ [{AGENT_NAME}] {already['description']}"
+            ],
+        }
+
     has_valid_customer = False
     if sql_results and isinstance(sql_results, list):
         for row in sql_results:
@@ -107,10 +166,26 @@ Propose the best action:"""),
             response.usage_metadata.get("output_tokens", 0),
         )
     
-    # Parse the proposed action
+    # Parse the proposed action (with regex fallback for markdown-fenced JSON)
+    action = None
+    raw = (response.content or "").strip()
+    # Try 1: direct parse after stripping markdown fences
     try:
-        action = json.loads(response.content.strip().strip("`").strip("json").strip())
+        action = json.loads(raw.strip("`").strip("json").strip())
     except (json.JSONDecodeError, AttributeError):
+        pass
+
+    # Try 2: regex extract first JSON object from response
+    if action is None:
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', raw, re.DOTALL)
+        if json_match:
+            try:
+                action = json.loads(json_match.group())
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+    # Fallback: escalate
+    if action is None:
         action = {
             "type": "escalate",
             "amount": None,

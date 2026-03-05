@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-05
+
+### Added
+
+- **Already-Resolved Detection** — Resolver agent now pre-checks billing data for existing refund/credit records, skipping unnecessary LLM calls when issues are already resolved
+- **Robust JSON Parsing** — Action proposal parser now includes regex fallback to extract JSON from markdown-fenced LLM responses (`\`\`\`json ... \`\`\``)
+- **dotenv Loading** — Backend config now loads `.env` files automatically for local (non-Docker) development
+- **Redis URL Documentation** — `.env.example` now documents password-authenticated Redis URL format
+
+### Changed
+
+- Resolver tests expanded with 3 new test cases covering pre-check, no-refund fallback, and fenced-JSON parsing
+
 ## [1.0.0] - 2026-03-04
 
 ### Added
@@ -24,4 +37,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI/CD Pipeline** — GitHub Actions with Ruff linting, pytest, ESLint, and Docker build verification
 - **100% Test Coverage** — Backend (pytest + pytest-cov) and frontend (Vitest + React Testing Library) both at 100%
 
+[1.1.0]: https://github.com/edycutjong/aegis/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/edycutjong/aegis/releases/tag/v1.0.0
