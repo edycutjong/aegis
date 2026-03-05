@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-03-05
+
+### Changed
+
+- Update classifier routing label from "Gemini 2.0 Flash" to "Gemini 2.5 Flash"
+- Update MetricsPanel test fixtures to use current model names (`gpt-4.1`, `gpt-4.1-mini`, `gemini-2.5-flash`, `claude-sonnet-4-20250514`)
+
 ## [1.0.0] - 2026-03-04
 
 ### Added
@@ -24,4 +31,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI/CD Pipeline** — GitHub Actions with Ruff linting, pytest, ESLint, and Docker build verification
 - **100% Test Coverage** — Backend (pytest + pytest-cov) and frontend (Vitest + React Testing Library) both at 100%
 
+[1.1.2]: https://github.com/edycutjong/aegis/compare/v1.0.0...v1.1.2
 [1.0.0]: https://github.com/edycutjong/aegis/releases/tag/v1.0.0

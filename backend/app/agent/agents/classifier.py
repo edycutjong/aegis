@@ -70,7 +70,7 @@ Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0
     SIMPLE_INTENTS = {"billing", "general"}
     is_simple = intent in SIMPLE_INTENTS
     model_provider = "groq" if is_simple else "gemini"
-    model_label = "⚡ Routed to Groq Llama-3.3" if is_simple else "🧠 Routed to Gemini 2.0 Flash"
+    model_label = "⚡ Routed to Groq Llama-3.3" if is_simple else "🧠 Routed to Gemini 2.5 Flash"
     
     return {
         "intent": intent,
