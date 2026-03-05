@@ -20,14 +20,19 @@ function relativeTime(ts: number): string {
 export default function TicketHistory({ entries, onSelect, onClear }: TicketHistoryProps) {
     const [expanded, setExpanded] = useState(false);
 
+
     if (entries.length === 0) return null;
 
     return (
         <div className="ticket-history-container mb-4">
             {/* Header — always visible */}
-            <button
+            <div
+                role="button"
+                tabIndex={0}
                 onClick={() => setExpanded((v) => !v)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded((v) => !v); } }}
                 className="ticket-history-header"
+                style={{ cursor: "pointer" }}
             >
                 <div className="flex items-center gap-2">
                     <svg
@@ -82,7 +87,7 @@ export default function TicketHistory({ entries, onSelect, onClear }: TicketHist
                         <polyline points="6 9 12 15 18 9" />
                     </svg>
                 </div>
-            </button>
+            </div>
 
             {/* Entries — collapsible */}
             <div

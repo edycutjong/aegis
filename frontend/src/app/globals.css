@@ -130,9 +130,10 @@ kbd {
 
 /* ── Dashboard Grid ── */
 .dashboard-grid {
-  grid-template-columns: 1fr 1.2fr 320px;
-  grid-template-rows: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 280px;
+  grid-template-rows: 1fr;
 }
+
 
 @media (max-width: 767px) {
   .dashboard-grid {
@@ -280,7 +281,7 @@ kbd {
   background: linear-gradient(135deg, var(--aegis-surface), var(--aegis-surface-2));
   border: 1px solid var(--aegis-border);
   border-radius: 12px;
-  padding: 16px 20px;
+  padding: 12px 14px;
   transition: all 0.2s ease;
 }
 
