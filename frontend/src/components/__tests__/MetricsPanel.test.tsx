@@ -25,8 +25,8 @@ const FULL_METRICS: Metrics = {
         total_cost_usd: 1.3104,
         total_tokens: 125000,
         model_distribution: {
-            "gpt-4o-mini": 35,
-            "gpt-4o": 7,
+            "gpt-4.1-mini": 35,
+            "gpt-4.1": 7,
         },
         recent_requests: [],
     },
@@ -96,9 +96,9 @@ describe("MetricsPanel", () => {
     it("shows model distribution bars with percentages", () => {
         render(<MetricsPanel metrics={FULL_METRICS} />);
         expect(screen.getByText("Model Usage")).toBeInTheDocument();
-        expect(screen.getByText("gpt-4o-mini")).toBeInTheDocument();
-        expect(screen.getByText("gpt-4o")).toBeInTheDocument();
-        // gpt-4o-mini: 35/42 = 83%, gpt-4o: 7/42 = 17%
+        expect(screen.getByText("gpt-4.1-mini")).toBeInTheDocument();
+        expect(screen.getByText("gpt-4.1")).toBeInTheDocument();
+        // gpt-4.1-mini: 35/42 = 83%, gpt-4.1: 7/42 = 17%
         expect(screen.getByText("83%")).toBeInTheDocument();
         expect(screen.getByText("17%")).toBeInTheDocument();
     });
@@ -349,18 +349,18 @@ describe("MetricsPanel", () => {
             agent_metrics: {
                 ...FULL_METRICS.agent_metrics!,
                 model_distribution: {
-                    "gemini-2.0-flash": 80,
-                    "claude-3-5-sonnet": 15,
-                    "gpt-4o": 5,
+                    "gemini-2.5-flash": 80,
+                    "claude-sonnet-4-20250514": 15,
+                    "gpt-4.1": 5,
                 },
             },
         };
         render(<MetricsPanel metrics={metricsWithExpensiveModels} />);
 
         // The expensive models should be rendered with amber color
-        expect(screen.getByText("gemini-2.0-flash")).toBeInTheDocument();
-        expect(screen.getByText("claude-3-5-sonnet")).toBeInTheDocument();
-        expect(screen.getByText("gpt-4o")).toBeInTheDocument();
+        expect(screen.getByText("gemini-2.5-flash")).toBeInTheDocument();
+        expect(screen.getByText("claude-sonnet-4-20250514")).toBeInTheDocument();
+        expect(screen.getByText("gpt-4.1")).toBeInTheDocument();
         // Check percentages
         expect(screen.getByText("80%")).toBeInTheDocument();
         expect(screen.getByText("15%")).toBeInTheDocument();
