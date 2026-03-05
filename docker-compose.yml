@@ -14,7 +14,8 @@ services:
       - REDIS_URL=redis://:aegis-dev@redis:6379
       - FRONTEND_URL=http://localhost:3000
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -35,6 +36,11 @@ services:
     command: redis-server --requirepass aegis-dev
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "aegis-dev", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
 volumes:
