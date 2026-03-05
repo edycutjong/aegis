@@ -625,6 +625,26 @@ class TestProposeActionAsync:
         assert result["proposed_action"]["type"] == "escalate"
 
     @pytest.mark.asyncio
+    async def test_propose_action_json_regex_parse_error(self):
+        """When LLM returns invalid JSON that matches regex but fails to parse, escalate."""
+        # String with curly braces to match regex, but invalid json syntax
+        mock_response = _mock_llm_response("Here is the action: { this is not valid json }")
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("refund")
+        state["intent"] = "billing"
+        state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["docs_context"] = ""
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["type"] == "escalate"
+
+    @pytest.mark.asyncio
     async def test_already_resolved_refund_skips_llm(self):
         """When billing data already contains a 'duplicate' refund, skip LLM and resolve."""
         mock_llm = AsyncMock()
@@ -676,6 +696,16 @@ class TestProposeActionAsync:
 
         assert result["proposed_action"]["type"] == "refund"
         mock_llm.ainvoke.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_matching_refund_returns_none(self):
+        """When refunds exist but don't match duplicate/double, _detect_already_resolved returns None."""
+        from app.agent.agents.resolver import _detect_already_resolved
+        sql_result = [
+            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "refund", "description": "Courtesy credit for downtime"},
+        ]
+        result = _detect_already_resolved(sql_result, "I was double charged")
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_json_in_markdown_fence_parsed(self):

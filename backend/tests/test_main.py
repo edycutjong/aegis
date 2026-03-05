@@ -140,6 +140,25 @@ class TestTracingStatusEndpoint:
                     data = response.json()
                     assert data["connected"] is True
 
+    def test_lifespan_tracing_disabled(self):
+        """Cover lifespan else branch (L45) when tracing is disabled."""
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "false",
+            "LANGCHAIN_API_KEY": "",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import app
+            with TestClient(app, raise_server_exceptions=False) as c:
+                response = c.get("/api/tracing-status")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["enabled"] is False
+
     def test_enabled_but_connection_fails(self):
         """Cover L376-377: LangSmith enabled but Client() raises."""
         with patch.dict(os.environ, {

@@ -6,6 +6,8 @@
 
 # ⛊ Aegis — Autonomous Enterprise Action Engine
 
+> **Read the full Case Study & Architecture Breakdown here:** [edycu.dev/work/aegis](https://edycu.dev/work/aegis)
+
 > A multi-agent AI system that acts as a Tier-2 Support Engineer. Investigates complex issues via SQL + documentation, proposes financial/technical actions, and **waits for human approval** before executing.
 
 ## 📸 Demo
