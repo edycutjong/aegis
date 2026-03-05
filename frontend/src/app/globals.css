@@ -130,7 +130,7 @@ kbd {
 
 /* ── Dashboard Grid ── */
 .dashboard-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 340px;
   grid-template-rows: 1fr;
 }
 
@@ -283,6 +283,10 @@ kbd {
   border-radius: 12px;
   padding: 12px 14px;
   transition: all 0.2s ease;
+}
+
+.metric-card .metric-label {
+  white-space: nowrap;
 }
 
 .metric-card:hover {
@@ -559,4 +563,51 @@ kbd {
   color: var(--aegis-text-muted);
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* ── Trace waterfall animations ── */
+.trace-node-row {
+  animation: traceSlideIn 0.3s ease-out both;
+}
+
+.trace-node-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+@keyframes traceSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ── Traces overlay ── */
+.traces-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  transition: opacity 0.3s ease;
+}
+
+.traces-overlay {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 70vh;
+  background: var(--aegis-bg);
+  border-top: 1px solid var(--aegis-border);
+  border-radius: 16px 16px 0 0;
+  z-index: 51;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
 }

@@ -761,3 +761,254 @@ class TestGetTableDataEndpoint:
             assert response.status_code == 500
             assert "Database crashed" in response.json()["detail"]
 
+
+# ─────────────────────────────────────────────────────────────
+# /api/traces endpoint tests
+# ─────────────────────────────────────────────────────────────
+
+
+class TestTracesEndpoint:
+    """GET /api/traces should proxy LangSmith trace data."""
+
+    def test_traces_disabled_returns_empty(self):
+        """When LangSmith is not configured, return empty traces."""
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "false",
+            "LANGCHAIN_API_KEY": "",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import app
+            with TestClient(app, raise_server_exceptions=False) as c:
+                response = c.get("/api/traces")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["traces"] == []
+                assert data["error"] is None
+
+    def test_traces_returns_data(self):
+        """Cover the full success path with mocked LangSmith client."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            # Create mock child run
+            mock_child = MagicMock()
+            mock_child.id = "child-run-1"
+            mock_child.name = "classify_intent"
+            mock_child.status = "success"
+            mock_child.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_child.end_time = datetime(2026, 3, 5, 6, 0, 0, 180000, tzinfo=timezone.utc)
+            mock_child.total_tokens = 312
+            mock_child.total_cost = 0.0003
+            mock_child.extra = {"metadata": {"ls_model_name": "groq/llama-3.3-70b"}}
+
+            # Create mock child with no cost/tokens (execute_sql style)
+            mock_child2 = MagicMock()
+            mock_child2.id = "child-run-2"
+            mock_child2.name = "execute_sql"
+            mock_child2.status = "success"
+            mock_child2.start_time = datetime(2026, 3, 5, 6, 0, 0, 200000, tzinfo=timezone.utc)
+            mock_child2.end_time = datetime(2026, 3, 5, 6, 0, 0, 245000, tzinfo=timezone.utc)
+            mock_child2.total_tokens = None
+            mock_child2.total_cost = None
+            mock_child2.extra = {"invocation_params": {"model": "supabase/postgres"}}
+            # Simulate no token_usage attr
+            del mock_child2.token_usage
+
+            # Create mock root run
+            mock_root = MagicMock()
+            mock_root.id = "root-run-1"
+            mock_root.name = "aegis-support-workflow"
+            mock_root.status = "success"
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = datetime(2026, 3, 5, 6, 0, 3, 200000, tzinfo=timezone.utc)
+            mock_root.total_tokens = 4218
+            mock_root.total_cost = 0.0091
+
+            mock_client = MagicMock()
+            mock_client.list_runs = MagicMock(
+                side_effect=[
+                    [mock_root],
+                    [mock_child, mock_child2],
+                ]
+            )
+
+            with patch("langsmith.Client", return_value=mock_client):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["traces"]) == 1
+                    assert data["error"] is None
+
+                    trace = data["traces"][0]
+                    assert trace["name"] == "aegis-support-workflow"
+                    assert trace["total_tokens"] == 4218
+                    assert trace["total_cost"] == 0.0091
+                    assert len(trace["child_runs"]) == 2
+
+                    child1 = trace["child_runs"][0]
+                    assert child1["name"] == "classify_intent"
+                    assert child1["total_tokens"] == 312
+                    assert child1["model"] == "groq/llama-3.3-70b"
+
+                    child2 = trace["child_runs"][1]
+                    assert child2["name"] == "execute_sql"
+                    assert child2["total_tokens"] == 0
+                    assert child2["model"] == "supabase/postgres"
+
+    def test_traces_with_token_usage_fallback(self):
+        """Cover token_usage dict fallback when total_tokens is None."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            mock_child = MagicMock()
+            mock_child.id = "child-tu"
+            mock_child.name = "search_docs"
+            mock_child.status = "success"
+            mock_child.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_child.end_time = datetime(2026, 3, 5, 6, 0, 0, 400000, tzinfo=timezone.utc)
+            mock_child.total_tokens = None
+            mock_child.total_cost = 0.0009
+            mock_child.extra = {"metadata": {}}
+            mock_child.token_usage = {"total_tokens": 892}
+
+            mock_root = MagicMock()
+            mock_root.id = "root-tu"
+            mock_root.name = None
+            mock_root.status = None
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = None
+            mock_root.total_tokens = None
+            mock_root.total_cost = None
+
+            mock_client = MagicMock()
+            mock_client.list_runs = MagicMock(
+                side_effect=[[mock_root], [mock_child]]
+            )
+
+            with patch("langsmith.Client", return_value=mock_client):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    data = response.json()
+                    trace = data["traces"][0]
+                    assert trace["name"] == "aegis-support-workflow"
+                    assert trace["latency_ms"] == 0
+                    assert trace["total_cost"] == 0.0
+
+                    child = trace["child_runs"][0]
+                    assert child["total_tokens"] == 892
+
+    def test_traces_handles_exception(self):
+        """Cover exception handling — should return error string."""
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            with patch("langsmith.Client", side_effect=Exception("API unreachable")):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert data["traces"] == []
+                    assert "API unreachable" in data["error"]
+
+    def test_traces_invocation_params_model_name(self):
+        """Cover model extraction from invocation_params.model_name fallback."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            mock_child = MagicMock()
+            mock_child.id = "child-inv"
+            mock_child.name = "propose_action"
+            mock_child.status = "success"
+            mock_child.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_child.end_time = datetime(2026, 3, 5, 6, 0, 0, 890000, tzinfo=timezone.utc)
+            mock_child.total_tokens = 1106
+            mock_child.total_cost = 0.0033
+            mock_child.extra = {
+                "metadata": {},
+                "invocation_params": {"model_name": "gpt-4.1"},
+            }
+
+            mock_root = MagicMock()
+            mock_root.id = "root-inv"
+            mock_root.name = "aegis-support-workflow"
+            mock_root.status = "success"
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = datetime(2026, 3, 5, 6, 0, 3, tzinfo=timezone.utc)
+            mock_root.total_tokens = 1106
+            mock_root.total_cost = 0.0033
+
+            mock_client = MagicMock()
+            mock_client.list_runs = MagicMock(
+                side_effect=[[mock_root], [mock_child]]
+            )
+
+            with patch("langsmith.Client", return_value=mock_client):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    data = response.json()
+                    child = data["traces"][0]["child_runs"][0]
+                    assert child["model"] == "gpt-4.1"

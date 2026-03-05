@@ -184,3 +184,37 @@ export function connectSSE(
 
     return es;
 }
+
+/** Trace types from /api/traces */
+export interface TraceChildRun {
+    id: string;
+    name: string;
+    status: string;
+    latency_ms: number;
+    total_tokens: number;
+    model: string;
+    total_cost: number;
+}
+
+export interface TraceRun {
+    id: string;
+    name: string;
+    status: string;
+    latency_ms: number;
+    total_tokens: number;
+    total_cost: number;
+    start_time: string | null;
+    child_runs: TraceChildRun[];
+}
+
+export interface TracesResponse {
+    traces: TraceRun[];
+    error: string | null;
+}
+
+/** Fetch recent LangSmith traces */
+export async function getTraces(): Promise<TracesResponse> {
+    const res = await fetch(`${API_URL}/api/traces`);
+    if (!res.ok) throw new Error(`Traces fetch failed: ${res.statusText}`);
+    return res.json();
+}
