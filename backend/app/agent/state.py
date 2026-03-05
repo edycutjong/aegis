@@ -23,18 +23,18 @@ class TokenUsage(TypedDict, total=False):
 
 class AgentState(TypedDict, total=False):
     """Full state for the Aegis agent workflow.
-    
+
     This state flows through all LangGraph nodes and persists
     across interrupt/resume cycles via the checkpointer.
     """
-    # Input  
+    # Input
     user_message: str
     thread_id: str
-    
-    # Intent classification  
+
+    # Intent classification
     intent: Literal["billing", "technical", "account", "general"]
     intent_confidence: float
-    
+
     # SQL investigation
     sql_query: str
     sql_result: list[dict]
@@ -42,34 +42,34 @@ class AgentState(TypedDict, total=False):
     sql_retry_count: int
     customer_found: bool
     customer_candidates: list[dict]
-    
+
     # Documentation search
     docs_context: str
     relevant_docs: list[str]
-    
+
     # Action proposal (HITL)
     proposed_action: ActionProposal
     approval_status: Literal["pending", "approved", "denied", "not_required"]
     denial_reason: str
-    
+
     # Execution
     execution_result: str
-    
+
     # Multi-agent tracking
     active_agent: str  # Which agent is currently working (Triage, Investigator, Knowledge, Resolution)
-    
+
     # Model routing (set by classifier based on intent)
     model_provider: Literal["groq", "gemini"]  # groq = simple intents, gemini = complex
-    
+
     # Observability
     thought_log: list[str]
     token_usage: list[TokenUsage]
     total_cost_usd: float
     models_used: list[str]
     cache_hit: bool
-    
+
     # Error handling
     error: str
-    
+
     # Final response
     final_response: str
