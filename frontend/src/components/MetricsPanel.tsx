@@ -1,5 +1,6 @@
 "use client";
 
+
 import { useState, useEffect } from "react";
 import type { Metrics, DbStatus } from "@/lib/api";
 import { clearCache, getDbStatus, getTableData } from "@/lib/api";
@@ -7,6 +8,7 @@ import { clearCache, getDbStatus, getTableData } from "@/lib/api";
 interface MetricsPanelProps {
     metrics: Metrics | null;
     onCacheCleared?: () => void;
+    onOpenTraces?: () => void;
 }
 
 const TABLE_META: Record<string, { label: string; icon: string; color: string; columns: string[] }> = {
@@ -39,7 +41,7 @@ function truncate(val: unknown, max = 32): string {
     return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
-export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelProps) {
+export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: MetricsPanelProps) {
     const agent = metrics?.agent_metrics;
     const cache = metrics?.cache_metrics;
     const [clearing, setClearing] = useState(false);
@@ -120,25 +122,25 @@ export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelPr
                 {/* Primary Metrics */}
                 <div className="grid grid-cols-2 gap-3">
                     <div className="metric-card">
-                        <span className="text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Avg Cost/Request</span>
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Avg Cost/Req</span>
                         <span className="text-xl font-bold text-emerald-400">
                             ${agent?.avg_cost_usd?.toFixed(4) || "0.0000"}
                         </span>
                     </div>
                     <div className="metric-card">
-                        <span className="text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Requests</span>
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Requests</span>
                         <span className="text-xl font-bold text-blue-400">
                             {formatCompact(agent?.total_requests || 0)}
                         </span>
                     </div>
                     <div className="metric-card">
-                        <span className="text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Cost</span>
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Cost</span>
                         <span className="text-xl font-bold text-amber-400">
                             ${agent?.total_cost_usd?.toFixed(4) || "0.0000"}
                         </span>
                     </div>
                     <div className="metric-card">
-                        <span className="text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Tokens</span>
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Tokens</span>
                         <span className="text-xl font-bold text-purple-400">
                             {formatCompact(agent?.total_tokens || 0)}
                         </span>
@@ -379,6 +381,23 @@ export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelPr
                         )}
                     </div>
                 )}
+                {/* ── LangSmith Traces trigger ── */}
+                <button
+                    onClick={onOpenTraces}
+                    className="w-full metric-card flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/5 cursor-pointer group"
+                >
+                    <div className="flex items-center gap-2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                        </svg>
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
+                            LangSmith Traces
+                        </span>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-y-[-2px]">
+                        <path d="M7 17l9.2-9.2M17 17V7H7" />
+                    </svg>
+                </button>
             </div>
         </div>
     );

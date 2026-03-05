@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import ThoughtStream from "@/components/ThoughtStream";
 import ApprovalModal from "@/components/ApprovalModal";
 import MetricsPanel from "@/components/MetricsPanel";
+import TracesPanel from "@/components/TracesPanel";
 const TicketHistory = dynamic(() => import("@/components/TicketHistory"), { ssr: false });
 import { useTicketHistory } from "@/hooks/useTicketHistory";
 import {
@@ -104,6 +105,9 @@ export default function Dashboard() {
 
     // Tab state for demo presets
     const [activeTab, setActiveTab] = useState<"intents" | "edge">("intents");
+
+    // Traces overlay
+    const [tracesOpen, setTracesOpen] = useState(false);
 
     // Ticket history
     const { entries: historyEntries, addEntry: addHistoryEntry, clearHistory } = useTicketHistory();
@@ -453,7 +457,7 @@ export default function Dashboard() {
                 {/* Right Panel: Metrics */}
                 <MetricsPanel metrics={metrics} onCacheCleared={async () => {
                     try { setMetrics(await getMetrics()); } catch { }
-                }} />
+                }} onOpenTraces={() => setTracesOpen(true)} />
             </div>
 
             {/* ── Footer ── */}
@@ -475,6 +479,9 @@ export default function Dashboard() {
                     isLoading={approvalLoading}
                 />
             )}
+
+            {/* ── Traces Overlay ── */}
+            <TracesPanel open={tracesOpen} onClose={() => setTracesOpen(false)} />
         </div>
     );
 }
