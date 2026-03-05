@@ -1,0 +1,43 @@
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1e293b', 'primaryTextColor': '#e2e8f0', 'primaryBorderColor': '#3b82f6', 'lineColor': '#64748b', 'secondaryColor': '#0f172a', 'tertiaryColor': '#1e293b', 'fontSize': '14px' }}}%%
+flowchart TD
+    subgraph Frontend["🖥️ Next.js Frontend"]
+        A["React 19 + TypeScript"]
+        A1["SSE ThoughtStream"]
+        A2["HITL Approval Modal"]
+    end
+
+    subgraph Backend["⚡ FastAPI Backend"]
+        B["Async Python 3.11+"]
+        B1["Pydantic Validation"]
+    end
+
+    subgraph Cache["🔴 Redis Cache"]
+        D["Semantic Deduplication"]
+        D1["< 50ms response"]
+    end
+
+    subgraph Agent["🧠 LangGraph Multi-Agent Pipeline"]
+        direction LR
+        G1["🏷️ Triage Agent\nClassify Intent"]
+        G2["🔍 Investigator\nValidate + SQL"]
+        G3["📚 Knowledge Agent\nSearch Docs"]
+        G4["⚡ Resolver\nPropose Action"]
+        G5["⏸️ HITL Gate\nHuman Approval"]
+        G1 --> G2 --> G3 --> G4 --> G5
+    end
+
+    subgraph LLMs["🤖 LLM APIs"]
+        L1["Groq Llama 3.3\n(fast, $0.001)"]
+        L2["GPT-4o\n(smart, $0.01)"]
+        L3["Gemini 2.0\n(fallback, $0.002)"]
+    end
+
+    DB[("🐘 Supabase\nPostgreSQL")]
+    LS["📊 LangSmith\nObservability"]
+
+    Frontend -- "REST + SSE" --> Backend
+    Backend -- "cache check" --> Cache
+    Backend -- "cache miss" --> Agent
+    Agent --> LLMs
+    Agent --> DB
+    Agent -. "traces + tokens" .-> LS
