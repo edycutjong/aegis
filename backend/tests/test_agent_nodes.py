@@ -12,6 +12,7 @@ from app.agent.nodes import (
     _fuzzy_name_match,
     _status_warning,
     _search_customers_by_name,
+    _detect_already_resolved,
     should_proceed_after_validation,
     validate_customer,
     classify_intent,
@@ -623,6 +624,80 @@ class TestProposeActionAsync:
             result = await propose_action(state)
 
         assert result["proposed_action"]["type"] == "escalate"
+
+    @pytest.mark.asyncio
+    async def test_already_resolved_refund_skips_llm(self):
+        """When billing data already contains a 'duplicate' refund, skip LLM and resolve."""
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock()  # Should NOT be called
+
+        state = _make_full_state("Customer #8 David Martinez says he was charged $49 twice")
+        state["intent"] = "billing"
+        state["sql_result"] = [
+            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "refund", "description": "Duplicate charge refund"},
+            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
+            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
+        ]
+        state["docs_context"] = "Refund policy..."
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["type"] == "resolve"
+        assert "already resolved" in result["proposed_action"]["description"].lower()
+        assert result["proposed_action"]["customer_id"] == 8
+        mock_llm.ainvoke.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_refund_still_calls_llm(self):
+        """When billing data has charges only (no refund), LLM should still be called."""
+        action_json = json.dumps({
+            "type": "refund", "amount": 49.0, "customer_id": 8,
+            "customer_name": "David Martinez",
+            "description": "Refund duplicate charge", "reason": "Double charge confirmed",
+        })
+        mock_response = _mock_llm_response(action_json)
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("Customer #8 David Martinez says he was charged $49 twice")
+        state["intent"] = "billing"
+        state["sql_result"] = [
+            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
+            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
+        ]
+        state["docs_context"] = "Refund policy..."
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["type"] == "refund"
+        mock_llm.ainvoke.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_json_in_markdown_fence_parsed(self):
+        """LLM wraps JSON in ```json ... ``` — should still parse correctly."""
+        fenced_json = '```json\n{"type": "refund", "amount": 29.99, "customer_id": 8, "customer_name": "David Martinez", "description": "Refund duplicate", "reason": "Double charge"}\n```'
+        mock_response = _mock_llm_response(fenced_json)
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = _make_full_state("I was double charged")
+        state["intent"] = "billing"
+        state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["docs_context"] = ""
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["type"] == "refund"
+        assert result["proposed_action"]["customer_id"] == 8
 
 
 # ─────────────────────────────────────────────────────────────
