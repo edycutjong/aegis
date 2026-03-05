@@ -959,6 +959,41 @@ class TestTracesEndpoint:
                     assert data["traces"] == []
                     assert "API unreachable" in data["error"]
 
+    def test_traces_returns_cached_data(self):
+        """Cover L478: TTL cache hit returns cached data without calling LangSmith."""
+        import time
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+
+            # Pre-populate cache with fresh data (timestamp = now)
+            cached_result = {"traces": [{"id": "cached-trace", "name": "cached"}], "error": None}
+            _traces_cache["data"] = cached_result
+            _traces_cache["ts"] = time.monotonic()
+
+            from app.main import app
+            with TestClient(app, raise_server_exceptions=False) as c:
+                response = c.get("/api/traces")
+                assert response.status_code == 200
+                data = response.json()
+                # Should return cached data directly
+                assert data["traces"] == [{"id": "cached-trace", "name": "cached"}]
+                assert data["error"] is None
+
+            # Clean up
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
     def test_traces_invocation_params_model_name(self):
         """Cover model extraction from invocation_params.model_name fallback."""
         from datetime import datetime, timezone
