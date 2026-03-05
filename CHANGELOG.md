@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-03-05
+
+### Fixed
+
+- **Dashboard Scroll** — Fix flex overflow in ThoughtStream with `min-h-0`, pin footer outside scroll area with `shrink-0`
+- **Ticket History A11y** — Replace `<button>` with `<div role="button">` and add keyboard handler for Enter/Space
+- **MetricsPanel Cleanup** — Remove redundant per-model detail bars, keep provider-level bar only
+
+### Changed
+
+- Restructure dashboard 3-column layout with customer disambiguator, fixed textarea/submit at bottom
+- Footer now reads version dynamically from `package.json` instead of hardcoded string
+- Simplify footer by moving thread ID to a tooltip
+
 ## [1.0.0] - 2026-03-04
 
 ### Added
@@ -24,4 +38,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI/CD Pipeline** — GitHub Actions with Ruff linting, pytest, ESLint, and Docker build verification
 - **100% Test Coverage** — Backend (pytest + pytest-cov) and frontend (Vitest + React Testing Library) both at 100%
 
+[1.1.1]: https://github.com/edycutjong/aegis/compare/v1.0.0...v1.1.1
 [1.0.0]: https://github.com/edycutjong/aegis/releases/tag/v1.0.0

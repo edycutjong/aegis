@@ -27,6 +27,13 @@ function timeAgo(iso: string): { text: string; stale: boolean } {
     return { text: `${days}d ago`, stale: true };
 }
 
+function formatCompact(n: number, decimals = 1): string {
+    if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(decimals) + "B";
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(decimals) + "M";
+    if (n >= 10_000) return (n / 1_000).toFixed(decimals) + "K";
+    return n.toLocaleString();
+}
+
 function truncate(val: unknown, max = 32): string {
     const s = String(val ?? "—");
     return s.length > max ? s.slice(0, max) + "…" : s;
@@ -96,7 +103,7 @@ export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelPr
     const expandedMeta = expanded ? TABLE_META[expanded] : null;
 
     return (
-        <div className="glass-panel p-6 h-full flex flex-col">
+        <div className="glass-panel p-6 h-full min-h-0 flex flex-col">
             {/* Header */}
             <div className="flex items-center gap-3 mb-5">
                 <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
@@ -121,7 +128,7 @@ export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelPr
                     <div className="metric-card">
                         <span className="text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Requests</span>
                         <span className="text-xl font-bold text-blue-400">
-                            {agent?.total_requests || 0}
+                            {formatCompact(agent?.total_requests || 0)}
                         </span>
                     </div>
                     <div className="metric-card">
@@ -133,7 +140,7 @@ export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelPr
                     <div className="metric-card">
                         <span className="text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Tokens</span>
                         <span className="text-xl font-bold text-purple-400">
-                            {agent?.total_tokens?.toLocaleString() || "0"}
+                            {formatCompact(agent?.total_tokens || 0)}
                         </span>
                     </div>
                 </div>
@@ -253,36 +260,7 @@ export default function MetricsPanel({ metrics, onCacheCleared }: MetricsPanelPr
                                 </div>
                             </div>
 
-                            {/* Per-model breakdown */}
-                            <div className="space-y-2">
-                                {Object.entries(agent.model_distribution).map(([model, count]) => {
-                                    const pct = ((count / modelTotal) * 100).toFixed(0);
-                                    const isExpensive = model.includes("gpt-4o") || model.includes("claude") || model.includes("pro");
-                                    return (
-                                        <div key={model} className="metric-card py-2 px-3">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="text-xs font-mono truncate" style={{ color: "var(--aegis-text)" }}>
-                                                    {model}
-                                                </span>
-                                                <span className="text-xs font-semibold ml-2" style={{ color: isExpensive ? "#fbbf24" : "#4ade80" }}>
-                                                    {pct}%
-                                                </span>
-                                            </div>
-                                            <div className="w-full h-1.5 rounded-full" style={{ background: "var(--aegis-border)" }}>
-                                                <div
-                                                    className="h-full rounded-full transition-all duration-500"
-                                                    style={{
-                                                        width: `${pct}%`,
-                                                        background: isExpensive
-                                                            ? "linear-gradient(90deg, #f59e0b, #ef4444)"
-                                                            : "linear-gradient(90deg, #22c55e, #3b82f6)",
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            {/* Per-model detail removed — provider bar is sufficient */}
                         </div>
                     );
                 })()}

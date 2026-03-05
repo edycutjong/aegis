@@ -90,7 +90,7 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
     };
 
     return (
-        <div className="glass-panel p-6 h-full flex flex-col">
+        <div className="glass-panel p-6 h-full min-h-0 flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -135,7 +135,7 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
                 </div>
             </div>
 
-            {/* Thought Steps */}
+            {/* Single scroll for all content */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                 {thoughts.length === 0 ? (
                     <div className="flex items-center justify-center h-full">
@@ -152,12 +152,12 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
 
                         return (
                             <div key={i} className="thought-step flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-white/2" style={{ animationDelay: `${i * 80}ms` }}>
-                                <span className={`text-lg font-bold flex-shrink-0 ${getColor(step)}`}>
+                                <span className={`text-lg font-bold shrink-0 ${getColor(step)}`}>
                                     {getIcon(step)}
                                 </span>
                                 <div className="flex items-start gap-2 flex-1 min-w-0">
                                     {devMode && agentStyle && (
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex-shrink-0 border ${agentStyle.bg} ${agentStyle.text} ${agentStyle.border}`}>
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 border ${agentStyle.bg} ${agentStyle.text} ${agentStyle.border}`}>
                                             <span>{agentIcon}</span>
                                             {agent}
                                         </span>
@@ -177,9 +177,9 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
                 )}
             </div>
 
-            {/* Footer */}
+            {/* Footer — pinned outside scroll */}
             {thoughts.length > 0 && (
-                <div className="mt-4 pt-3 border-t flex items-center justify-between" style={{ borderColor: "var(--aegis-border)" }}>
+                <div className="mt-4 pt-3 border-t flex items-center justify-between shrink-0" style={{ borderColor: "var(--aegis-border)" }}>
                     <span className="text-xs" style={{ color: "var(--aegis-text-muted)" }}>
                         {thoughts.length} steps {devMode ? "completed" : ""}
                     </span>

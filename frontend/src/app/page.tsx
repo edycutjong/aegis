@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import ThoughtStream from "@/components/ThoughtStream";
 import ApprovalModal from "@/components/ApprovalModal";
 import MetricsPanel from "@/components/MetricsPanel";
-import TicketHistory from "@/components/TicketHistory";
+const TicketHistory = dynamic(() => import("@/components/TicketHistory"), { ssr: false });
 import { useTicketHistory } from "@/hooks/useTicketHistory";
 import {
     startChat,
@@ -250,7 +251,7 @@ export default function Dashboard() {
     }, [originalMessage, handleSubmit]);
 
     return (
-        <div className="min-h-screen flex flex-col" style={{ background: "var(--aegis-bg)" }}>
+        <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--aegis-bg)" }}>
             {/* ── Top Navigation ── */}
             <nav className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--aegis-border)" }}>
                 <div className="flex items-center gap-3">
@@ -279,10 +280,10 @@ export default function Dashboard() {
             </div>
 
             {/* ── Main Dashboard ── */}
-            <div className="flex-1 p-4 grid gap-4 dashboard-grid">
+            <div className="flex-1 min-h-0 p-4 grid gap-4 dashboard-grid">
 
                 {/* Left Panel: Ticket Submission */}
-                <div className="glass-panel p-6 flex flex-col">
+                <div className="glass-panel p-6 h-full min-h-0 flex flex-col">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -294,154 +295,156 @@ export default function Dashboard() {
                         </h2>
                     </div>
 
-                    {/* Demo Presets — Tabbed */}
-                    <div className="mb-4">
-                        <div className="flex gap-1 mb-3">
-                            <button
-                                onClick={() => setActiveTab("intents")}
-                                className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                                style={{
-                                    background: activeTab === "intents" ? "rgba(59,130,246,0.15)" : "transparent",
-                                    color: activeTab === "intents" ? "#60a5fa" : "var(--aegis-text-muted)",
-                                    border: activeTab === "intents" ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
-                                }}
-                            >
-                                Quick Test
-                            </button>
-                            <button
-                                onClick={() => setActiveTab("edge")}
-                                className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                                style={{
-                                    background: activeTab === "edge" ? "rgba(245,158,11,0.15)" : "transparent",
-                                    color: activeTab === "edge" ? "#fbbf24" : "var(--aegis-text-muted)",
-                                    border: activeTab === "edge" ? "1px solid rgba(245,158,11,0.3)" : "1px solid transparent",
-                                }}
-                            >
-                                Edge Cases
-                            </button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {(activeTab === "intents" ? REAL_INTENTS : EDGE_CASES).map((t, i) => (
+                    {/* Scrollable content */}
+                    <div className="flex-1 overflow-y-auto space-y-4">
+                        {/* Demo Presets — Tabbed */}
+                        <div>
+                            <div className="flex gap-1 mb-3">
                                 <button
-                                    key={`${activeTab}-${i}`}
-                                    onClick={() => {
-                                        setMessage(t.message);
-                                        handleSubmit(t.message);
+                                    onClick={() => setActiveTab("intents")}
+                                    className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                                    style={{
+                                        background: activeTab === "intents" ? "rgba(59,130,246,0.15)" : "transparent",
+                                        color: activeTab === "intents" ? "#60a5fa" : "var(--aegis-text-muted)",
+                                        border: activeTab === "intents" ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
                                     }}
-                                    disabled={status === "processing"}
-                                    className="demo-btn"
                                 >
-                                    <span>{t.icon}</span>
-                                    {t.label}
+                                    Quick Test
                                 </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Ticket History */}
-                    <TicketHistory
-                        entries={historyEntries}
-                        onSelect={setMessage}
-                        onClear={clearHistory}
-                    />
-
-                    {/* Text Input */}
-                    <div className="flex-1 flex flex-col">
-                        <textarea
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSubmit();
-                                }
-                            }}
-                            placeholder="Describe the support issue... e.g. 'Customer #8 says they were double-charged $49 for their Pro plan'"
-                            disabled={status === "processing"}
-                            className="flex-1 w-full rounded-xl p-4 text-sm leading-relaxed resize-none outline-none transition-all focus:border-blue-500/30 disabled:opacity-50"
-                            style={{
-                                background: "var(--aegis-surface)",
-                                border: "1px solid var(--aegis-border)",
-                                color: "var(--aegis-text)",
-                                fontFamily: "var(--font-sans)",
-                                minHeight: "120px",
-                            }}
-                        />
-                        <button
-                            onClick={() => handleSubmit()}
-                            disabled={!message.trim() || status === "processing"}
-                            className="btn-primary mt-3 w-full flex items-center justify-center gap-2 disabled:opacity-40"
-                        >
-                            {status === "processing" ? (
-                                <>
-                                    <div className="spinner" />
-                                    Agent Processing...
-                                </>
-                            ) : (
-                                <>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                        <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
-                                    </svg>
-                                    Submit Ticket
-                                </>
-                            )}
-                        </button>
-                    </div>
-
-                    {/* Disambiguation Selector */}
-                    {candidates.length > 0 && (
-                        <div className="response-card mt-4">
-                            <div className="flex items-center gap-2 mb-3">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M12 16v-4" />
-                                    <path d="M12 8h.01" />
-                                </svg>
-                                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#f59e0b" }}>Select Customer</span>
+                                <button
+                                    onClick={() => setActiveTab("edge")}
+                                    className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                                    style={{
+                                        background: activeTab === "edge" ? "rgba(245,158,11,0.15)" : "transparent",
+                                        color: activeTab === "edge" ? "#fbbf24" : "var(--aegis-text-muted)",
+                                        border: activeTab === "edge" ? "1px solid rgba(245,158,11,0.3)" : "1px solid transparent",
+                                    }}
+                                >
+                                    Edge Cases
+                                </button>
                             </div>
-                            <p className="text-sm mb-3" style={{ color: "var(--aegis-text-muted)" }}>{disambiguationMessage}</p>
-                            <div className="space-y-2">
-                                {candidates.map((c) => (
+                            <div className="flex flex-wrap gap-2">
+                                {(activeTab === "intents" ? REAL_INTENTS : EDGE_CASES).map((t, i) => (
                                     <button
-                                        key={c.id}
-                                        onClick={() => handleSelectCustomer(c)}
-                                        className="w-full text-left rounded-lg p-3 transition-all hover:brightness-125"
-                                        style={{
-                                            background: "var(--aegis-surface)",
-                                            border: "1px solid var(--aegis-border)",
+                                        key={`${activeTab}-${i}`}
+                                        onClick={() => {
+                                            setMessage(t.message);
+                                            handleSubmit(t.message);
                                         }}
+                                        disabled={status === "processing"}
+                                        className="demo-btn"
                                     >
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <span className="text-sm font-semibold" style={{ color: "var(--aegis-text)" }}>#{c.id} {c.name}</span>
-                                                {c.email && <span className="text-xs ml-2" style={{ color: "var(--aegis-text-muted)" }}>{c.email}</span>}
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {c.plan && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}>{c.plan}</span>}
-                                                {c.status && c.status !== "active" && (
-                                                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.15)", color: "#f87171" }}>{c.status}</span>
-                                                )}
-                                            </div>
-                                        </div>
+                                        <span>{t.icon}</span>
+                                        {t.label}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                    )}
 
-                    {/* Final Response */}
-                    {finalResponse && (
-                        <div className="response-card mt-4">
-                            <div className="flex items-center gap-2 mb-3">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                                    <path d="M22 4L12 14.01l-3-3" />
-                                </svg>
-                                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#4ade80" }}>Resolution Complete</span>
+                        <TicketHistory
+                            entries={historyEntries}
+                            onSelect={setMessage}
+                            onClear={clearHistory}
+                        />
+
+                        {/* Disambiguation Selector */}
+                        {candidates.length > 0 && (
+                            <div className="response-card">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M12 16v-4" />
+                                        <path d="M12 8h.01" />
+                                    </svg>
+                                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#f59e0b" }}>Select Customer</span>
+                                </div>
+                                <p className="text-sm mb-3" style={{ color: "var(--aegis-text-muted)" }}>{disambiguationMessage}</p>
+                                <div className="space-y-2">
+                                    {candidates.map((c) => (
+                                        <button
+                                            key={c.id}
+                                            onClick={() => handleSelectCustomer(c)}
+                                            className="w-full text-left rounded-lg p-3 transition-all hover:brightness-125"
+                                            style={{
+                                                background: "var(--aegis-surface)",
+                                                border: "1px solid var(--aegis-border)",
+                                            }}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <span className="text-sm font-semibold" style={{ color: "var(--aegis-text)" }}>#{c.id} {c.name}</span>
+                                                    {c.email && <span className="text-xs ml-2" style={{ color: "var(--aegis-text-muted)" }}>{c.email}</span>}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {c.plan && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}>{c.plan}</span>}
+                                                    {c.status && c.status !== "active" && (
+                                                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.15)", color: "#f87171" }}>{c.status}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
-                            <p className="text-sm leading-relaxed" style={{ color: "var(--aegis-text)" }}>{finalResponse}</p>
+                        )}
+
+                        {/* Final Response */}
+                        {finalResponse && (
+                            <div className="response-card">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                        <path d="M22 4L12 14.01l-3-3" />
+                                    </svg>
+                                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#4ade80" }}>Resolution Complete</span>
+                                </div>
+                                <p className="text-sm leading-relaxed" style={{ color: "var(--aegis-text)" }}>{finalResponse}</p>
+                            </div>
+                        )}
+
+                        {/* Textarea + Submit */}
+                        <div className="pt-2">
+                            <textarea
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleSubmit();
+                                    }
+                                }}
+                                placeholder="Describe the support issue... e.g. 'Customer #8 says they were double-charged $49 for their Pro plan'"
+                                disabled={status === "processing"}
+                                className="w-full rounded-xl p-4 text-sm leading-relaxed resize-none outline-none transition-all focus:border-blue-500/30 disabled:opacity-50"
+                                style={{
+                                    background: "var(--aegis-surface)",
+                                    border: "1px solid var(--aegis-border)",
+                                    color: "var(--aegis-text)",
+                                    fontFamily: "var(--font-sans)",
+                                    minHeight: "100px",
+                                }}
+                            />
+                            <button
+                                onClick={() => handleSubmit()}
+                                disabled={!message.trim() || status === "processing"}
+                                className="btn-primary mt-3 w-full flex items-center justify-center gap-2 disabled:opacity-40"
+                            >
+                                {status === "processing" ? (
+                                    <>
+                                        <div className="spinner" />
+                                        Agent Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                            <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
+                                        </svg>
+                                        Submit Ticket
+                                    </>
+                                )}
+                            </button>
                         </div>
-                    )}
+                    </div>
                 </div>
 
                 {/* Center Panel: Thought Stream */}
@@ -454,12 +457,11 @@ export default function Dashboard() {
             </div>
 
             {/* ── Footer ── */}
-            <footer className="px-6 py-3 flex items-center justify-between text-xs" style={{ borderTop: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)", minHeight: "48px" }}>
-                <span>Aegis v1.0 — Autonomous Enterprise Action Engine</span>
+            <footer className="px-6 py-4 flex items-center justify-between text-xs shrink-0" style={{ borderTop: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)" }}>
+                <span>Aegis v{require("../../package.json").version} — Autonomous Enterprise Action Engine</span>
                 <div className="flex items-center gap-4">
 
-                    <span>FastAPI + LangGraph + Next.js</span>
-                    {threadId && <span className="font-mono">Thread: {threadId.slice(0, 8)}...</span>}
+                    <span title={threadId ? `Thread: ${threadId}` : undefined}>FastAPI + LangGraph + Next.js</span>
                 </div>
             </footer>
 
