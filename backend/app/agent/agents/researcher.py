@@ -23,11 +23,11 @@ AGENT_DESCRIPTION = (
 async def search_docs(state: AgentState, config: dict | None = None) -> dict:
     """Search internal documentation for relevant policies/procedures."""
     db = get_supabase()
-    
+
     # Extract keywords from intent and message
     search_terms = state.get("intent", "general")
     docs = await db.search_docs(search_terms)
-    
+
     if docs:
         docs_text = "\n\n".join(
             f"[{d['title']}] ({d['category']})\n{d['content'][:500]}"
@@ -41,7 +41,7 @@ async def search_docs(state: AgentState, config: dict | None = None) -> dict:
                 f"✓ [{AGENT_NAME}] Found {len(docs)} relevant internal documents"
             ],
         }
-    
+
     return {
         "docs_context": "No internal documentation found for this topic.",
         "relevant_docs": [],

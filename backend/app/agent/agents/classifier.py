@@ -26,11 +26,11 @@ AGENT_DESCRIPTION = (
 @traceable(name="classify_intent")
 async def classify_intent(state: AgentState, config: dict | None = None) -> dict:
     """Classify the user's support ticket into a category.
-    
+
     Uses the FAST/CHEAP model — this is simple classification.
     """
     llm = get_model("classify_intent")
-    
+
     messages = [
         SystemMessage(content="""You are a support ticket classifier. Classify the user's message into exactly one category.
 
@@ -43,9 +43,9 @@ Categories:
 Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0>}"""),
         HumanMessage(content=state["user_message"]),
     ]
-    
+
     response = await llm.ainvoke(messages)
-    
+
     # Track tokens
     tracker = get_tracker()
     metrics = tracker.get_request(state["thread_id"])
@@ -56,7 +56,7 @@ Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0
             response.usage_metadata.get("input_tokens", 0),
             response.usage_metadata.get("output_tokens", 0),
         )
-    
+
     # Parse response
     try:
         result = json.loads(response.content.strip().strip("`").strip("json").strip())
@@ -65,13 +65,13 @@ Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0
     except (json.JSONDecodeError, AttributeError):
         intent = "general"
         confidence = 0.3
-    
+
     # Intent-based model routing: simple → Groq, complex → Gemini
     SIMPLE_INTENTS = {"billing", "general"}
     is_simple = intent in SIMPLE_INTENTS
     model_provider = "groq" if is_simple else "gemini"
     model_label = "⚡ Routed to Groq Llama-3.3" if is_simple else "🧠 Routed to Gemini 2.5 Flash"
-    
+
     return {
         "intent": intent,
         "intent_confidence": confidence,

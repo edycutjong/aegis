@@ -32,15 +32,15 @@ AGENT_DESCRIPTION = (
 
 def _extract_customer_info(message: str) -> tuple[int | None, str | None]:
     """Extract customer ID and name from a support ticket message.
-    
+
     Returns (customer_id, mentioned_name) — either can be None.
     """
     import re
-    
+
     # Extract ID: "Customer #8", "customer 8", "Customer#8"
     id_match = re.search(r'[Cc]ustomer\s*#?(\d+)', message)
     customer_id = int(id_match.group(1)) if id_match else None
-    
+
     # Extract name after customer ID: "Customer #8 David Martinez"
     mentioned_name = None
     if id_match:
@@ -57,7 +57,7 @@ def _extract_customer_info(message: str) -> tuple[int | None, str | None]:
         )
         if name_match:
             mentioned_name = name_match.group(1).strip()
-    
+
     return customer_id, mentioned_name
 
 
@@ -110,7 +110,7 @@ def _status_warning(customer: dict) -> str | None:
 @traceable(name="validate_customer")
 async def validate_customer(state: AgentState, config: dict | None = None) -> dict:
     """Validate customer identity before investigation.
-    
+
     Handles 8 edge cases:
     1. ID + name match         → proceed (warn if suspended/cancelled)
     2. ID + name mismatch      → stop
@@ -125,7 +125,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
     customer_id, mentioned_name = _extract_customer_info(user_msg)
     db = get_supabase()
     thoughts = state.get("thought_log", [])
-    
+
     # ── Case 6: No ID and no name → let SQL figure it out ──
     if customer_id is None and mentioned_name is None:
         return {
@@ -135,19 +135,19 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                 f"✓ [{AGENT_NAME}] No specific customer ID or name in message — proceeding with investigation"
             ],
         }
-    
+
     # ── Cases 1-4: ID provided → look up by ID ──
     if customer_id is not None:
         result = await db.execute_sql(
             f"SELECT id, name, email, plan, status FROM customers WHERE id = {customer_id} LIMIT 1"
         )
         id_found = result["success"] and result.get("data") and len(result["data"]) > 0
-        
+
         if id_found:
             customer = result["data"][0]
             db_name = customer["name"]
             warning = _status_warning(customer)
-            
+
             if mentioned_name is None:
                 # Case 4: ID only, no name
                 log_entries = [f"✓ [{AGENT_NAME}] Customer validated: #{customer['id']} {db_name} ({customer['plan']}, {customer['status']})"]
@@ -158,7 +158,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     "active_agent": AGENT_NAME,
                     "thought_log": thoughts + log_entries,
                 }
-            
+
             # Check exact name match (case-insensitive)
             if mentioned_name.lower() == db_name.lower():
                 # Case 1: ID + name match
@@ -170,7 +170,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     "active_agent": AGENT_NAME,
                     "thought_log": thoughts + log_entries,
                 }
-            
+
             # Check fuzzy match for typos
             similarity = _fuzzy_name_match(mentioned_name, db_name)
             if similarity >= _FUZZY_THRESHOLD:
@@ -186,7 +186,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     "active_agent": AGENT_NAME,
                     "thought_log": thoughts + log_entries,
                 }
-            
+
             # Case 2: ID exists but name clearly doesn't match
             return {
                 "customer_found": False,
@@ -200,7 +200,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     f"✗ [{AGENT_NAME}] Name mismatch: ticket says \"{mentioned_name}\" but #{customer_id} is \"{db_name}\" — stopping"
                 ],
             }
-        
+
         else:
             # ID not found — fall through to name search if name is given
             if mentioned_name is None:
@@ -217,11 +217,11 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
             thoughts = thoughts + [
                 f"⚠ [{AGENT_NAME}] Customer #{customer_id} not found — searching by name \"{mentioned_name}\" instead"
             ]
-    
+
     # ── Cases 5, 7: Search by name ──
     if mentioned_name:
         matches = await _search_customers_by_name(db, mentioned_name)
-        
+
         if len(matches) == 1:
             # Single match — use it
             customer = matches[0]
@@ -238,7 +238,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                 "active_agent": AGENT_NAME,
                 "thought_log": thoughts + log_entries,
             }
-        
+
         elif len(matches) > 1:
             # Multiple matches — return candidates for disambiguation UI
             return {
@@ -253,7 +253,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     f"✗ [{AGENT_NAME}] Ambiguous name \"{mentioned_name}\" — {len(matches)} matches found, need disambiguation"
                 ],
             }
-        
+
         else:
             # No matches at all — Case 8
             return {
@@ -267,7 +267,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     f"✗ [{AGENT_NAME}] No customer found matching \"{mentioned_name}\" — stopping"
                 ],
             }
-    
+
     # Fallback — should not reach here
     return {  # pragma: no cover
         "customer_found": True,
@@ -290,11 +290,11 @@ def should_proceed_after_validation(state: AgentState) -> str:
 @traceable(name="write_sql")
 async def write_sql(state: AgentState, config: dict | None = None) -> dict:
     """Generate a SQL query to investigate the user's issue.
-    
+
     Uses the SMART/EXPENSIVE model — SQL generation is complex.
     """
     llm = get_model_for_intent("write_sql", state.get("intent"))
-    
+
     error_context = ""
     if state.get("sql_error"):
         error_context = f"""
@@ -303,7 +303,7 @@ Query: {state.get('sql_query', '')}
 Error: {state['sql_error']}
 
 Fix the query and try again. Do NOT repeat the same mistake."""
-    
+
     messages = [
         SystemMessage(content=f"""You are a database engineer. Write a PostgreSQL query to investigate the user's support issue.
 
@@ -323,9 +323,9 @@ Rules:
 Respond with ONLY the SQL query, no explanation, no markdown fences."""),
         HumanMessage(content=f"User message: {state['user_message']}\nClassified intent: {state.get('intent', 'general')}"),
     ]
-    
+
     response = await llm.ainvoke(messages)
-    
+
     # Track tokens
     tracker = get_tracker()
     metrics = tracker.get_request(state["thread_id"])
@@ -336,9 +336,9 @@ Respond with ONLY the SQL query, no explanation, no markdown fences."""),
             response.usage_metadata.get("input_tokens", 0),
             response.usage_metadata.get("output_tokens", 0),
         )
-    
+
     sql = response.content.strip().strip("`").strip("sql").strip()
-    
+
     return {
         "sql_query": sql,
         "active_agent": AGENT_NAME,
@@ -355,13 +355,13 @@ Respond with ONLY the SQL query, no explanation, no markdown fences."""),
 @traceable(name="execute_sql")
 async def execute_sql(state: AgentState, config: dict | None = None) -> dict:
     """Execute the generated SQL against Supabase.
-    
+
     If it fails, records the error for the self-healing retry loop.
     """
     db = get_supabase()
     sql = state.get("sql_query", "")
     retry_count = state.get("sql_retry_count", 0)
-    
+
     if not sql:
         return {
             "sql_result": [],
@@ -371,9 +371,9 @@ async def execute_sql(state: AgentState, config: dict | None = None) -> dict:
                 f"✗ [{AGENT_NAME}] No SQL query to execute"
             ],
         }
-    
+
     result = await db.execute_sql(sql)
-    
+
     if result["success"]:
         records = result["data"] if isinstance(result["data"], list) else [result["data"]]
         return {
@@ -399,7 +399,7 @@ async def execute_sql(state: AgentState, config: dict | None = None) -> dict:
                 display_error = raw_error[:100]
         else:
             display_error = str(raw_error)[:100]
-        
+
         return {
             "sql_result": [],
             "sql_error": raw_error,  # Keep full error for debugging
@@ -415,10 +415,10 @@ def should_retry_sql(state: AgentState) -> str:
     """Conditional edge: retry SQL, short-circuit on 0 records, or proceed."""
     if state.get("sql_error") and state.get("sql_retry_count", 0) < 3:
         return "write_sql"  # Self-healing loop
-    
+
     # If SQL succeeded but returned 0 records, short-circuit
     records = state.get("sql_result", [])
     if not state.get("sql_error") and len(records) == 0:
         return "generate_response"  # No data found
-    
+
     return "search_docs"

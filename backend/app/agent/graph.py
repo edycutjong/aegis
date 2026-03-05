@@ -34,7 +34,7 @@ from app.agent.agents.resolver import (
 
 def build_agent_graph():
     """Build and compile the Aegis agent graph.
-    
+
     The workflow:
     1. classify_intent       → Determine ticket category (fast model)
     2. validate_customer     → Check customer exists in DB
@@ -48,9 +48,9 @@ def build_agent_graph():
        ↳ approved            → execute_action → generate_response → END
        ↳ denied              → generate_response → END
     """
-    
+
     builder = StateGraph(AgentState)
-    
+
     # Add all nodes
     builder.add_node("classify_intent", classify_intent)
     builder.add_node("validate_customer", validate_customer)
@@ -61,11 +61,11 @@ def build_agent_graph():
     builder.add_node("await_approval", await_approval)
     builder.add_node("execute_action", execute_action)
     builder.add_node("generate_response", generate_response)
-    
+
     # Define edges
     builder.add_edge(START, "classify_intent")
     builder.add_edge("classify_intent", "validate_customer")
-    
+
     # Customer validation gate
     builder.add_conditional_edges(
         "validate_customer",
@@ -76,7 +76,7 @@ def build_agent_graph():
         },
     )
     builder.add_edge("write_sql", "execute_sql")
-    
+
     # Self-healing SQL loop + zero-results guard
     builder.add_conditional_edges(
         "execute_sql",
@@ -87,10 +87,10 @@ def build_agent_graph():
             "generate_response": "generate_response", # 0 records → short-circuit
         },
     )
-    
+
     builder.add_edge("search_docs", "propose_action")
     builder.add_edge("propose_action", "await_approval")
-    
+
     # HITL decision routing
     builder.add_conditional_edges(
         "await_approval",
@@ -100,14 +100,14 @@ def build_agent_graph():
             "generate_response": "generate_response",  # Denied
         },
     )
-    
+
     builder.add_edge("execute_action", "generate_response")
     builder.add_edge("generate_response", END)
-    
+
     # Compile with checkpointer for HITL state persistence
     checkpointer = MemorySaver()
     graph = builder.compile(checkpointer=checkpointer, name="aegis-support-workflow")
-    
+
     return graph
 
 

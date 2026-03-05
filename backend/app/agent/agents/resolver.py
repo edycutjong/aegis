@@ -82,14 +82,14 @@ def _detect_already_resolved(sql_results: list, user_message: str) -> dict | Non
 @traceable(name="propose_action")
 async def propose_action(state: AgentState, config: dict | None = None) -> dict:
     """Synthesize all findings and propose an action.
-    
+
     Uses the SMART model for critical reasoning.
     """
     llm = get_model_for_intent("propose_action", state.get("model_provider"))
-    
+
     sql_data = json.dumps(state.get("sql_result", []), indent=2, default=str)
     docs = state.get("docs_context", "None")
-    
+
     # Check if we actually found a valid customer in the SQL results
     sql_results = state.get("sql_result", [])
 
@@ -110,16 +110,16 @@ async def propose_action(state: AgentState, config: dict | None = None) -> dict:
             if isinstance(row, dict) and row.get("id") and row.get("name"):
                 has_valid_customer = True
                 break
-    
+
     customer_guard = ""
     if not has_valid_customer:
         customer_guard = """
-CRITICAL: The SQL investigation found NO matching customer in the database. 
+CRITICAL: The SQL investigation found NO matching customer in the database.
 You MUST NOT propose refund, credit, or tier_change actions for non-existent customers.
-Instead, use "escalate" with a description explaining the customer was not found, 
+Instead, use "escalate" with a description explaining the customer was not found,
 or use "resolve" if the ticket can be closed without action.
 Set customer_id to null and customer_name to "Not Found"."""
-    
+
     messages = [
         SystemMessage(content=f"""You are a senior support engineer deciding what action to take. Based on the investigation data, propose exactly ONE action.
 
@@ -152,9 +152,9 @@ Internal Documentation:
 
 Propose the best action:"""),
     ]
-    
+
     response = await llm.ainvoke(messages)
-    
+
     # Track tokens
     tracker = get_tracker()
     metrics = tracker.get_request(state["thread_id"])
@@ -165,7 +165,7 @@ Propose the best action:"""),
             response.usage_metadata.get("input_tokens", 0),
             response.usage_metadata.get("output_tokens", 0),
         )
-    
+
     # Parse the proposed action (with regex fallback for markdown-fenced JSON)
     action = None
     raw = (response.content or "").strip()
@@ -194,7 +194,7 @@ Propose the best action:"""),
             "description": "Unable to determine action — escalating to human manager",
             "reason": "The AI could not confidently parse a resolution.",
         }
-    
+
     # ── Deterministic correction: override LLM-hallucinated customer info ──
     # Extract the real customer_id and customer_name from SQL results
     real_customer_id = None
@@ -209,7 +209,7 @@ Propose the best action:"""),
                     real_customer_id = cid
                     real_customer_name = cname
                     break
-    
+
     if real_customer_id is not None:
         action["customer_id"] = real_customer_id
         action["customer_name"] = real_customer_name
@@ -220,7 +220,7 @@ Propose the best action:"""),
         action["customer_name"] = "Not Found"
         action["description"] = f"Customer not found in database — escalating for manual review. Original proposal: {action.get('description', '')}"
         action["reason"] = "Cannot execute actions for unverified customers."
-    
+
     return {
         "proposed_action": action,
         "active_agent": AGENT_NAME,
@@ -237,13 +237,13 @@ Propose the best action:"""),
 @traceable(name="await_approval")
 async def await_approval(state: AgentState, config: dict | None = None) -> dict:
     """Pause the workflow and wait for human approval.
-    
+
     This is the core HITL mechanism (Flex 1).
     The LangGraph interrupt() function literally pauses execution
     and waits for a resume command with the human's decision.
     """
     action = state.get("proposed_action", {})
-    
+
     # Non-destructive actions can auto-approve
     auto_approve_types = {"resolve", "reactivate"}
     if action.get("type") in auto_approve_types:
@@ -254,7 +254,7 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
                 f"✓ [{AGENT_NAME}] Auto-approved: {action.get('type')} is non-destructive"
             ],
         }
-    
+
     # For destructive actions, PAUSE and wait for human
     decision = interrupt({
         "type": "approval_required",
@@ -262,7 +262,7 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
         "message": f"AI proposes: {action.get('description', 'Unknown action')}",
         "requires_approval": True,
     })
-    
+
     # This code runs AFTER human resumes the workflow
     if isinstance(decision, dict):
         approved = decision.get("approved", False)
@@ -270,9 +270,9 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
     else:
         approved = bool(decision)
         reason = ""
-    
+
     status = "approved" if approved else "denied"
-    
+
     return {
         "approval_status": status,
         "denial_reason": reason if not approved else "",
@@ -340,7 +340,7 @@ async def execute_action(state: AgentState, config: dict | None = None) -> dict:
 @traceable(name="generate_response")
 async def generate_response(state: AgentState, config: dict | None = None) -> dict:
     """Generate a final human-readable summary response."""
-    
+
     # If validate_customer already set a final_response (not found, mismatch, etc.),
     # preserve it — don't let the LLM overwrite it with hallucinated content.
     if state.get("final_response") and state.get("customer_found") is False:
@@ -350,7 +350,7 @@ async def generate_response(state: AgentState, config: dict | None = None) -> di
                 f"✓ [{AGENT_NAME}] Response already set by validation — skipping LLM generation"
             ],
         }
-    
+
     # If SQL returned 0 records, generate a clear "not found" response without LLM
     sql_result = state.get("sql_result", [])
     if not state.get("sql_error") and len(sql_result) == 0 and state.get("customer_found") is True:
@@ -363,20 +363,20 @@ async def generate_response(state: AgentState, config: dict | None = None) -> di
                 f"⚠ [{AGENT_NAME}] No records found in database — no action required"
             ],
         }
-    
+
     llm = get_model_for_intent("generate_response", state.get("model_provider"))
-    
+
     action = state.get("proposed_action", {})
     approved = state.get("approval_status") == "approved"
     execution = state.get("execution_result", "")
     denied_reason = state.get("denial_reason", "")
     sql_data = json.dumps(state.get("sql_result", []), indent=2, default=str)
     docs = state.get("docs_context", "None")
-    
+
     # Extract customer details from the action proposal
     customer_name = action.get("customer_name", "Unknown")
     customer_id = action.get("customer_id", "N/A")
-    
+
     messages = [
         SystemMessage(content="You are a support engineer writing a brief resolution summary. "
                       "Use the ACTUAL customer name, ticket details, and action results provided below. "
@@ -400,9 +400,9 @@ Execution result: {execution if approved else 'N/A'}
 
 Write a brief resolution summary using the real data above:"""),
     ]
-    
+
     response = await llm.ainvoke(messages)
-    
+
     # Track tokens
     tracker = get_tracker()
     metrics = tracker.get_request(state["thread_id"])
@@ -413,7 +413,7 @@ Write a brief resolution summary using the real data above:"""),
             response.usage_metadata.get("input_tokens", 0),
             response.usage_metadata.get("output_tokens", 0),
         )
-    
+
     return {
         "final_response": response.content,
         "active_agent": AGENT_NAME,

@@ -6,7 +6,7 @@ from app.config import get_settings
 
 class SupabaseClient:
     """Lightweight async Supabase client for SQL execution."""
-    
+
     def __init__(self):
         settings = get_settings()
         self.url = settings.supabase_url
@@ -17,10 +17,10 @@ class SupabaseClient:
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json",
         }
-    
+
     async def execute_sql(self, query: str) -> dict:
         """Execute a SQL query via Supabase REST RPC.
-        
+
         Uses the rpc endpoint to run raw SQL safely.
         Returns the result rows or an error.
         """
@@ -32,7 +32,7 @@ class SupabaseClient:
                 headers=self.headers,
                 json={"query_text": query.rstrip().rstrip(";")}
             )
-            
+
             if response.status_code == 200:
                 return {"success": True, "data": response.json()}
             else:
@@ -41,7 +41,7 @@ class SupabaseClient:
                     "error": response.text,
                     "status_code": response.status_code,
                 }
-    
+
     async def get_customer(self, customer_id: int) -> dict | None:
         """Fetch a customer by ID."""
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -54,7 +54,7 @@ class SupabaseClient:
                 data = response.json()
                 return data[0] if data else None
             return None
-    
+
     async def get_customer_billing(self, customer_id: int) -> list[dict]:
         """Fetch billing records for a customer."""
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -71,7 +71,7 @@ class SupabaseClient:
             if response.status_code == 200:
                 return response.json()
             return []
-    
+
     async def get_support_tickets(self, customer_id: int) -> list[dict]:
         """Fetch support tickets for a customer."""
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -87,7 +87,7 @@ class SupabaseClient:
             if response.status_code == 200:
                 return response.json()
             return []
-    
+
     async def search_docs(self, query: str, limit: int = 5) -> list[dict]:
         """Search internal documentation by keyword."""
         async with httpx.AsyncClient(timeout=10.0) as client:

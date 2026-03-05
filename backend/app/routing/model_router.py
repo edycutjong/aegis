@@ -44,39 +44,39 @@ INTENT_MODEL_MAP = {
 
 def get_model(task: str, override_model: str | None = None):
     """Get the appropriate LLM for a given task.
-    
+
     Args:
         task: The agent task name (e.g., 'classify_intent', 'write_sql')
         override_model: Optional specific model to use
-        
+
     Returns:
         A LangChain chat model instance
     """
     settings = get_settings()
-    
+
     if override_model:
         model_name = override_model
     else:
         complexity = TASK_MODEL_MAP.get(task, "fast")
         model_name = settings.smart_model if complexity == "smart" else settings.fast_model
-    
+
     return _create_model(model_name)
 
 
 def get_model_for_intent(task: str, model_provider: str | None = None):
     """Get the appropriate LLM for a task, routed by intent classification.
-    
+
     For tasks like 'propose_action' and 'generate_response', uses the
     model_provider set by the classifier (groq for simple intents,
     gemini for complex). Falls back to Gemini if Groq is unavailable.
-    
+
     Args:
         task: The agent task name
         model_provider: 'groq' or 'gemini', set by classify_intent
     """
     # Only route downstream agents; classification/SQL keep their defaults
     routable_tasks = {"propose_action", "generate_response"}
-    
+
     if model_provider and task in routable_tasks:
         model_name = INTENT_MODEL_MAP.get(model_provider)
         if model_name:
@@ -85,7 +85,7 @@ def get_model_for_intent(task: str, model_provider: str | None = None):
             except Exception:
                 # Fallback to Gemini if Groq is unavailable
                 return _create_model("gemini-2.5-flash")
-    
+
     # Default: use standard task→model routing
     return get_model(task)
 
@@ -93,7 +93,7 @@ def get_model_for_intent(task: str, model_provider: str | None = None):
 def _create_model(model_name: str):
     """Create a LangChain model instance by name."""
     settings = get_settings()
-    
+
     if model_name.startswith("gemini"):
         return ChatGoogleGenerativeAI(
             model=model_name,
