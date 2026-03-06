@@ -257,7 +257,7 @@ export default function Dashboard() {
     return (
         <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--aegis-bg)" }}>
             {/* ── Top Navigation ── */}
-            <nav className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--aegis-border)" }}>
+            <nav className="flex items-center justify-between px-6 py-4 animate-slide-up-fade" style={{ borderBottom: "1px solid var(--aegis-border)", animationDelay: "0s" }}>
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1e3a5f, #3b82f6)" }}>
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -287,8 +287,8 @@ export default function Dashboard() {
             <div className="flex-1 min-h-0 p-4 grid gap-4 dashboard-grid">
 
                 {/* Left Panel: Ticket Submission */}
-                <div className="glass-panel p-6 h-full min-h-0 flex flex-col">
-                    <div className="flex items-center gap-3 mb-5">
+                <div className="glass-panel h-full min-h-0 flex flex-col overflow-hidden animate-slide-up-fade" style={{ animationDelay: "0.1s" }}>
+                    <div className="flex items-center gap-3 mb-5 px-6 pt-6 shrink-0">
                         <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -300,9 +300,9 @@ export default function Dashboard() {
                     </div>
 
                     {/* Scrollable content */}
-                    <div className="flex-1 overflow-y-auto space-y-4">
+                    <div className="flex-1 overflow-y-auto pl-6 pr-4 pb-6 space-y-4" style={{ scrollbarGutter: "stable" }}>
                         {/* Demo Presets — Tabbed */}
-                        <div>
+                        <div className="animate-slide-up-fade" style={{ animationDelay: "0.2s" }}>
                             <div className="flex gap-1 mb-3">
                                 <button
                                     onClick={() => setActiveTab("intents")}
@@ -345,11 +345,13 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-                        <TicketHistory
-                            entries={historyEntries}
-                            onSelect={setMessage}
-                            onClear={clearHistory}
-                        />
+                        <div className="animate-slide-up-fade" style={{ animationDelay: "0.3s" }}>
+                            <TicketHistory
+                                entries={historyEntries}
+                                onSelect={setMessage}
+                                onClear={clearHistory}
+                            />
+                        </div>
 
                         {/* Disambiguation Selector */}
                         {candidates.length > 0 && (
@@ -407,7 +409,7 @@ export default function Dashboard() {
                         )}
 
                         {/* Textarea + Submit */}
-                        <div className="pt-2">
+                        <div className="pt-2 animate-slide-up-fade" style={{ animationDelay: "0.4s" }}>
                             <textarea
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
@@ -452,12 +454,16 @@ export default function Dashboard() {
                 </div>
 
                 {/* Center Panel: Thought Stream */}
-                <ThoughtStream thoughts={thoughts} status={status} />
+                <div className="h-full min-h-0 animate-slide-up-fade" style={{ animationDelay: "0.2s" }}>
+                    <ThoughtStream thoughts={thoughts} status={status} />
+                </div>
 
                 {/* Right Panel: Metrics */}
-                <MetricsPanel metrics={metrics} onCacheCleared={async () => {
-                    try { setMetrics(await getMetrics()); } catch { }
-                }} onOpenTraces={() => setTracesOpen(true)} />
+                <div className="h-full min-h-0 flex flex-col animate-slide-up-fade" style={{ animationDelay: "0.3s" }}>
+                    <MetricsPanel metrics={metrics} onCacheCleared={async () => {
+                        try { setMetrics(await getMetrics()); } catch { }
+                    }} onOpenTraces={() => setTracesOpen(true)} />
+                </div>
             </div>
 
             {/* ── Footer ── */}

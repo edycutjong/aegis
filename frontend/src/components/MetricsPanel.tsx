@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import type { Metrics, DbStatus } from "@/lib/api";
 import { clearCache, getDbStatus, getTableData } from "@/lib/api";
+import AnimatedNumber from "./AnimatedNumber";
 
 interface MetricsPanelProps {
     metrics: Metrics | null;
@@ -105,9 +106,9 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
     const expandedMeta = expanded ? TABLE_META[expanded] : null;
 
     return (
-        <div className="glass-panel p-6 h-full min-h-0 flex flex-col">
+        <div className="glass-panel h-full min-h-0 flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-3 mb-5 px-6 pt-6 shrink-0">
                 <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" />
@@ -118,37 +119,64 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                 </h2>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-4">
+            <div className="flex-1 overflow-y-auto pl-6 pr-4 pb-6 space-y-4" style={{ scrollbarGutter: "stable" }}>
                 {/* Primary Metrics */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 animate-slide-up-fade" style={{ animationDelay: "0.4s" }}>
                     <div className="metric-card">
                         <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Avg Cost/Req</span>
                         <span className="text-xl font-bold text-emerald-400">
-                            ${agent?.avg_cost_usd?.toFixed(4) || "0.0000"}
+                            $<AnimatedNumber value={agent?.avg_cost_usd || 0} format={(v) => v.toFixed(4)} />
                         </span>
                     </div>
                     <div className="metric-card">
                         <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Requests</span>
                         <span className="text-xl font-bold text-blue-400">
-                            {formatCompact(agent?.total_requests || 0)}
+                            <AnimatedNumber value={agent?.total_requests || 0} format={(v) => formatCompact(Math.round(v))} />
                         </span>
                     </div>
                     <div className="metric-card">
                         <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Cost</span>
                         <span className="text-xl font-bold text-amber-400">
-                            ${agent?.total_cost_usd?.toFixed(4) || "0.0000"}
+                            $<AnimatedNumber value={agent?.total_cost_usd || 0} format={(v) => v.toFixed(4)} />
                         </span>
                     </div>
                     <div className="metric-card">
                         <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Total Tokens</span>
                         <span className="text-xl font-bold text-purple-400">
-                            {formatCompact(agent?.total_tokens || 0)}
+                            <AnimatedNumber value={agent?.total_tokens || 0} format={(v) => formatCompact(Math.round(v))} />
                         </span>
                     </div>
                 </div>
 
-                {/* Cache Stats */}
-                <div className="space-y-2">
+                {/* Production Metrics */}
+                <div className="grid grid-cols-2 gap-3 animate-slide-up-fade" style={{ animationDelay: "0.5s" }}>
+                    <div className="metric-card">
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>HITL Approval</span>
+                        <span className="text-xl font-bold" style={{ color: agent?.hitl_approval_rate != null ? (agent.hitl_approval_rate >= 80 ? "#4ade80" : "#f87171") : "var(--aegis-text-muted)" }}>
+                            {agent?.hitl_approval_rate != null ? <AnimatedNumber value={agent.hitl_approval_rate} format={(v) => Math.round(v) + "%"} /> : "—"}
+                        </span>
+                    </div>
+                    <div className="metric-card">
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Avg Resolution</span>
+                        <span className="text-xl font-bold text-cyan-400">
+                            {agent?.avg_duration_seconds ? <AnimatedNumber value={agent.avg_duration_seconds} format={(v) => v.toFixed(1) + "s"} /> : "—"}
+                        </span>
+                    </div>
+                    <div className="metric-card">
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>HITL Wait</span>
+                        <span className="text-xl font-bold text-orange-400">
+                            {agent?.avg_hitl_wait_seconds != null ? <AnimatedNumber value={agent.avg_hitl_wait_seconds} format={(v) => v.toFixed(1) + "s"} /> : "—"}
+                        </span>
+                    </div>
+                    <div className="metric-card">
+                        <span className="metric-label text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Cache Savings</span>
+                        <span className="text-xl font-bold text-emerald-400">
+                            $<AnimatedNumber value={agent?.cost_saved_by_cache || 0} format={(v) => v.toFixed(4)} />
+                        </span>
+                    </div>
+                </div>
+
+                <div className="space-y-2 animate-slide-up-fade" style={{ animationDelay: "0.6s" }}>
                     <div className="flex items-center justify-between">
                         <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
                             Semantic Cache
@@ -180,7 +208,7 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-xs" style={{ color: "var(--aegis-text-muted)" }}>Hit Rate</span>
                             <span className="text-sm font-bold" style={{ color: (cache?.hit_rate_percent || 0) > 50 ? "#4ade80" : "#60a5fa" }}>
-                                {cache?.hit_rate_percent?.toFixed(1) || "0.0"}%
+                                <AnimatedNumber value={cache?.hit_rate_percent || 0} format={(v) => v.toFixed(1) + "%"} />
                             </span>
                         </div>
                         {/* Progress bar */}
@@ -195,10 +223,10 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                         </div>
                         <div className="flex justify-between mt-2">
                             <span className="text-xs" style={{ color: "var(--aegis-text-muted)" }}>
-                                {cache?.hits || 0} hits
+                                <AnimatedNumber value={cache?.hits || 0} format={(v) => Math.round(v) + " hits"} />
                             </span>
                             <span className="text-xs" style={{ color: "var(--aegis-text-muted)" }}>
-                                {cache?.misses || 0} misses
+                                <AnimatedNumber value={cache?.misses || 0} format={(v) => Math.round(v) + " misses"} />
                             </span>
                         </div>
                     </div>
@@ -231,7 +259,7 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                     }
 
                     return (
-                        <div className="space-y-2">
+                        <div className="space-y-2 animate-slide-up-fade" style={{ animationDelay: "0.7s" }}>
                             <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
                                 Model Usage
                             </h3>
@@ -240,10 +268,10 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                             <div className="metric-card py-2 px-3">
                                 <div className="flex items-center gap-3 mb-2 flex-wrap">
                                     {Object.entries(providers).map(([label, { count, color, icon }]) => {
-                                        const pct = ((count / modelTotal) * 100).toFixed(0);
+                                        const pct = ((count / modelTotal) * 100);
                                         return (
                                             <span key={label} className="flex items-center gap-1 text-xs font-semibold" style={{ color }}>
-                                                {icon} {label} {pct}%
+                                                {icon} {label} <AnimatedNumber value={pct} format={(v) => Math.round(v) + "%"} />
                                             </span>
                                         );
                                     })}
@@ -267,17 +295,11 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                     );
                 })()}
 
-                {/* Avg Duration */}
-                <div className="metric-card">
-                    <span className="text-xs block mb-1" style={{ color: "var(--aegis-text-muted)" }}>Avg Duration</span>
-                    <span className="text-lg font-bold" style={{ color: "var(--aegis-text)" }}>
-                        {agent?.avg_duration_seconds?.toFixed(1) || "0.0"}s
-                    </span>
-                </div>
+
 
                 {/* ── Database Section ── */}
                 {db && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 animate-slide-up-fade" style={{ animationDelay: "0.8s" }}>
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
