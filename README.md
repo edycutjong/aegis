@@ -91,7 +91,8 @@ aegis/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/page.tsx         # Main dashboard
-│   │   ├── components/          # 5 React components
+│   │   ├── components/          # 6 React components
+│   │   │   ├── AnimatedNumber.tsx    # Smooth animated value counter
 │   │   │   ├── ApprovalModal.tsx     # HITL approval UI
 │   │   │   ├── DatabaseStatus.tsx    # DB table explorer
 │   │   │   ├── MetricsPanel.tsx      # Observability dashboard
@@ -99,7 +100,8 @@ aegis/
 │   │   │   └── TicketHistory.tsx     # Recent tickets (localStorage)
 │   │   ├── hooks/useTicketHistory.ts
 │   │   └── lib/api.ts           # API client + SSE
-│   ├── src/__tests__/           # 7 test files (Vitest + RTL)
+│   ├── src/components/__tests__/ # 8 test files (Vitest + RTL)
+│   ├── src/app/__tests__/       # 1 test file (Vitest + RTL)
 │   ├── Dockerfile               # Multi-stage standalone build
 │   └── package.json
 ├── docker-compose.yml           # Backend + Frontend + Redis
@@ -292,17 +294,17 @@ python -m pytest tests/ --cov=app --cov-fail-under=100
 
 | Module | Stmts | Cover |
 |---|---|---|
-| `classifier.py` (Triage Agent) | 25 | 100% |
-| `investigator.py` (Investigator Agent) | 139 | 100% |
+| `classifier.py` (Triage Agent) | 29 | 100% |
+| `investigator.py` (Investigator Agent) | 138 | 100% |
 | `researcher.py` (Knowledge Agent) | 14 | 100% |
-| `resolver.py` (Resolution Agent) | 102 | 100% |
-| `main.py` (API + SSE + HITL) | 176 | 100% |
-| `model_router.py` | 32 | 100% |
-| `semantic.py` (cache) | 58 | 100% |
-| `tracker.py` (observability) | 62 | 100% |
+| `resolver.py` (Resolution Agent) | 150 | 100% |
+| `main.py` (API + SSE + HITL) | 270 | 100% |
+| `model_router.py` | 43 | 100% |
+| `semantic.py` (cache) | 73 | 100% |
+| `tracker.py` (observability) | 71 | 100% |
 | `supabase.py` | 45 | 100% |
-| All other modules | 120 | 100% |
-| **Total** | **773** | **100%** |
+| All other modules | 123 | 100% |
+| **Total** | **956** | **100%** |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -320,8 +322,9 @@ npx vitest run --coverage
 |---|---|
 | `page.test.tsx` | Dashboard rendering, submission, preset buttons |
 | `ApprovalModal.test.tsx` | HITL approve/deny flow, animations |
+| `AnimatedNumber.test.tsx` | Number formatting, animations, cleanup requests |
 | `MetricsPanel.test.tsx` | Metrics display, cache clear, DB explorer |
-| `ThoughtStream.test.tsx` | Dev/User mode toggle, message simplification |
+| `ThoughtStream.test.tsx` | Dev/User mode toggle, message simplification, idle empty states |
 | `TicketHistory.test.tsx` | History persistence, clear, selection |
 | `useTicketHistory.test.ts` | Hook behavior, localStorage |
 | `api.test.ts` | API client, SSE connection, error handling |
