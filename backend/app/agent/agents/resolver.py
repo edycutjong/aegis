@@ -11,6 +11,7 @@ that affect real customer accounts.
 """
 
 import json
+import time
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
 from langsmith import traceable
@@ -256,6 +257,12 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
         }
 
     # For destructive actions, PAUSE and wait for human
+    # Track when HITL was requested
+    tracker = get_tracker()
+    metrics = tracker.get_request(state["thread_id"])
+    if metrics:
+        metrics.hitl_requested_at = time.time()
+
     decision = interrupt({
         "type": "approval_required",
         "action": action,
@@ -264,6 +271,10 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
     })
 
     # This code runs AFTER human resumes the workflow
+    # Track when HITL was resolved
+    if metrics:
+        metrics.hitl_resolved_at = time.time()
+
     if isinstance(decision, dict):
         approved = decision.get("approved", False)
         reason = decision.get("reason", "")

@@ -41,6 +41,10 @@ class RequestMetrics:
     # Result
     approved: bool | None = None  # None = no HITL needed
 
+    # HITL timing
+    hitl_requested_at: float | None = None
+    hitl_resolved_at: float | None = None
+
     def add_step(self, step_name: str, model: str, prompt_tokens: int, completion_tokens: int):
         """Record metrics for an LLM call."""
         cost = calculate_cost(model, prompt_tokens, completion_tokens)
@@ -81,6 +85,8 @@ class RequestMetrics:
             "steps": self.steps,
             "cache_hit": self.cache_hit,
             "approved": self.approved,
+            "hitl_wait_seconds": round(self.hitl_resolved_at - self.hitl_requested_at, 2)
+                if self.hitl_requested_at and self.hitl_resolved_at else None,
         }
 
 
@@ -108,7 +114,7 @@ class ObservabilityTracker:
             metrics.complete()
             self._history.append(metrics.to_dict())
 
-    def get_aggregate_stats(self) -> dict:
+    def get_aggregate_stats(self, total_cache_hits: int = 0) -> dict:
         """Get aggregate statistics across all completed requests."""
         if not self._history:
             return {
@@ -132,6 +138,19 @@ class ObservabilityTracker:
             for model, count in r["models_used"].items():
                 model_dist[model] = model_dist.get(model, 0) + count
 
+        # HITL approval rate
+        hitl_requests = [r for r in self._history if r["approved"] is not None]
+        hitl_approved = sum(1 for r in hitl_requests if r["approved"])
+        hitl_rate = round((hitl_approved / len(hitl_requests) * 100), 1) if hitl_requests else None
+
+        # HITL wait time
+        hitl_waits = [r["hitl_wait_seconds"] for r in self._history if r.get("hitl_wait_seconds") is not None]
+        avg_hitl_wait = round(sum(hitl_waits) / len(hitl_waits), 2) if hitl_waits else None
+
+        # Cost saved by cache (avg cost of standard request × number of cache hits)
+        avg_real_cost = (total_cost / n) if n > 0 else 0
+        cost_saved = round(avg_real_cost * total_cache_hits, 6)
+
         return {
             "total_requests": n,
             "avg_cost_usd": round(total_cost / n, 6),
@@ -139,7 +158,10 @@ class ObservabilityTracker:
             "total_cost_usd": round(total_cost, 6),
             "total_tokens": total_tokens,
             "model_distribution": model_dist,
-            "recent_requests": self._history[-10:],  # Last 10
+            "recent_requests": self._history[-10:],
+            "hitl_approval_rate": hitl_rate,
+            "avg_hitl_wait_seconds": avg_hitl_wait,
+            "cost_saved_by_cache": cost_saved,
         }
 
 
