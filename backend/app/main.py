@@ -375,10 +375,11 @@ async def get_metrics():
     """
     tracker = get_tracker()
     cache = await get_cache()
+    cache_stats = cache.get_stats()
 
     return {
-        "agent_metrics": tracker.get_aggregate_stats(),
-        "cache_metrics": cache.get_stats(),
+        "agent_metrics": tracker.get_aggregate_stats(total_cache_hits=cache_stats["hits"]),
+        "cache_metrics": cache_stats,
     }
 
 
