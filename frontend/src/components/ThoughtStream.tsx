@@ -90,9 +90,9 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
     };
 
     return (
-        <div className="glass-panel p-6 h-full min-h-0 flex flex-col">
+        <div className="glass-panel h-full min-h-0 flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 px-6 pt-6 shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -136,12 +136,21 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
             </div>
 
             {/* Single scroll for all content */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+            <div className="flex-1 overflow-y-auto pl-6 pr-4 pb-6 space-y-2" style={{ scrollbarGutter: "stable" }}>
                 {thoughts.length === 0 ? (
-                    <div className="flex items-center justify-center h-full">
-                        <p className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>
-                            Submit a support ticket to see the agent&apos;s thought process...
-                        </p>
+                    <div className="px-3 py-2.5">
+                        {status === "processing" ? (
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>Agent is thinking</span>
+                                <div className="typing-indicator p-0!">
+                                    <span></span><span></span><span></span>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>
+                                Submit a support ticket to see the agent&apos;s thought process...
+                            </p>
+                        )}
                     </div>
                 ) : (
                     thoughts.map((step, i) => {
@@ -179,7 +188,7 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
 
             {/* Footer — pinned outside scroll */}
             {thoughts.length > 0 && (
-                <div className="mt-4 pt-3 border-t flex items-center justify-between shrink-0" style={{ borderColor: "var(--aegis-border)" }}>
+                <div className="pt-3 pb-6 px-6 border-t flex items-center justify-between shrink-0" style={{ borderColor: "var(--aegis-border)", background: "var(--aegis-surface-hover)" }}>
                     <span className="text-xs" style={{ color: "var(--aegis-text-muted)" }}>
                         {thoughts.length} steps {devMode ? "completed" : ""}
                     </span>
