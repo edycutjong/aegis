@@ -266,7 +266,7 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
 
                             {/* Provider split bar */}
                             <div className="metric-card py-2 px-3">
-                                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                <div className="flex items-center gap-3 mb-2 overflow-hidden">
                                     {Object.entries(providers).map(([label, { count, color, icon }]) => {
                                         const pct = ((count / modelTotal) * 100);
                                         return (
