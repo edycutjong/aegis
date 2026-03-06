@@ -1145,7 +1145,7 @@ class TestAwaitApprovalAsync:
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             result = await await_approval(state)
-        
+
         assert result["approval_status"] == "approved"
         assert result["denial_reason"] == ""
         # Verify timestamps were set
