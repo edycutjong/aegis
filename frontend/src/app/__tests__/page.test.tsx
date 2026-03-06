@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
 import userEvent from "@testing-library/user-event";
 import Dashboard from "../page";
 import type { ActionProposal, ChatResponse } from "@/lib/api";
@@ -16,6 +17,9 @@ vi.mock("@/lib/api", () => ({
             avg_duration_seconds: 0,
             total_cost_usd: 0,
             total_tokens: 0,
+            hitl_approval_rate: 100,
+            avg_hitl_wait_seconds: 0,
+            cost_saved_by_cache: 0,
             model_distribution: {},
             recent_requests: [],
         },
@@ -30,9 +34,10 @@ vi.mock("@/lib/api", () => ({
     getDbStatus: vi.fn().mockResolvedValue({}),
     clearCache: vi.fn().mockResolvedValue({ status: "ok", keys_deleted: 0 }),
     getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
+    getTraces: vi.fn().mockResolvedValue({ traces: [], error: null }),
 }));
 
-import { startChat, connectSSE, approveAction, getMetrics, clearCache } from "@/lib/api";
+import { startChat, connectSSE, approveAction, getMetrics, clearCache, getTraces } from "@/lib/api";
 
 describe("Dashboard (page.tsx)", () => {
     beforeEach(() => {
@@ -226,6 +231,7 @@ describe("Dashboard (page.tsx)", () => {
 
         render(<Dashboard />);
         await user.click(screen.getByText("Refund"));
+        await user.click(screen.getByRole("button", { name: /Submit/i }));
 
         await waitFor(() => {
             expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
@@ -236,10 +242,47 @@ describe("Dashboard (page.tsx)", () => {
         await user.click(approveBtn);
 
         // Advance past the 200ms animation delay
-        vi.advanceTimersByTime(300);
+        await act(async () => { vi.advanceTimersByTime(300); });
 
         await waitFor(() => {
             expect(approveAction).toHaveBeenCalledWith("approve-thread", true);
+            expect(screen.getByText(/Action approved/i)).toBeInTheDocument();
+        });
+    });
+
+    it("calls approveAction with true and falls back to default success message when result is falsy", async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const mockAction: ActionProposal = {
+            type: "refund", amount: 49.0, customer_id: 8,
+            customer_name: "Fallback Test", description: "Fallback", reason: "Fallback",
+        };
+
+        vi.mocked(startChat).mockResolvedValue({
+            thread_id: "approve-fallback", status: "processing", cache_hit: false,
+        });
+        vi.mocked(connectSSE).mockImplementation(
+            (_threadId, _onThought, onApprovalRequired) => {
+                setTimeout(() => onApprovalRequired(mockAction), 0);
+                return {} as unknown as EventSource;
+            }
+        );
+        vi.mocked(approveAction).mockResolvedValue({
+            thread_id: "approve-fallback", status: "completed", result: undefined as any,
+        });
+
+        render(<Dashboard />);
+        await user.click(screen.getByText("Refund"));
+        await user.click(screen.getByRole("button", { name: /Submit/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByRole("button", { name: /approve/i }));
+        await act(async () => { vi.advanceTimersByTime(300); });
+
+        await waitFor(() => {
+            expect(screen.getAllByText(/Action executed successfully/i)[0]).toBeInTheDocument();
         });
     });
 
@@ -273,6 +316,7 @@ describe("Dashboard (page.tsx)", () => {
 
         render(<Dashboard />);
         await user.click(screen.getByText("Refund"));
+        await user.click(screen.getByRole("button", { name: /Submit/i }));
 
         await waitFor(() => {
             expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
@@ -281,7 +325,7 @@ describe("Dashboard (page.tsx)", () => {
         const denyBtn = screen.getByRole("button", { name: /deny/i });
         await user.click(denyBtn);
 
-        vi.advanceTimersByTime(300);
+        await act(async () => { vi.advanceTimersByTime(300); });
 
         await waitFor(() => {
             expect(approveAction).toHaveBeenCalledWith(
@@ -289,6 +333,43 @@ describe("Dashboard (page.tsx)", () => {
                 false,
                 "Manager denied the proposed action"
             );
+            expect(screen.getByText(/Manager denied/i)).toBeInTheDocument();
+        });
+    });
+
+    it("calls approveAction with false and falls back to default deny message when result is falsy", async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const mockAction: ActionProposal = {
+            type: "refund", amount: 49.0, customer_id: 8,
+            customer_name: "Fallback Test", description: "Fallback", reason: "Fallback",
+        };
+
+        vi.mocked(startChat).mockResolvedValue({
+            thread_id: "deny-fallback", status: "processing", cache_hit: false,
+        });
+        vi.mocked(connectSSE).mockImplementation(
+            (_threadId, _onThought, onApprovalRequired) => {
+                setTimeout(() => onApprovalRequired(mockAction), 0);
+                return {} as unknown as EventSource;
+            }
+        );
+        vi.mocked(approveAction).mockResolvedValue({
+            thread_id: "deny-fallback", status: "completed", result: undefined as any,
+        });
+
+        render(<Dashboard />);
+        await user.click(screen.getByText("Refund"));
+        await user.click(screen.getByRole("button", { name: /Submit/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByRole("button", { name: /deny/i }));
+        await act(async () => { vi.advanceTimersByTime(300); });
+
+        await waitFor(() => {
+            expect(screen.getAllByText(/Action denied. No changes were made/i)[0]).toBeInTheDocument();
         });
     });
 
@@ -486,13 +567,14 @@ describe("Dashboard (page.tsx)", () => {
 
         render(<Dashboard />);
         await user.click(screen.getByText("Refund"));
+        await user.click(screen.getByRole("button", { name: /Submit/i }));
 
         await waitFor(() => {
             expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
         });
 
         await user.click(screen.getByRole("button", { name: /approve/i }));
-        vi.advanceTimersByTime(300);
+        await act(async () => { vi.advanceTimersByTime(300); });
 
         await waitFor(() => {
             expect(screen.getByText(/Approval failed/i)).toBeInTheDocument();
@@ -526,13 +608,14 @@ describe("Dashboard (page.tsx)", () => {
 
         render(<Dashboard />);
         await user.click(screen.getByText("Refund"));
+        await user.click(screen.getByRole("button", { name: /Submit/i }));
 
         await waitFor(() => {
             expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
         });
 
         await user.click(screen.getByRole("button", { name: /deny/i }));
-        vi.advanceTimersByTime(300);
+        await act(async () => { vi.advanceTimersByTime(300); });
 
         await waitFor(() => {
             expect(screen.getByText(/Denial submission failed/i)).toBeInTheDocument();
@@ -592,6 +675,9 @@ describe("Dashboard (page.tsx)", () => {
                     avg_duration_seconds: 0,
                     total_cost_usd: 0,
                     total_tokens: 0,
+                    hitl_approval_rate: 100,
+                    avg_hitl_wait_seconds: 0,
+                    cost_saved_by_cache: 0,
                     model_distribution: {},
                     recent_requests: [],
                 },
@@ -652,6 +738,30 @@ describe("Dashboard (page.tsx)", () => {
         });
     });
 
+    // ── Traces Panel Toggling ──
+    it("opens and closes the Traces panel", async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        render(<Dashboard />);
+
+        // Find and click the LangSmith Traces button in MetricsPanel
+        const openTracesBtn = screen.getByRole("button", { name: /LangSmith Traces/i });
+        await user.click(openTracesBtn);
+
+        // Wait for Traces panel to appear (checking for text inside it like 'No traces yet')
+        await waitFor(() => {
+            expect(screen.getByText(/No traces yet/i)).toBeInTheDocument();
+        });
+
+        // Close the panel using the Close button
+        const closeBtn = screen.getByTitle("Close (Esc)");
+        await user.click(closeBtn);
+
+        // Ensure state change was handled
+        await waitFor(() => {
+            expect(screen.queryByText("System Traces")).not.toBeInTheDocument();
+        });
+    });
+
     // ── Shift+Enter should NOT submit ──
     it("does not submit on Shift+Enter", async () => {
         const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -663,5 +773,57 @@ describe("Dashboard (page.tsx)", () => {
 
         expect(startChat).not.toHaveBeenCalled();
     });
+
+    // ── Cache Clearing from Metrics ──
+    it("refreshes metrics when cache is cleared", async () => {
+        const user = userEvent.setup();
+        const connectedMetrics = {
+            ...await vi.mocked(getMetrics)(),
+            cache_metrics: { connected: true, hits: 10, misses: 5, total_requests: 15, hit_rate_percent: 66 }
+        };
+        vi.mocked(getMetrics).mockClear(); // Reset call count from the line above
+        vi.mocked(getMetrics).mockResolvedValueOnce(connectedMetrics).mockResolvedValueOnce(connectedMetrics);
+        render(<Dashboard />);
+
+        await waitFor(() => {
+            expect(getMetrics).toHaveBeenCalled();
+        });
+
+        // Click Clear Cache button which is inside MetricsPanel
+        const clearBtn = await screen.findByTitle("Clear cache");
+        await user.click(clearBtn);
+
+        // It should call clearCache and then getMetrics again
+        await waitFor(() => {
+            expect(clearCache).toHaveBeenCalled();
+            expect(getMetrics).toHaveBeenCalledTimes(2); // Initial mount + after clear
+        });
+    });
+
+    it("handles error silently when getMetrics fails after cache clear", async () => {
+        const user = userEvent.setup();
+        const connectedMetrics = {
+            ...await vi.mocked(getMetrics)(),
+            cache_metrics: { connected: true, hits: 10, misses: 5, total_requests: 15, hit_rate_percent: 66 }
+        };
+        vi.mocked(getMetrics).mockResolvedValueOnce(connectedMetrics);
+        render(<Dashboard />);
+
+        await waitFor(() => {
+            expect(getMetrics).toHaveBeenCalled();
+        });
+
+        // Mock getMetrics to fail next time
+        vi.mocked(getMetrics).mockRejectedValueOnce(new Error("Silence me"));
+
+        const clearBtn = await screen.findByTitle("Clear cache");
+        await user.click(clearBtn);
+
+        // Should not crash, just catch the error silently
+        await waitFor(() => {
+            expect(clearCache).toHaveBeenCalled();
+        });
+    });
 });
+
 

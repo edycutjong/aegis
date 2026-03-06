@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import TicketHistory from "../TicketHistory";
 import type { TicketHistoryEntry } from "@/hooks/useTicketHistory";
@@ -175,5 +175,27 @@ describe("TicketHistory", () => {
         render(<TicketHistory entries={short} onSelect={onSelect} onClear={onClear} />);
         await user.click(screen.getByText("Recent Tickets"));
         expect(screen.getByText("Short message")).toBeInTheDocument();
+    });
+
+    // ── Key Press Expand/Collapse ──
+    it("expands and collapses on Enter/Space key press", async () => {
+        const user = userEvent.setup();
+        const { container } = render(
+            <TicketHistory entries={sampleEntries} onSelect={onSelect} onClear={onClear} />
+        );
+
+        const body = container.querySelector(".ticket-history-body") as HTMLElement;
+        const header = screen.getByText("Recent Tickets").closest(".ticket-history-header") as HTMLElement;
+
+        header.focus();
+        fireEvent.keyDown(header, { key: "Enter" });
+        expect(body.style.maxHeight).not.toBe("0px"); // expanded
+
+        fireEvent.keyDown(header, { key: " " });
+        expect(body.style.maxHeight).toBe("0px"); // collapsed
+
+        // Add unused key to test coverage (Escape)
+        fireEvent.keyDown(header, { key: "Escape" });
+        expect(body.style.maxHeight).toBe("0px"); // Remains collapsed
     });
 });

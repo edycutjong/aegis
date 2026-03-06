@@ -48,6 +48,9 @@ export interface AgentMetrics {
     total_cost_usd: number;
     total_tokens: number;
     model_distribution: Record<string, number>;
+    hitl_approval_rate: number | null;
+    avg_hitl_wait_seconds: number | null;
+    cost_saved_by_cache: number;
     recent_requests: Array<{
         thread_id: string;
         total_cost_usd: number;

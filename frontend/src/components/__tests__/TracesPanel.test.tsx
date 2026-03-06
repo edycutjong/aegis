@@ -40,6 +40,24 @@ const MOCK_TRACES: TracesResponse = {
                     model: "supabase/postgres",
                     total_cost: 0.0,
                 },
+                {
+                    id: "child-3",
+                    name: "partial_match_search_docs_here",
+                    status: "success",
+                    latency_ms: 22,
+                    total_tokens: 44,
+                    model: "something",
+                    total_cost: 0.001,
+                },
+                {
+                    id: "child-4",
+                    name: "unknown_weird_node",
+                    status: "success",
+                    latency_ms: 10,
+                    total_tokens: 0,
+                    model: "unknown",
+                    total_cost: 0.0,
+                },
             ],
         },
     ],
@@ -136,10 +154,86 @@ describe("TracesPanel", () => {
     it("calls onClose on Escape key", async () => {
         const onClose = vi.fn();
         mockGetTraces.mockResolvedValue(MOCK_TRACES);
-        render(<TracesPanel open onClose={onClose} />);
+        const { unmount } = render(<TracesPanel open onClose={onClose} />);
 
         fireEvent.keyDown(window, { key: "Escape" });
+        expect(onClose).toHaveBeenCalledTimes(1);
 
-        expect(onClose).toHaveBeenCalled();
+        // Ignored keys
+        fireEvent.keyDown(window, { key: "Enter" });
+        expect(onClose).toHaveBeenCalledTimes(1);
+
+        unmount();
+    });
+
+    it("renders edge cases for trace meta and time calculation", async () => {
+        const edgeTraces: TracesResponse = {
+            traces: [
+                {
+                    id: "trace-edge-1",
+                    name: "UnknownNode", // hits DEFAULT_META
+                    status: "warning",
+                    latency_ms: 1500, // 1.5s formatMs coverage
+                    total_tokens: 0,
+                    total_cost: 0,
+                    start_time: new Date(Date.now() - 5 * 3600_000).toISOString(), // 5h ago
+                    child_runs: [
+                        {
+                            id: "child-edge",
+                            name: "search_docs_variant", // Matches 'search_docs' partially
+                            status: "success",
+                            latency_ms: 10,
+                            total_tokens: 0,
+                            model: "",
+                            total_cost: 0,
+                        }
+                    ],
+                },
+                {
+                    id: "trace-edge-2",
+                    name: "OldTrace",
+                    status: "success",
+                    latency_ms: 200,
+                    total_tokens: 0,
+                    total_cost: 0,
+                    start_time: new Date(Date.now() - 48 * 3600_000).toISOString(), // 2d ago
+                    child_runs: [],
+                },
+                {
+                    id: "trace-edge-3",
+                    name: "ErrorTrace",
+                    status: "error",
+                    latency_ms: 200,
+                    total_tokens: 0,
+                    total_cost: 0,
+                    start_time: new Date(Date.now() - 5 * 60_000).toISOString(), // 5m ago
+                    child_runs: [],
+                }
+            ],
+            error: null,
+        };
+        mockGetTraces.mockResolvedValue(edgeTraces);
+        render(<TracesPanel open onClose={noop} />);
+
+        await waitFor(() => {
+            expect(screen.getByText("UnknownNode")).toBeInTheDocument();
+            expect(screen.getByText("OldTrace")).toBeInTheDocument();
+            expect(screen.getByText("ErrorTrace")).toBeInTheDocument();
+            expect(screen.getByText("5h ago")).toBeInTheDocument();
+            expect(screen.getByText("2d ago")).toBeInTheDocument();
+            expect(screen.getByText("5m ago")).toBeInTheDocument();
+            expect(screen.getByText("1.5s")).toBeInTheDocument(); // formatMs >= 1000
+        });
+
+        fireEvent.click(screen.getByText("UnknownNode"));
+        await waitFor(() => {
+            expect(screen.getByText("search_docs_variant")).toBeInTheDocument();
+        });
+
+        // Click again to collapse
+        fireEvent.click(screen.getByText("UnknownNode"));
+        await waitFor(() => {
+            expect(screen.queryByText("search_docs_variant")).not.toBeInTheDocument();
+        });
     });
 });
