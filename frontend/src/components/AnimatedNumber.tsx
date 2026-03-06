@@ -43,9 +43,6 @@ export default function AnimatedNumber({ value, duration = 800, format }: Animat
             }
         };
 
-        if (animationFrame.current) {
-            cancelAnimationFrame(animationFrame.current);
-        }
         animationFrame.current = requestAnimationFrame(animate);
 
         return () => {

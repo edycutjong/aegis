@@ -137,51 +137,87 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
 
             {/* Single scroll for all content */}
             <div className="flex-1 overflow-y-auto pl-6 pr-4 pb-6 space-y-2" style={{ scrollbarGutter: "stable" }}>
-                {thoughts.length === 0 ? (
-                    <div className="px-3 py-2.5">
-                        {status === "processing" ? (
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>Agent is thinking</span>
-                                <div className="typing-indicator" style={{ padding: 0 }}>
+
+                {/* 1. Empty States (No thoughts generated yet) */}
+                {thoughts.length === 0 && (
+                    <div className="px-3 py-2.5 flex flex-col gap-3">
+                        {status === "processing" && (
+                            <>
+                                <p className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>
+                                    Agent is thinking
+                                </p>
+                                <div className="px-3 typing-indicator" data-testid="typing-indicator">
                                     <span /><span /><span />
                                 </div>
-                            </div>
-                        ) : (
+                            </>
+                        )}
+                        {status === "error" && (
+                            <p className="text-sm" style={{ color: "var(--aegis-error)" }}>
+                                ✗ An error occurred while connecting to the agent.
+                            </p>
+                        )}
+                        {status === "completed" && (
+                            <p className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>
+                                Agent completed the task without generating any output.
+                            </p>
+                        )}
+                        {status === "cached" && (
+                            <p className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>
+                                Loaded from cache. Processing skipped.
+                            </p>
+                        )}
+                        {(status === "idle" || status === "awaiting_approval") && (
                             <p className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>
                                 Submit a support ticket to see the agent&apos;s thought process...
                             </p>
                         )}
                     </div>
-                ) : (
-                    thoughts.map((step, i) => {
-                        const { agent, message } = parseAgentName(step);
-                        const agentStyle = agent ? AGENT_COLORS[agent] : null;
-                        const agentIcon = agent ? AGENT_ICONS[agent] : null;
-                        const displayMessage = devMode ? message : simplifyForUser(message);
-
-                        return (
-                            <div key={i} className="thought-step flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-white/2" style={{ animationDelay: `${i * 80}ms` }}>
-                                <span className={`text-lg font-bold shrink-0 ${getColor(step)}`}>
-                                    {getIcon(step)}
-                                </span>
-                                <div className="flex items-start gap-2 flex-1 min-w-0">
-                                    {devMode && agentStyle && (
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 border ${agentStyle.bg} ${agentStyle.text} ${agentStyle.border}`}>
-                                            <span>{agentIcon}</span>
-                                            {agent}
-                                        </span>
-                                    )}
-                                    <span className="text-sm leading-relaxed" style={{ fontFamily: devMode ? "var(--font-mono)" : "inherit", color: "var(--aegis-text)" }}>
-                                        {displayMessage}
-                                    </span>
-                                </div>
-                            </div>
-                        );
-                    })
                 )}
-                {status === "processing" && thoughts.length > 0 && (
-                    <div className="typing-indicator" data-testid="typing-indicator">
-                        <span /><span /><span />
+
+                {/* 2. Thought Stream (List of generated thoughts) */}
+                {thoughts.length > 0 && thoughts.map((step, i) => {
+                    const { agent, message } = parseAgentName(step);
+                    const agentStyle = agent ? AGENT_COLORS[agent] : null;
+                    const agentIcon = agent ? AGENT_ICONS[agent] : null;
+                    const displayMessage = devMode ? message : simplifyForUser(message);
+
+                    return (
+                        <div key={i} className="thought-step flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-white/2" style={{ animationDelay: `${i * 80}ms` }}>
+                            <span className={`text-lg font-bold shrink-0 ${getColor(step)}`}>
+                                {getIcon(step)}
+                            </span>
+                            <div className="flex items-start gap-2 flex-1 min-w-0">
+                                {devMode && agentStyle && (
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 border ${agentStyle.bg} ${agentStyle.text} ${agentStyle.border}`}>
+                                        <span>{agentIcon}</span>
+                                        {agent}
+                                    </span>
+                                )}
+                                <span className="text-sm leading-relaxed" style={{ fontFamily: devMode ? "var(--font-mono)" : "inherit", color: "var(--aegis-text)" }}>
+                                    {displayMessage}
+                                </span>
+                            </div>
+                        </div>
+                    );
+                })}
+
+                {/* 3. Trailing Status Indicators (Appended to the bottom of the stream) */}
+                {thoughts.length > 0 && (
+                    <div className="pt-2">
+                        {status === "processing" && (
+                            <div className="px-3 typing-indicator" data-testid="typing-indicator">
+                                <span /><span /><span />
+                            </div>
+                        )}
+                        {status === "awaiting_approval" && (
+                            <div className="px-3 py-2 flex items-center gap-2 text-sm" style={{ color: "var(--aegis-warning)" }}>
+                                <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: "var(--aegis-warning)" }}></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: "var(--aegis-warning)" }}></span>
+                                </span>
+                                Waiting for your input...
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

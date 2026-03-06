@@ -5,9 +5,32 @@ import ThoughtStream from "../ThoughtStream";
 
 describe("ThoughtStream", () => {
     // ── Empty State ──
-    it("shows placeholder when no thoughts", () => {
+    it("shows placeholder when no thoughts and not processing", () => {
         render(<ThoughtStream thoughts={[]} status="idle" />);
         expect(screen.getByText(/submit a support ticket/i)).toBeInTheDocument();
+        expect(screen.queryByTestId("typing-indicator")).not.toBeInTheDocument();
+    });
+
+    it("shows 'Agent is thinking...' when processing but no thoughts", () => {
+        render(<ThoughtStream thoughts={[]} status="processing" />);
+        expect(screen.getByText(/agent is thinking/i)).toBeInTheDocument();
+        expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
+        expect(screen.queryByText(/submit a support ticket/i)).not.toBeInTheDocument();
+    });
+
+    it("shows error state when status is error but no thoughts", () => {
+        render(<ThoughtStream thoughts={[]} status="error" />);
+        expect(screen.getByText(/an error occurred/i)).toBeInTheDocument();
+    });
+
+    it("shows completed state when status is completed but no thoughts", () => {
+        render(<ThoughtStream thoughts={[]} status="completed" />);
+        expect(screen.getByText(/agent completed the task without generating any output/i)).toBeInTheDocument();
+    });
+
+    it("shows cached state when status is cached but no thoughts", () => {
+        render(<ThoughtStream thoughts={[]} status="cached" />);
+        expect(screen.getByText(/loaded from cache/i)).toBeInTheDocument();
     });
 
     // ── Rendering Thoughts ──

@@ -266,13 +266,15 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
 
                             {/* Provider split bar */}
                             <div className="metric-card py-2 px-3">
-                                <div className="flex items-center gap-2 mb-2" style={{ flexWrap: "nowrap", overflow: "hidden" }}>
+                                <div className="flex items-center gap-3 mb-2 w-full overflow-hidden">
                                     {Object.entries(providers).map(([label, { count, color, icon }]) => {
                                         const pct = ((count / modelTotal) * 100);
                                         return (
-                                            <span key={label} className="flex items-center gap-1 text-xs font-semibold" style={{ color, flexShrink: 0, whiteSpace: "nowrap" }}>
-                                                {icon} {label} <AnimatedNumber value={pct} format={(v) => Math.round(v) + "%"} />
-                                            </span>
+                                            <div key={label} className="flex items-center gap-1 text-xs font-semibold min-w-0" style={{ color }}>
+                                                <span className="shrink-0">{icon}</span>
+                                                <span className="truncate">{label}</span>
+                                                <span className="shrink-0"><AnimatedNumber value={pct} format={(v) => Math.round(v) + "%"} /></span>
+                                            </div>
                                         );
                                     })}
                                 </div>

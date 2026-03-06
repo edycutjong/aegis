@@ -1141,6 +1141,7 @@ class TestAwaitApprovalAsync:
         state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
 
         mock_metrics = MagicMock()
+        mock_metrics.hitl_requested_at = None
         with patch("app.agent.agents.resolver.interrupt", return_value={"approved": True, "reason": ""}), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics

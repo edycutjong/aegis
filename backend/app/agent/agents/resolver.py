@@ -260,7 +260,7 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
     # Track when HITL was requested
     tracker = get_tracker()
     metrics = tracker.get_request(state["thread_id"])
-    if metrics:
+    if metrics and not metrics.hitl_requested_at:
         metrics.hitl_requested_at = time.time()
 
     decision = interrupt({
