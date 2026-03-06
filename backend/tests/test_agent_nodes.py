@@ -1140,10 +1140,17 @@ class TestAwaitApprovalAsync:
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
 
-        with patch("app.agent.agents.resolver.interrupt", return_value={"approved": True, "reason": ""}):
+        mock_metrics = MagicMock()
+        with patch("app.agent.agents.resolver.interrupt", return_value={"approved": True, "reason": ""}), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
             result = await await_approval(state)
+        
         assert result["approval_status"] == "approved"
         assert result["denial_reason"] == ""
+        # Verify timestamps were set
+        assert mock_metrics.hitl_requested_at is not None
+        assert mock_metrics.hitl_resolved_at is not None
 
     @pytest.mark.asyncio
     async def test_dict_decision_denied(self):

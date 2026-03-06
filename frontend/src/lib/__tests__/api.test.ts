@@ -16,6 +16,7 @@ import {
     getDbStatus,
     getTableData,
     connectSSE,
+    getTraces,
 } from "../api";
 
 describe("api.ts", () => {
@@ -121,6 +122,26 @@ describe("api.ts", () => {
         it("throws on failure", async () => {
             mockFetch.mockResolvedValue({ ok: false, statusText: "Timeout" });
             await expect(getMetrics()).rejects.toThrow("Metrics fetch failed: Timeout");
+        });
+    });
+
+    // ── getTraces ──
+    describe("getTraces", () => {
+        it("fetches traces", async () => {
+            const mockTraces = { traces: [], error: null };
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve(mockTraces),
+            });
+
+            const result = await getTraces();
+            expect(mockFetch).toHaveBeenCalledWith(`${API_URL}/api/traces`);
+            expect(result).toEqual(mockTraces);
+        });
+
+        it("throws on failure", async () => {
+            mockFetch.mockResolvedValue({ ok: false, statusText: "Unauthorized" });
+            await expect(getTraces()).rejects.toThrow("Traces fetch failed: Unauthorized");
         });
     });
 

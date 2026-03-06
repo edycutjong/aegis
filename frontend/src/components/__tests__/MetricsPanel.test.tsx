@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import MetricsPanel from "../MetricsPanel";
 import type { Metrics } from "@/lib/api";
@@ -28,6 +28,9 @@ const FULL_METRICS: Metrics = {
             "gpt-4.1-mini": 35,
             "gpt-4.1": 7,
         },
+        hitl_approval_rate: 85.0,
+        avg_hitl_wait_seconds: 120.5,
+        cost_saved_by_cache: 4.5,
         recent_requests: [],
     },
     cache_metrics: {
@@ -62,10 +65,11 @@ describe("MetricsPanel", () => {
     // ── Formatted Metric Values ──
     it("displays formatted metric values from full metrics", () => {
         render(<MetricsPanel metrics={FULL_METRICS} />);
-        expect(screen.getByText("$0.0312")).toBeInTheDocument(); // avg cost
-        expect(screen.getByText("42")).toBeInTheDocument(); // total requests
-        expect(screen.getByText("$1.3104")).toBeInTheDocument(); // total cost
-        expect(screen.getByText("125,000")).toBeInTheDocument(); // tokens
+        expect(screen.getByText(/\$0\.0312/)).toBeInTheDocument(); // avg cost
+        expect(screen.getAllByText(/42/).length).toBeGreaterThan(0); // total requests
+        expect(screen.getByText(/\$1\.3104/)).toBeInTheDocument(); // total cost
+        expect(screen.getByText(/125\.0K/i)).toBeInTheDocument(); // tokens
+        expect(screen.getByText(/\$4\.50/)).toBeInTheDocument(); // cost saved
     });
 
     // ── Cache Hit Rate ──
@@ -96,17 +100,15 @@ describe("MetricsPanel", () => {
     it("shows model distribution bars with percentages", () => {
         render(<MetricsPanel metrics={FULL_METRICS} />);
         expect(screen.getByText("Model Usage")).toBeInTheDocument();
-        expect(screen.getByText("gpt-4.1-mini")).toBeInTheDocument();
-        expect(screen.getByText("gpt-4.1")).toBeInTheDocument();
-        // gpt-4.1-mini: 35/42 = 83%, gpt-4.1: 7/42 = 17%
-        expect(screen.getByText("83%")).toBeInTheDocument();
-        expect(screen.getByText("17%")).toBeInTheDocument();
+        // Since gpt-4.1-mini and gpt-4.1 are both from OpenAI
+        expect(screen.getByText(/OpenAI/)).toBeInTheDocument();
+        expect(screen.getAllByText(/100%/)[0]).toBeInTheDocument();
     });
 
     // ── Avg Duration ──
     it("displays average duration", () => {
         render(<MetricsPanel metrics={FULL_METRICS} />);
-        expect(screen.getByText("8.5s")).toBeInTheDocument();
+        expect(screen.getByText(/8\.5\s*s/)).toBeInTheDocument();
     });
 
     // ── Clear Cache ──
@@ -164,6 +166,7 @@ describe("MetricsPanel", () => {
             ],
         });
 
+
         render(<MetricsPanel metrics={FULL_METRICS} />);
 
         await waitFor(() => {
@@ -180,6 +183,25 @@ describe("MetricsPanel", () => {
             expect(screen.getByText("Alice")).toBeInTheDocument();
         });
         expect(screen.getByText("Bob")).toBeInTheDocument();
+    });
+
+    it("handles parsing edge cases for missing model fields and colors", () => {
+        const edgeMetrics: Metrics = {
+            ...FULL_METRICS,
+            agent_metrics: {
+                ...FULL_METRICS.agent_metrics,
+                total_requests: 1_500_000_000,
+                total_tokens: 2_500_000,
+                hitl_approval_rate: 75.0, // red color branch < 80
+                model_distribution: {
+                    "unknown-model": 10 // other mapping
+                }
+            }
+        };
+        render(<MetricsPanel metrics={edgeMetrics} />);
+        expect(screen.getByText(/1\.5B/)).toBeInTheDocument();
+        expect(screen.getByText(/2\.5M/)).toBeInTheDocument();
+        expect(screen.getByText(/Other/)).toBeInTheDocument();
     });
 
     // ── Handle Card Click: collapse table ──
@@ -343,7 +365,7 @@ describe("MetricsPanel", () => {
     });
 
     // ── Expensive model color ──
-    it("renders expensive model labels with amber color", () => {
+    it("renders aggregated providers for models correctly", () => {
         const metricsWithExpensiveModels: Metrics = {
             ...FULL_METRICS,
             agent_metrics: {
@@ -357,14 +379,14 @@ describe("MetricsPanel", () => {
         };
         render(<MetricsPanel metrics={metricsWithExpensiveModels} />);
 
-        // The expensive models should be rendered with amber color
-        expect(screen.getByText("gemini-2.5-flash")).toBeInTheDocument();
-        expect(screen.getByText("claude-sonnet-4-20250514")).toBeInTheDocument();
-        expect(screen.getByText("gpt-4.1")).toBeInTheDocument();
-        // Check percentages
-        expect(screen.getByText("80%")).toBeInTheDocument();
-        expect(screen.getByText("15%")).toBeInTheDocument();
-        expect(screen.getByText("5%")).toBeInTheDocument();
+        // Should aggregate by Gemini, Anthropic, OpenAI
+        expect(screen.getByText(/Gemini/)).toBeInTheDocument();
+        expect(screen.getByText(/Anthropic/)).toBeInTheDocument();
+        expect(screen.getByText(/OpenAI/)).toBeInTheDocument();
+        // Check percentages (80 + 15 + 5 = 100 total)
+        expect(screen.getAllByText(/80%/)[0]).toBeInTheDocument();
+        expect(screen.getAllByText(/15%/)[0]).toBeInTheDocument();
+        expect(screen.getAllByText(/5%/)[0]).toBeInTheDocument();
     });
 
     // ── High Cache Hit Rate Color ──
@@ -436,18 +458,62 @@ describe("MetricsPanel", () => {
         });
     });
 
-    // ── Clear cache without onCacheCleared ──
-    it("clears cache successfully when onCacheCleared is not provided", async () => {
-        const user = userEvent.setup();
+    // ── getDbStatus error ──
+    it("handles getDbStatus error silently", async () => {
+        vi.mocked(getDbStatus).mockRejectedValue(new Error("Network Error"));
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        await waitFor(() => {
+            expect(getDbStatus).toHaveBeenCalled();
+        });
+        expect(screen.getByText("Observability")).toBeInTheDocument();
+    });
+
+    it("clears cache successfully and hides message after timeout", async () => {
+        vi.useFakeTimers();
         vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 2 });
 
         render(<MetricsPanel metrics={FULL_METRICS} />);
 
-        await user.click(screen.getByTitle("Clear cache"));
-
-        await waitFor(() => {
-            expect(screen.getByText("Cleared! (2 keys)")).toBeInTheDocument();
+        act(() => {
+            fireEvent.click(screen.getByTitle("Clear cache"));
         });
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(screen.getByText("Cleared! (2 keys)")).toBeInTheDocument();
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        expect(screen.queryByText("Cleared! (2 keys)")).not.toBeInTheDocument();
+        vi.useRealTimers();
+    });
+
+    it("shows error when clearing cache fails and hides after timeout", async () => {
+        vi.useFakeTimers();
+        vi.mocked(clearCache).mockRejectedValue(new Error("Network Error"));
+
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        act(() => {
+            fireEvent.click(screen.getByTitle("Clear cache"));
+        });
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(screen.getByText("Failed to clear")).toBeInTheDocument();
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        expect(screen.queryByText("Failed to clear")).not.toBeInTheDocument();
+        vi.useRealTimers();
     });
 });
-
