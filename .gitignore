@@ -44,3 +44,13 @@ docker-compose.override.yml
 
 # Redis
 dump.rdb
+
+# Generated / recorded media
+scripts/clips/
+scripts/*.mp4
+scripts/*.webm
+scripts/*.png
+docs/title-card-mockup.png
+
+# Test logs
+frontend/test-output*.log
