@@ -157,7 +157,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div
-                                                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                                    className="w-2.5 h-2.5 rounded-full shrink-0"
                                                     style={{ background: trace.status === "success" ? "#34d399" : trace.status === "error" ? "#f87171" : "#f59e0b" }}
                                                 />
                                                 <span className="text-sm font-medium" style={{ color: "var(--aegis-text)" }}>
