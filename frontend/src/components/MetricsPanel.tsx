@@ -307,6 +307,25 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
 
 
 
+                {/* ── LangSmith Traces trigger ── */}
+                {tracingEnabled && (
+                    <button
+                        onClick={onOpenTraces}
+                        className="w-full metric-card flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/5 cursor-pointer group"
+                    >
+                        <div className="flex items-center gap-2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                            </svg>
+                            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
+                                LangSmith Traces
+                            </span>
+                        </div>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-y-[-2px]">
+                            <path d="M7 17l9.2-9.2M17 17V7H7" />
+                        </svg>
+                    </button>
+                )}
                 {/* ── Database Section ── */}
                 {db && (
                     <div className="space-y-2 animate-slide-up-fade" style={{ animationDelay: "0.8s" }}>
@@ -412,25 +431,6 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                             </div>
                         )}
                     </div>
-                )}
-                {/* ── LangSmith Traces trigger ── */}
-                {tracingEnabled && (
-                    <button
-                        onClick={onOpenTraces}
-                        className="w-full metric-card flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/5 cursor-pointer group"
-                    >
-                        <div className="flex items-center gap-2">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                            </svg>
-                            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
-                                LangSmith Traces
-                            </span>
-                        </div>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-y-[-2px]">
-                            <path d="M7 17l9.2-9.2M17 17V7H7" />
-                        </svg>
-                    </button>
                 )}
             </div>
         </div>

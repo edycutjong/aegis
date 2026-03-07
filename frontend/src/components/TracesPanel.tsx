@@ -48,7 +48,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
     const [traces, setTraces] = useState<TraceRun[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
-    const [expandedTraceId, setExpandedTraceId] = useState<string | null>(null);
+    const [expandedTraceIds, setExpandedTraceIds] = useState<Set<string>>(new Set());
 
     const fetchTraces = useCallback(async () => {
         try {
@@ -78,7 +78,11 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
     }, [open, onClose]);
 
     const toggleTrace = (id: string) => {
-        setExpandedTraceId((prev) => (prev === id ? null : id));
+        setExpandedTraceIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
     };
 
     return (
@@ -141,7 +145,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                     ) : (
                         <div className="space-y-3">
                             {traces.map((trace) => {
-                                const isOpen = expandedTraceId === trace.id;
+                                const isOpen = expandedTraceIds.has(trace.id);
                                 const maxChildLatency = Math.max(...trace.child_runs.map((c) => c.latency_ms), 1);
 
                                 return (
@@ -194,7 +198,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                                                     className="grid px-4 py-1.5 text-[10px] uppercase tracking-wider font-medium"
                                                     style={{
                                                         color: "var(--aegis-text-muted)",
-                                                        gridTemplateColumns: "28px 1fr 120px 80px 80px 80px 100px",
+                                                        gridTemplateColumns: "28px 1fr 180px 80px 80px 80px 100px",
                                                         background: "var(--aegis-surface)",
                                                     }}
                                                 >
@@ -219,7 +223,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                                                             style={{
                                                                 borderBottom: isLast ? "none" : "1px solid var(--aegis-border)",
                                                                 animationDelay: `${i * 40}ms`,
-                                                                gridTemplateColumns: "28px 1fr 120px 80px 80px 80px 100px",
+                                                                gridTemplateColumns: "28px 1fr 180px 80px 80px 80px 100px",
                                                             }}
                                                         >
                                                             {/* Dot */}
@@ -242,7 +246,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                                                             <div>
                                                                 {child.model && (
                                                                     <span
-                                                                        className="text-[10px] px-1.5 py-0.5 rounded"
+                                                                        className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
                                                                         style={{ background: "var(--aegis-border)", color: "var(--aegis-text-muted)" }}
                                                                     >
                                                                         {child.model}

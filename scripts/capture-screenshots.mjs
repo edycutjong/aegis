@@ -126,22 +126,26 @@ async function captureAll(page, name) {
     }
 }
 
-/** Toggle to DEV mode, capture, then toggle back */
 async function captureDevMode(page, name) {
-    const devToggle = page.locator('[title="Switch to developer view with agent details"]').first();
-    if (await devToggle.isVisible().catch(() => false)) {
-        await devToggle.click();
-        console.log("    ⚙ Switched to DEV mode");
-        await sleep(1000);
-        await captureAll(page, `${name}-dev`);
-        // Switch back to user mode
-        const userToggle = page.locator('[title="Switch to user-friendly view"]').first();
-        if (await userToggle.isVisible().catch(() => false)) {
-            await userToggle.click();
-            await sleep(500);
+    try {
+        // Button shows "👤 User" when dev mode is OFF — click it to enter dev mode
+        const devToggle = page.locator('button:has-text("User")').first();
+        if (await devToggle.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await devToggle.click({ timeout: 5000 });
+            console.log("    ⚙ Switched to DEV mode");
+            await sleep(1000);
+            await captureAll(page, `${name}-dev`);
+            // Button now shows "⚙ Dev" — click it to switch back to user mode
+            const userToggle = page.locator('button:has-text("Dev")').first();
+            if (await userToggle.isVisible({ timeout: 3000 }).catch(() => false)) {
+                await userToggle.click({ timeout: 5000 });
+                await sleep(500);
+            }
+        } else {
+            console.log("    ⚠ DEV toggle not found — skipping dev capture");
         }
-    } else {
-        console.log("    ⚠ DEV toggle not found — skipping dev capture");
+    } catch (err) {
+        console.log(`    ⚠ DEV toggle error — ${err.message?.split('\n')[0] || err}`);
     }
 }
 
@@ -151,7 +155,7 @@ async function runTicketShot(page, { presetLabel, shotName, hitl, action }) {
     await resetDashboard(page);
     await clickPreset(page, presetLabel);
 
-    const result = await waitForState(page, 180000);
+    const result = await waitForState(page, 60000);
     console.log(`    → State: ${result}`);
 
     if (result === "approval" && hitl) {
@@ -189,7 +193,7 @@ async function runHitlModalShot(page, { presetLabel, shotName }) {
     await resetDashboard(page);
     await clickPreset(page, presetLabel);
 
-    const result = await waitForState(page, 180000);
+    const result = await waitForState(page, 60000);
     console.log(`    → State: ${result}`);
 
     if (result === "approval") {
@@ -213,7 +217,7 @@ async function runEdgeCaseShot(page, { edgeLabel, shotName }) {
     await resetDashboard(page);
     await clickEdgeCase(page, edgeLabel);
 
-    const result = await waitForState(page, 120000);
+    const result = await waitForState(page, 60000);
     console.log(`    → State: ${result}`);
 
     if (result === "approval") {
@@ -257,7 +261,7 @@ const SHOTS = {
             await captureAll(page, "02-agent-thinking");
             await captureDevMode(page, "02-agent-thinking");
             // Wait for completion so next shot starts clean
-            const result = await waitForState(page, 120000);
+            const result = await waitForState(page, 60000);
             console.log(`    → State: ${result}`);
             if (result === "approval") {
                 await page.locator(".btn-success:has-text('Approve')").first().click();
@@ -372,7 +376,7 @@ const SHOTS = {
             await clearCache();
             await resetDashboard(page);
             await clickPreset(page, "Billing");
-            const warmResult = await waitForState(page, 120000);
+            const warmResult = await waitForState(page, 60000);
             if (warmResult === "approval") {
                 await page.locator(".btn-success:has-text('Approve')").first().click();
                 await waitForState(page, 30000);
@@ -457,22 +461,42 @@ const SHOTS = {
             if (await tracesBtn.isVisible().catch(() => false)) {
                 await tracesBtn.click({ timeout: 5000 });
                 console.log("    ✓ Opened Traces panel");
-                // Wait for traces to load (free tier can be slow)
+                // Wait for traces to fully load — can take 30-60s on free tier
                 try {
-                    await page.waitForSelector("text=Loading traces…", { state: "hidden", timeout: 60000 });
+                    await page.waitForSelector("text=Loading traces…", { state: "hidden", timeout: 90000 });
                     console.log("    ✓ Traces loaded");
                 } catch {
-                    console.log("    ⚠ Traces may still be loading — waiting extra");
+                    console.log("    ⚠ Traces still loading after 90s — capturing anyway");
                 }
-                await sleep(8000);
+                // Let UI settle after load
+                await sleep(2000);
             } else {
                 console.log("    ⚠ LangSmith Traces button not visible (tracing may be disabled)");
             }
             await captureAll(page, "19-traces");
-            // Close traces
-            const closeBtn = page.locator('[title="Close (Esc)"]').first();
-            if (await closeBtn.isVisible().catch(() => false)) await closeBtn.click();
-            else await page.keyboard.press("Escape");
+
+            // Expand each trace individually and capture a separate screenshot
+            try {
+                const traceRows = page.locator(".metric-card button.w-full");
+                const count = await traceRows.count();
+                for (let i = 0; i < count; i++) {
+                    await traceRows.nth(i).click({ timeout: 3000 });
+                    await sleep(800);
+                    // Scroll expanded trace to top of panel
+                    await traceRows.nth(i).evaluate(el => el.scrollIntoView({ block: "start", behavior: "instant" }));
+                    await sleep(500);
+                    console.log(`    ✓ Expanded trace ${i + 1}/${count}`);
+                    await captureAll(page, `19-traces-${i + 1}`);
+                    // Collapse before next
+                    await traceRows.nth(i).click({ timeout: 3000 });
+                    await sleep(300);
+                }
+            } catch (err) {
+                console.log(`    ⚠ Could not expand traces — ${err.message?.split('\n')[0] || err}`);
+            }
+
+            // Close traces (use Escape — close button may be off-screen after layout changes)
+            await page.keyboard.press("Escape");
             await sleep(1000);
         },
     },
