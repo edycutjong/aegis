@@ -812,6 +812,7 @@ class TestTracesEndpoint:
             # Create mock child run
             mock_child = MagicMock()
             mock_child.id = "child-run-1"
+            mock_child.parent_run_id = "root-run-1"
             mock_child.name = "classify_intent"
             mock_child.status = "success"
             mock_child.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -823,6 +824,7 @@ class TestTracesEndpoint:
             # Create mock child with no cost/tokens (execute_sql style)
             mock_child2 = MagicMock()
             mock_child2.id = "child-run-2"
+            mock_child2.parent_run_id = "root-run-1"
             mock_child2.name = "execute_sql"
             mock_child2.status = "success"
             mock_child2.start_time = datetime(2026, 3, 5, 6, 0, 0, 200000, tzinfo=timezone.utc)
@@ -836,6 +838,7 @@ class TestTracesEndpoint:
             # Create mock root run
             mock_root = MagicMock()
             mock_root.id = "root-run-1"
+            mock_root.trace_id = "root-run-1"
             mock_root.name = "aegis-support-workflow"
             mock_root.status = "success"
             mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -897,6 +900,7 @@ class TestTracesEndpoint:
 
             mock_child = MagicMock()
             mock_child.id = "child-tu"
+            mock_child.parent_run_id = "root-tu"
             mock_child.name = "search_docs"
             mock_child.status = "success"
             mock_child.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -908,6 +912,7 @@ class TestTracesEndpoint:
 
             mock_root = MagicMock()
             mock_root.id = "root-tu"
+            mock_root.trace_id = "root-tu"
             mock_root.name = None
             mock_root.status = None
             mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -1015,6 +1020,7 @@ class TestTracesEndpoint:
 
             mock_child = MagicMock()
             mock_child.id = "child-inv"
+            mock_child.parent_run_id = "root-inv"
             mock_child.name = "propose_action"
             mock_child.status = "success"
             mock_child.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -1028,6 +1034,7 @@ class TestTracesEndpoint:
 
             mock_root = MagicMock()
             mock_root.id = "root-inv"
+            mock_root.trace_id = "root-inv"
             mock_root.name = "aegis-support-workflow"
             mock_root.status = "success"
             mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -1047,6 +1054,112 @@ class TestTracesEndpoint:
                     data = response.json()
                     child = data["traces"][0]["child_runs"][0]
                     assert child["model"] == "gpt-4.1"
+
+    def test_traces_grandchild_model_extraction(self):
+        """Cover model extraction from grandchild LLM runs when child has none."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            # Child run (chain type) — no model info at this level
+            mock_child = MagicMock()
+            mock_child.id = "child-gc"
+            mock_child.parent_run_id = "root-gc"
+            mock_child.name = "classify_intent"
+            mock_child.status = "success"
+            mock_child.run_type = "chain"
+            mock_child.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_child.end_time = datetime(2026, 3, 5, 6, 0, 0, 500000, tzinfo=timezone.utc)
+            mock_child.total_tokens = 312
+            mock_child.total_cost = 0.0003
+            mock_child.extra = {"metadata": {}}  # No ls_model_name!
+
+            # Grandchild run 1 (llm type) — has the model info in ls_model_name
+            mock_grandchild = MagicMock()
+            mock_grandchild.id = "grandchild-llm"
+            mock_grandchild.parent_run_id = "child-gc"  # Parent is the child
+            mock_grandchild.name = "ChatGroq"
+            mock_grandchild.run_type = "llm"
+            mock_grandchild.status = "success"
+            mock_grandchild.start_time = datetime(2026, 3, 5, 6, 0, 0, 100000, tzinfo=timezone.utc)
+            mock_grandchild.end_time = datetime(2026, 3, 5, 6, 0, 0, 400000, tzinfo=timezone.utc)
+            mock_grandchild.total_tokens = 312
+            mock_grandchild.total_cost = 0.0003
+            mock_grandchild.extra = {"metadata": {"ls_model_name": "groq/llama-3.3-70b"}}
+
+            # Child run 2 (chain type) — no model info
+            mock_child2 = MagicMock()
+            mock_child2.id = "child-gc-2"
+            mock_child2.parent_run_id = "root-gc"
+            mock_child2.name = "generate_response"
+            mock_child2.status = "success"
+            mock_child2.run_type = "chain"
+            mock_child2.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_child2.end_time = datetime(2026, 3, 5, 6, 0, 0, 500000, tzinfo=timezone.utc)
+            mock_child2.total_tokens = 500
+            mock_child2.total_cost = 0.0005
+            mock_child2.extra = {"metadata": {}}  # No ls_model_name!
+
+            # Grandchild run 2 (llm type) — model info in invocation_params
+            mock_grandchild2 = MagicMock()
+            mock_grandchild2.id = "grandchild-llm-2"
+            mock_grandchild2.parent_run_id = "child-gc-2"  # Parent is child 2
+            mock_grandchild2.name = "ChatOpenAI"
+            mock_grandchild2.run_type = "llm"
+            mock_grandchild2.status = "success"
+            mock_grandchild2.start_time = datetime(2026, 3, 5, 6, 0, 0, 100000, tzinfo=timezone.utc)
+            mock_grandchild2.end_time = datetime(2026, 3, 5, 6, 0, 0, 400000, tzinfo=timezone.utc)
+            mock_grandchild2.total_tokens = 500
+            mock_grandchild2.total_cost = 0.0005
+            mock_grandchild2.extra = {
+                "metadata": {},
+                "invocation_params": {"model_name": "gpt-4o-mini"}
+            }
+
+            mock_root = MagicMock()
+            mock_root.id = "root-gc"
+            mock_root.trace_id = "root-gc"
+            mock_root.name = "aegis-support-workflow"
+            mock_root.status = "success"
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = datetime(2026, 3, 5, 6, 0, 2, tzinfo=timezone.utc)
+            mock_root.total_tokens = 812
+            mock_root.total_cost = 0.0008
+
+            mock_client = MagicMock()
+            # First call: root runs; Second call: ALL descendants (children + grandchildren)
+            mock_client.list_runs = MagicMock(
+                side_effect=[[mock_root], [mock_child, mock_grandchild, mock_child2, mock_grandchild2]]
+            )
+
+            with patch("langsmith.Client", return_value=mock_client):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    data = response.json()
+                    
+                    child1 = data["traces"][0]["child_runs"][0]
+                    # Model should be extracted from grandchild LLM run via metadata.ls_model_name
+                    assert child1["model"] == "groq/llama-3.3-70b"
+                    assert child1["name"] == "classify_intent"
+
+                    child2 = data["traces"][0]["child_runs"][1]
+                    # Model should be extracted from grandchild LLM run via invocation_params.model_name
+                    assert child2["model"] == "gpt-4o-mini"
+                    assert child2["name"] == "generate_response"
 
     def test_traces_child_run_fetch_failure(self):
         """Cover L512-513: child-run fetch exception falls back to empty list."""
@@ -1069,6 +1182,7 @@ class TestTracesEndpoint:
 
             mock_root = MagicMock()
             mock_root.id = "root-child-fail"
+            mock_root.trace_id = "root-child-fail"
             mock_root.name = "aegis-support-workflow"
             mock_root.status = "success"
             mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -1077,9 +1191,9 @@ class TestTracesEndpoint:
             mock_root.total_cost = 0.005
 
             mock_client = MagicMock()
-            # First call returns root runs, second call (child fetch) raises
+            # First call returns root runs, second call (descendants fetch) raises
             mock_client.list_runs = MagicMock(
-                side_effect=[[mock_root], Exception("Child fetch failed")]
+                side_effect=[[mock_root], Exception("Descendant fetch failed")]
             )
 
             with patch("langsmith.Client", return_value=mock_client):
@@ -1114,6 +1228,7 @@ class TestTracesEndpoint:
 
             mock_root = MagicMock()
             mock_root.id = "root-retry"
+            mock_root.trace_id = "root-retry"
             mock_root.name = "aegis-support-workflow"
             mock_root.status = "success"
             mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
@@ -1133,7 +1248,7 @@ class TestTracesEndpoint:
                     # Second call (attempt 2 root fetch): succeed
                     return [mock_root]
                 else:
-                    # Third call (attempt 2 child fetch): succeed
+                    # Third call (attempt 2 descendants fetch): succeed
                     return []
 
             mock_client = MagicMock()
@@ -1150,3 +1265,146 @@ class TestTracesEndpoint:
                     assert data["error"] is None
                     # Verify backoff sleep was called once with 5s
                     mock_sleep.assert_called_once_with(5)
+
+    def test_traces_grandchild_orphan_parent(self):
+        """Cover L526: LLM grandchild references unknown parent — get_top_level_child returns None."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            # LLM run whose parent is NOT in descendants list
+            mock_orphan_llm = MagicMock()
+            mock_orphan_llm.id = "orphan-llm"
+            mock_orphan_llm.parent_run_id = "unknown-parent-id"  # Not in descendants
+            mock_orphan_llm.name = "ChatGroq"
+            mock_orphan_llm.run_type = "llm"
+            mock_orphan_llm.status = "success"
+            mock_orphan_llm.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_orphan_llm.end_time = datetime(2026, 3, 5, 6, 0, 0, 300000, tzinfo=timezone.utc)
+            mock_orphan_llm.total_tokens = 100
+            mock_orphan_llm.total_cost = 0.0001
+            mock_orphan_llm.extra = {"metadata": {"ls_model_name": "groq/llama-3.3-70b"}}
+
+            mock_root = MagicMock()
+            mock_root.id = "root-orphan"
+            mock_root.trace_id = "root-orphan"
+            mock_root.name = "aegis-support-workflow"
+            mock_root.status = "success"
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = datetime(2026, 3, 5, 6, 0, 1, tzinfo=timezone.utc)
+            mock_root.total_tokens = 100
+            mock_root.total_cost = 0.001
+
+            mock_client = MagicMock()
+            # Root runs, then descendants containing only the orphan LLM run
+            mock_client.list_runs = MagicMock(
+                side_effect=[[mock_root], [mock_orphan_llm]]
+            )
+
+            with patch("langsmith.Client", return_value=mock_client):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["traces"]) == 1
+                    # The orphan LLM run should not appear as a child (parent chain broken)
+                    assert data["traces"][0]["child_runs"] == []
+
+    def test_traces_grandchild_cycle_detection(self):
+        """Cover L530: LLM grandchild parent chain forms a cycle — get_top_level_child returns None."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            # Two chain runs that reference each other as parents (cycle)
+            mock_chain_a = MagicMock()
+            mock_chain_a.id = "chain-a"
+            mock_chain_a.parent_run_id = "chain-b"  # Points to chain-b
+            mock_chain_a.name = "chain_a"
+            mock_chain_a.run_type = "chain"
+            mock_chain_a.status = "success"
+            mock_chain_a.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_chain_a.end_time = datetime(2026, 3, 5, 6, 0, 0, 300000, tzinfo=timezone.utc)
+            mock_chain_a.total_tokens = 0
+            mock_chain_a.total_cost = 0.0
+            mock_chain_a.extra = {"metadata": {}}
+
+            mock_chain_b = MagicMock()
+            mock_chain_b.id = "chain-b"
+            mock_chain_b.parent_run_id = "chain-a"  # Points back to chain-a (cycle!)
+            mock_chain_b.name = "chain_b"
+            mock_chain_b.run_type = "chain"
+            mock_chain_b.status = "success"
+            mock_chain_b.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_chain_b.end_time = datetime(2026, 3, 5, 6, 0, 0, 300000, tzinfo=timezone.utc)
+            mock_chain_b.total_tokens = 0
+            mock_chain_b.total_cost = 0.0
+            mock_chain_b.extra = {"metadata": {}}
+
+            # LLM run under chain-a (its top-level ancestor never reaches root due to cycle)
+            mock_llm_cycle = MagicMock()
+            mock_llm_cycle.id = "llm-cycle"
+            mock_llm_cycle.parent_run_id = "chain-a"  # Parent is chain-a
+            mock_llm_cycle.name = "ChatGroq"
+            mock_llm_cycle.run_type = "llm"
+            mock_llm_cycle.status = "success"
+            mock_llm_cycle.start_time = datetime(2026, 3, 5, 6, 0, 0, 100000, tzinfo=timezone.utc)
+            mock_llm_cycle.end_time = datetime(2026, 3, 5, 6, 0, 0, 400000, tzinfo=timezone.utc)
+            mock_llm_cycle.total_tokens = 200
+            mock_llm_cycle.total_cost = 0.0002
+            mock_llm_cycle.extra = {"metadata": {"ls_model_name": "groq/llama-3.3-70b"}}
+
+            mock_root = MagicMock()
+            mock_root.id = "root-cycle"
+            mock_root.trace_id = "root-cycle"
+            mock_root.name = "aegis-support-workflow"
+            mock_root.status = "success"
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = datetime(2026, 3, 5, 6, 0, 1, tzinfo=timezone.utc)
+            mock_root.total_tokens = 200
+            mock_root.total_cost = 0.002
+
+            mock_client = MagicMock()
+            mock_client.list_runs = MagicMock(
+                side_effect=[[mock_root], [mock_chain_a, mock_chain_b, mock_llm_cycle]]
+            )
+
+            with patch("langsmith.Client", return_value=mock_client):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["traces"]) == 1
+                    # Neither chain-a nor chain-b are direct children of root,
+                    # and the LLM run's cycle means no model extraction possible
+                    # child_runs should be empty since chain-a/b parent isn't root
+                    assert data["traces"][0]["child_runs"] == []
+
