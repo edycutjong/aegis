@@ -163,6 +163,30 @@ async function runTicketShot(page, { presetLabel, shotName, hitl, action }) {
     await captureAll(page, shotName);
 }
 
+/** Capture the HITL modal itself (before approve/deny) */
+async function runHitlModalShot(page, { presetLabel, shotName }) {
+    await clearCache();
+    await resetDashboard(page);
+    await clickPreset(page, presetLabel);
+
+    const result = await waitForState(page, 180000);
+    console.log(`    → State: ${result}`);
+
+    if (result === "approval") {
+        console.log("    ✓ HITL modal visible — capturing");
+        await sleep(2000);
+        await captureAll(page, shotName);
+        // Approve so we leave clean state
+        await page.locator(".btn-success:has-text('Approve')").first().click();
+        await waitForState(page, 30000);
+        await sleep(2000);
+    } else {
+        console.log(`    ⚠ Got ${result} instead of HITL modal — capturing anyway`);
+        await sleep(2000);
+        await captureAll(page, shotName);
+    }
+}
+
 /** Run an Edge Case and capture result */
 async function runEdgeCaseShot(page, { edgeLabel, shotName }) {
     await clearCache();
@@ -222,83 +246,104 @@ const SHOTS = {
     },
 
     // ── Quick Test: Refund (HITL) ──
+    "refund-hitl": {
+        name: "03-refund-hitl",
+        title: "💳 Refund — HITL Modal",
+        capture: async (page) => {
+            await runHitlModalShot(page, { presetLabel: "Refund", shotName: "03-refund-hitl" });
+        },
+    },
     "refund-approve": {
-        name: "03-refund-approve",
+        name: "04-refund-approve",
         title: "💳 Refund — HITL Approve",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Refund", shotName: "03-refund-approve", hitl: true, action: "approve" });
+            await runTicketShot(page, { presetLabel: "Refund", shotName: "04-refund-approve", hitl: true, action: "approve" });
         },
     },
     "refund-deny": {
-        name: "04-refund-deny",
+        name: "05-refund-deny",
         title: "💳 Refund — HITL Deny",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Refund", shotName: "04-refund-deny", hitl: true, action: "deny" });
+            await runTicketShot(page, { presetLabel: "Refund", shotName: "05-refund-deny", hitl: true, action: "deny" });
         },
     },
 
     // ── Quick Test: Technical (no HITL) ──
     "technical-resolution": {
-        name: "05-technical-resolution",
+        name: "06-technical-resolution",
         title: "🔧 Technical — Resolution",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Technical", shotName: "05-technical-resolution", hitl: false });
+            await runTicketShot(page, { presetLabel: "Technical", shotName: "06-technical-resolution", hitl: false });
         },
     },
 
     // ── Quick Test: Billing (no HITL) ──
     "billing-resolution": {
-        name: "06-billing-resolution",
+        name: "07-billing-resolution",
         title: "📄 Billing — Resolution",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Billing", shotName: "06-billing-resolution", hitl: false });
+            await runTicketShot(page, { presetLabel: "Billing", shotName: "07-billing-resolution", hitl: false });
         },
     },
 
     // ── Quick Test: Upgrade (no HITL) ──
     "upgrade-resolution": {
-        name: "07-upgrade-resolution",
+        name: "08-upgrade-resolution",
         title: "⬆️ Upgrade — Resolution",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Upgrade", shotName: "07-upgrade-resolution", hitl: false });
+            await runTicketShot(page, { presetLabel: "Upgrade", shotName: "08-upgrade-resolution", hitl: false });
         },
     },
 
     // ── Quick Test: Reactivate (HITL) ──
+    "reactivate-hitl": {
+        name: "09-reactivate-hitl",
+        title: "🔓 Reactivate — HITL Modal",
+        capture: async (page) => {
+            await runHitlModalShot(page, { presetLabel: "Reactivate", shotName: "09-reactivate-hitl" });
+        },
+    },
     "reactivate-approve": {
-        name: "08-reactivate-approve",
+        name: "10-reactivate-approve",
         title: "🔓 Reactivate — HITL Approve",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "08-reactivate-approve", hitl: true, action: "approve" });
+            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "10-reactivate-approve", hitl: true, action: "approve" });
         },
     },
     "reactivate-deny": {
-        name: "09-reactivate-deny",
+        name: "11-reactivate-deny",
         title: "🔓 Reactivate — HITL Deny",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "09-reactivate-deny", hitl: true, action: "deny" });
+            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "11-reactivate-deny", hitl: true, action: "deny" });
         },
     },
 
     // ── Quick Test: Suspend (HITL) ──
+    "suspend-hitl": {
+        name: "12-suspend-hitl",
+        title: "🔒 Suspend — HITL Modal",
+        capture: async (page) => {
+            await runHitlModalShot(page, { presetLabel: "Suspend", shotName: "12-suspend-hitl" });
+        },
+    },
     "suspend-approve": {
-        name: "10-suspend-approve",
+        name: "13-suspend-approve",
         title: "🔒 Suspend — HITL Approve",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Suspend", shotName: "10-suspend-approve", hitl: true, action: "approve" });
+            await runTicketShot(page, { presetLabel: "Suspend", shotName: "13-suspend-approve", hitl: true, action: "approve" });
         },
     },
     "suspend-deny": {
-        name: "11-suspend-deny",
+        name: "14-suspend-deny",
         title: "🔒 Suspend — HITL Deny",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Suspend", shotName: "11-suspend-deny", hitl: true, action: "deny" });
+            await runTicketShot(page, { presetLabel: "Suspend", shotName: "14-suspend-deny", hitl: true, action: "deny" });
         },
     },
 
     // ── Semantic Cache ──
     "cache-hit": {
-        name: "12-cache-hit",
+        name: "15-cache-hit",
         title: "⚡ Semantic Cache Hit",
         capture: async (page) => {
             // Warm the cache first
@@ -322,41 +367,41 @@ const SHOTS = {
                 console.log("    ⚡ Cache hit — capturing");
             }
             await sleep(2000);
-            await captureAll(page, "12-cache-hit");
+            await captureAll(page, "15-cache-hit");
         },
     },
 
     // ── Edge Cases ──
     "edge-notfound": {
-        name: "13-edge-notfound",
+        name: "16-edge-notfound",
         title: "👻 Edge Case — Customer Not Found",
         capture: async (page) => {
             await runEdgeCaseShot(page, { edgeLabel: "Not Found", shotName: "13-edge-notfound" });
         },
     },
     "edge-mismatch": {
-        name: "14-edge-mismatch",
+        name: "17-edge-mismatch",
         title: "🔀 Edge Case — Name/ID Mismatch",
         capture: async (page) => {
             await runEdgeCaseShot(page, { edgeLabel: "Mismatch", shotName: "14-edge-mismatch" });
         },
     },
     "edge-typo": {
-        name: "15-edge-typo",
+        name: "18-edge-typo",
         title: "✍️ Edge Case — Typo Correction",
         capture: async (page) => {
             await runEdgeCaseShot(page, { edgeLabel: "Typo", shotName: "15-edge-typo" });
         },
     },
     "edge-nameonly": {
-        name: "16-edge-nameonly",
+        name: "19-edge-nameonly",
         title: "👤 Edge Case — Name Only Lookup",
         capture: async (page) => {
             await runEdgeCaseShot(page, { edgeLabel: "Name Only", shotName: "16-edge-nameonly" });
         },
     },
     "edge-cancelled": {
-        name: "17-edge-cancelled",
+        name: "20-edge-cancelled",
         title: "🚫 Edge Case — Cancelled Account",
         capture: async (page) => {
             await runEdgeCaseShot(page, { edgeLabel: "Cancelled", shotName: "17-edge-cancelled" });
@@ -365,7 +410,7 @@ const SHOTS = {
 
     // ── Observability ──
     metrics: {
-        name: "18-metrics",
+        name: "21-metrics",
         title: "📊 Observability Metrics",
         capture: async (page) => {
             await resetDashboard(page);
@@ -380,7 +425,7 @@ const SHOTS = {
     },
 
     traces: {
-        name: "19-traces",
+        name: "22-traces",
         title: "🔭 LangSmith Traces",
         capture: async (page) => {
             await resetDashboard(page);
@@ -407,7 +452,7 @@ const SHOTS = {
 
     // ── Recent Tickets ──
     "recent-tickets": {
-        name: "20-recent-tickets",
+        name: "23-recent-tickets",
         title: "📋 Recent Tickets",
         capture: async (page) => {
             // By this point we've processed many tickets, so history should be populated
@@ -434,7 +479,7 @@ const SHOTS = {
 
     // ── Database ──
     database: {
-        name: "21-database",
+        name: "24-database",
         title: "🗄️ Database Explorer",
         capture: async (page) => {
             await resetDashboard(page);
@@ -473,7 +518,7 @@ async function main() {
         }
     }
 
-    console.log(`📸 Aegis Screenshot Capture — ${selected.length} shot(s)\n`);
+    console.log(`📸 Aegis Screenshot Capture — ${selected.length} of 24 shot(s)\n`);
     console.log(`   Viewports:`);
     for (const [name, vp] of Object.entries(VIEWPORTS)) {
         console.log(`     ${name}: ${vp.width}×${vp.height} @2×`);

@@ -50,12 +50,14 @@ lint: ## 🔍 Lint backend (ruff) + frontend (eslint)
 
 .PHONY: screenshots demo clips
 
-screenshots: ## 📸 Capture all 21 UI screenshots (requires stack running)
+screenshots: ## 📸 Capture all 24 UI screenshots (requires stack running)
 	node scripts/capture-screenshots.mjs
 
 # Individual screenshot targets for development
 ss-dashboard:          ## 📸 1 shot: dashboard
 	node scripts/capture-screenshots.mjs dashboard
+ss-refund-hitl:        ## 📸 1 shot: refund HITL modal
+	node scripts/capture-screenshots.mjs refund-hitl
 ss-refund-approve:     ## 📸 1 shot: refund HITL approve
 	node scripts/capture-screenshots.mjs refund-approve
 ss-refund-deny:        ## 📸 1 shot: refund HITL deny
@@ -66,10 +68,14 @@ ss-billing:            ## 📸 1 shot: billing resolution
 	node scripts/capture-screenshots.mjs billing-resolution
 ss-upgrade:            ## 📸 1 shot: upgrade resolution
 	node scripts/capture-screenshots.mjs upgrade-resolution
+ss-reactivate-hitl:    ## 📸 1 shot: reactivate HITL modal
+	node scripts/capture-screenshots.mjs reactivate-hitl
 ss-reactivate-approve: ## 📸 1 shot: reactivate HITL approve
 	node scripts/capture-screenshots.mjs reactivate-approve
 ss-reactivate-deny:    ## 📸 1 shot: reactivate HITL deny
 	node scripts/capture-screenshots.mjs reactivate-deny
+ss-suspend-hitl:       ## 📸 1 shot: suspend HITL modal
+	node scripts/capture-screenshots.mjs suspend-hitl
 ss-suspend-approve:    ## 📸 1 shot: suspend HITL approve
 	node scripts/capture-screenshots.mjs suspend-approve
 ss-suspend-deny:       ## 📸 1 shot: suspend HITL deny
