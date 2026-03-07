@@ -500,17 +500,54 @@ async def get_traces():
             traces = []
             for run in root_runs:
                 try:
-                    child_runs_raw = await asyncio.to_thread(
+                    # Fetch ALL descendants (children + grandchildren) via trace_id
+                    # This is one API call instead of N+1 calls
+                    all_descendants = await asyncio.to_thread(
                         lambda r=run: list(
                             client.list_runs(
                                 project_name=settings.langchain_project,
-                                filter=f'eq(parent_run_id, "{r.id}")',
+                                trace_id=r.trace_id,
+                                is_root=False,
                             )
                         )
                     )
+
+                    # Map all descendants for lineage tracing
+                    descendants_by_id = {str(d.id): d for d in all_descendants}
+                    run_id_str = str(run.id)
+
+                    def get_top_level_child(d_id: str) -> str | None:
+                        curr = d_id
+                        seen = set()
+                        while curr and curr not in seen:
+                            seen.add(curr)
+                            curr_run = descendants_by_id.get(curr)
+                            if not curr_run:
+                                return None
+                            if str(curr_run.parent_run_id) == run_id_str:
+                                return curr
+                            curr = str(curr_run.parent_run_id)
+                        return None
+
+                    # Separate direct children and map nested LLM runs to their top-level child
+                    child_runs_raw = []
+                    llm_runs_by_top_child: dict[str, list] = {}
+                    
+                    for desc in all_descendants:
+                        if str(desc.parent_run_id) == run_id_str:
+                            child_runs_raw.append(desc)
+                        
+                        if desc.run_type == "llm":
+                            top_child_id = get_top_level_child(str(desc.id))
+                            if top_child_id:
+                                if top_child_id not in llm_runs_by_top_child:
+                                    llm_runs_by_top_child[top_child_id] = []
+                                llm_runs_by_top_child[top_child_id].append(desc)
+
                     child_runs_raw.sort(key=lambda r: r.start_time or run.start_time)
                 except Exception:
                     child_runs_raw = []
+                    llm_runs_by_top_child = {}
 
                 child_runs = []
                 for child in child_runs_raw:
@@ -537,6 +574,19 @@ async def get_traces():
                         if not model:
                             invocation = child.extra.get("invocation_params", {})
                             model = invocation.get("model", invocation.get("model_name", ""))
+
+                    # If model still empty, check deeply nested LLM runs
+                    if not model:
+                        child_id_str = str(child.id)
+                        for llm_run in llm_runs_by_top_child.get(child_id_str, []):
+                            if hasattr(llm_run, "extra") and llm_run.extra:
+                                gc_meta = llm_run.extra.get("metadata", {})
+                                model = gc_meta.get("ls_model_name", "")
+                                if not model:
+                                    gc_inv = llm_run.extra.get("invocation_params", {})
+                                    model = gc_inv.get("model", gc_inv.get("model_name", ""))
+                                if model:
+                                    break
 
                     total_cost = 0.0
                     if child.total_cost is not None:
