@@ -523,6 +523,13 @@ const SHOTS = {
                     console.log("    ✓ Ticket History visible");
                 }
             }
+
+            // Expand the accordion
+            const header = page.locator(".ticket-history-header").first();
+            if (await header.isVisible().catch(() => false)) {
+                await header.click();
+            }
+
             await sleep(2000);
             await captureAll(page, "20-recent-tickets");
         },
