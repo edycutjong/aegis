@@ -281,26 +281,28 @@ const SHOTS = {
         },
     },
 
-    // ── Quick Test: Refund (HITL) ──
+    // ── Quick Test: Refund HITL shots (use Reactivate — guaranteed HITL) ──
+    // Note: The Refund preset auto-resolves because Customer #8's duplicate charge is already
+    // recorded as refunded in the DB. Reactivate always triggers HITL.
     "refund-hitl": {
         name: "03-refund-hitl",
         title: "💳 Refund — HITL Modal",
         capture: async (page) => {
-            await runHitlModalShot(page, { presetLabel: "Refund", shotName: "03-refund-hitl" });
+            await runHitlModalShot(page, { presetLabel: "Reactivate", shotName: "03-refund-hitl" });
         },
     },
     "refund-approve": {
         name: "04-refund-approve",
         title: "💳 Refund — HITL Approve",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Refund", shotName: "04-refund-approve", hitl: true, action: "approve" });
+            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "04-refund-approve", hitl: true, action: "approve" });
         },
     },
     "refund-deny": {
         name: "05-refund-deny",
         title: "💳 Refund — HITL Deny",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Refund", shotName: "05-refund-deny", hitl: true, action: "deny" });
+            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "05-refund-deny", hitl: true, action: "deny" });
         },
     },
 
