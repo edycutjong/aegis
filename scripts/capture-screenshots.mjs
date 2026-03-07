@@ -159,17 +159,21 @@ async function runTicketShot(page, { presetLabel, shotName, hitl, action }) {
     console.log(`    → State: ${result}`);
 
     if (result === "approval" && hitl) {
-        console.log(`    ✓ HITL modal visible — holding 2s`);
-        await sleep(2000);
+        // Wait for modal animation to stabilise before interacting
+        try {
+            await page.waitForSelector(".btn-success", { state: "visible", timeout: 10000 });
+        } catch { /* proceed anyway */ }
+        console.log(`    ✓ HITL modal ready — holding 1.5s`);
+        await sleep(1500);
 
         if (action === "approve") {
-            await page.locator(".btn-success:has-text('Approve')").first().click();
+            await page.locator(".btn-success:has-text('Approve')").first().click({ timeout: 5000 });
             console.log("    ✓ Clicked Approve");
             const post = await waitForState(page, 30000);
             console.log(`    → Post-approval: ${post}`);
             await sleep(3000);
         } else if (action === "deny") {
-            await page.locator(".btn-danger:has-text('Deny')").first().click();
+            await page.locator(".btn-danger:has-text('Deny')").first().click({ timeout: 5000 });
             console.log("    ✗ Clicked Deny");
             await sleep(5000);
         }
@@ -197,11 +201,17 @@ async function runHitlModalShot(page, { presetLabel, shotName }) {
     console.log(`    → State: ${result}`);
 
     if (result === "approval") {
-        console.log("    ✓ HITL modal visible — capturing");
-        await sleep(2000);
+        // Wait for the modal entry animation to finish — buttons must be stable/visible
+        try {
+            await page.waitForSelector(".btn-success", { state: "visible", timeout: 10000 });
+            console.log("    ✓ HITL modal fully rendered — holding 1.5s for animation");
+        } catch {
+            console.log("    ⚠ .btn-success not found — proceeding anyway");
+        }
+        await sleep(1500);
         await captureAll(page, shotName);
-        // Approve so we leave clean state
-        await page.locator(".btn-success:has-text('Approve')").first().click();
+        // Approve so we leave a clean state
+        await page.locator(".btn-success:has-text('Approve')").first().click({ timeout: 5000 }).catch(() => { });
         await waitForState(page, 30000);
         await sleep(2000);
     } else {

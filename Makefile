@@ -90,6 +90,7 @@ ss-traces:             ## 📸 1 shot: LangSmith traces
 	node scripts/capture-screenshots.mjs traces
 ss-tickets:            ## 📸 1 shot: recent tickets
 	node scripts/capture-screenshots.mjs recent-tickets
+ss-recent-tickets: ss-tickets ## 📸 alias for ss-tickets
 ss-database:           ## 📸 1 shot: database explorer
 	node scripts/capture-screenshots.mjs database
 
