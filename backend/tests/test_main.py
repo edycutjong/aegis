@@ -1047,3 +1047,106 @@ class TestTracesEndpoint:
                     data = response.json()
                     child = data["traces"][0]["child_runs"][0]
                     assert child["model"] == "gpt-4.1"
+
+    def test_traces_child_run_fetch_failure(self):
+        """Cover L512-513: child-run fetch exception falls back to empty list."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            mock_root = MagicMock()
+            mock_root.id = "root-child-fail"
+            mock_root.name = "aegis-support-workflow"
+            mock_root.status = "success"
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = datetime(2026, 3, 5, 6, 0, 2, tzinfo=timezone.utc)
+            mock_root.total_tokens = 500
+            mock_root.total_cost = 0.005
+
+            mock_client = MagicMock()
+            # First call returns root runs, second call (child fetch) raises
+            mock_client.list_runs = MagicMock(
+                side_effect=[[mock_root], Exception("Child fetch failed")]
+            )
+
+            with patch("langsmith.Client", return_value=mock_client):
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["traces"]) == 1
+                    # Child runs should be empty due to the exception
+                    assert data["traces"][0]["child_runs"] == []
+                    assert data["error"] is None
+
+    def test_traces_429_retry_then_success(self):
+        """Cover L581-584: 429 rate limit triggers retry with backoff."""
+        from datetime import datetime, timezone
+
+        with patch.dict(os.environ, {
+            "LANGCHAIN_TRACING_V2": "true",
+            "LANGCHAIN_API_KEY": "lsv2_pt_test",
+            "LANGCHAIN_PROJECT": "aegis",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_KEY": "test-key",
+            "REDIS_URL": "redis://localhost:6379",
+            "FRONTEND_URL": "http://localhost:3000",
+        }, clear=False):
+            from app.config import get_settings
+            get_settings.cache_clear()
+            from app.main import _traces_cache
+            _traces_cache["data"] = None
+            _traces_cache["ts"] = 0.0
+
+            mock_root = MagicMock()
+            mock_root.id = "root-retry"
+            mock_root.name = "aegis-support-workflow"
+            mock_root.status = "success"
+            mock_root.start_time = datetime(2026, 3, 5, 6, 0, 0, tzinfo=timezone.utc)
+            mock_root.end_time = datetime(2026, 3, 5, 6, 0, 1, tzinfo=timezone.utc)
+            mock_root.total_tokens = 100
+            mock_root.total_cost = 0.001
+
+            call_count = 0
+
+            def mock_list_runs(**kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    # First call (attempt 1 root fetch): raise 429
+                    raise Exception("429 Client Error: Too Many Requests")
+                elif call_count == 2:
+                    # Second call (attempt 2 root fetch): succeed
+                    return [mock_root]
+                else:
+                    # Third call (attempt 2 child fetch): succeed
+                    return []
+
+            mock_client = MagicMock()
+            mock_client.list_runs = MagicMock(side_effect=mock_list_runs)
+
+            with patch("langsmith.Client", return_value=mock_client), \
+                 patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                from app.main import app
+                with TestClient(app, raise_server_exceptions=False) as c:
+                    response = c.get("/api/traces")
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["traces"]) == 1
+                    assert data["error"] is None
+                    # Verify backoff sleep was called once with 5s
+                    mock_sleep.assert_called_once_with(5)
