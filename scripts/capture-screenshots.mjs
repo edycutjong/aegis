@@ -59,40 +59,15 @@ async function waitForState(page, timeoutMs = 120000) {
         if (await page.locator("text=Action denied").isVisible().catch(() => false)) return "denied";
         if (await page.locator("text=served from semantic cache").isVisible().catch(() => false)) return "cached";
         if (await page.locator("text=Select Customer").isVisible().catch(() => false)) return "disambiguation";
-        // Check for active agent processing (thought stream visible)
-        if (await page.locator("text=Thinking").isVisible().catch(() => false)) return "thinking";
         await sleep(2000);
     }
     return "timeout";
 }
 
-/** Type text character-by-character with human-like timing */
-async function humanType(page, selector, text, speed = "fast") {
-    const el = page.locator(selector);
-    await el.click();
-    await sleep(300);
-    if (speed === "instant") {
-        await el.fill(text);
-    } else {
-        const delay = speed === "fast"
-            ? () => 3 + Math.random() * 5
-            : () => 10 + Math.random() * 30;
-        for (const char of text) {
-            await el.pressSequentially(char, { delay: 0 });
-            await sleep(delay());
-        }
-    }
-}
-
-/** Type a message and submit */
-async function typeAndSubmit(page, msg, speed = "fast") {
-    const textarea = "textarea";
-    await page.locator(textarea).click();
-    await sleep(500);
-    await humanType(page, textarea, msg, speed);
-    await sleep(800);
-    await page.locator("button:has-text('Submit Ticket')").click();
-    console.log("    ✓ Submitted ticket");
+/** Click a Quick Test preset button to submit a ticket */
+async function clickPreset(page, label) {
+    await page.locator(`button.demo-btn:has-text('${label}')`).first().click({ timeout: 5000 });
+    console.log(`    ✓ Clicked ${label} preset`);
 }
 
 /** Reset to clean dashboard */
@@ -126,17 +101,6 @@ async function captureAll(page, context, browser, name, label) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// TICKET MESSAGES
-// ═══════════════════════════════════════════════════════════
-
-const MSG = {
-    refund: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and process a refund if confirmed.",
-    technical: "Customer #3 Maria Garcia reports getting 429 API rate limiting errors. Their enterprise plan should support 10K requests/min but they're hitting limits at 5K.",
-    billing: "Customer #1 Sarah Chen asks if there's a discount for switching from monthly to annual billing on her Enterprise plan.",
-    typo: null, // Uses edge case button
-};
-
-// ═══════════════════════════════════════════════════════════
 // SCREENSHOT DEFINITIONS
 // ═══════════════════════════════════════════════════════════
 
@@ -158,11 +122,11 @@ const SHOTS = {
         capture: async (page, context, browser) => {
             await clearCache();
             await resetDashboard(page);
-            await typeAndSubmit(page, MSG.technical, "instant");
+            await clickPreset(page, "Technical");
 
             // Wait a few seconds for the agent to start processing
             console.log("    ⏳ Waiting for agent to start thinking...");
-            await sleep(4000);
+            await sleep(5000);
 
             await captureAll(page, context, browser, "02-agent-thinking", "Agent Thinking");
 
@@ -183,7 +147,7 @@ const SHOTS = {
         capture: async (page, context, browser) => {
             await clearCache();
             await resetDashboard(page);
-            await typeAndSubmit(page, MSG.refund, "fast");
+            await clickPreset(page, "Refund");
 
             console.log("    ⏳ Waiting for HITL modal...");
             const result = await waitForState(page, 180000);
@@ -211,7 +175,7 @@ const SHOTS = {
         capture: async (page, context, browser) => {
             await clearCache();
             await resetDashboard(page);
-            await typeAndSubmit(page, MSG.billing, "fast");
+            await clickPreset(page, "Billing");
 
             console.log("    ⏳ Waiting for resolution...");
             const result = await waitForState(page, 180000);
@@ -236,7 +200,7 @@ const SHOTS = {
             // First warm the cache
             await clearCache();
             await resetDashboard(page);
-            await typeAndSubmit(page, MSG.billing, "instant");
+            await clickPreset(page, "Billing");
             const warmResult = await waitForState(page, 120000);
             if (warmResult === "approval") {
                 await page.locator(".btn-success:has-text('Approve')").first().click();
@@ -247,7 +211,7 @@ const SHOTS = {
 
             // Now re-submit for cache hit
             await resetDashboard(page);
-            await typeAndSubmit(page, MSG.billing, "instant");
+            await clickPreset(page, "Billing");
             const result = await waitForState(page, 15000);
             console.log(`    → State: ${result}`);
 
