@@ -77,9 +77,7 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
     // Auto-scroll to bottom when new thoughts arrive
     useEffect(() => {
         const el = scrollRef.current;
-        if (el) {
-            el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-        }
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }, [thoughts.length, status]);
 
     const getIcon = (step: string) => {
