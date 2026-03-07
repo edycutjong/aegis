@@ -451,26 +451,30 @@ Object.assign(CLIPS, {
     },
 });
 
-// ═══ EDGE CASE CLIPS ═══
+// ═══ EDGE CASE CLIPS — typed messages to look like real work ═══
 
-Object.assign(CLIPS, {
-    typo: {
-        name: `${String(clipNum++).padStart(2, "0")}-edge-typo`,
-        title: "Edge Case — Typo Correction",
+const EDGE_MESSAGES = {
+    typo: "Customer #8 Davd Martines says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
+    notfound: "Customer #999 John Phantom wants a refund for the duplicate $49 charge on their Pro subscription from 2 days ago.",
+    mismatch: "Customer #8 Sarah Chen says she was charged $49 twice this month for her Pro plan. Please investigate.",
+    nameonly: "Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
+    cancelled: "Customer #20 William Allen wants to know why his account was cancelled. He says he never requested cancellation and needs access restored.",
+};
+
+/** Record an edge case clip by typing the message */
+function makeEdgeCaseClip(key, title, msg, num) {
+    return {
+        name: `${String(num).padStart(2, "0")}-edge-${key}`,
+        title: `Edge Case — ${title}`,
         record: async (browser) => {
             try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
             const { context, page } = await createClipContext(browser);
             await page.goto(BASE_URL);
             await page.waitForLoadState("networkidle");
-            await sleep(1000);
+            console.log("    ✓ Dashboard loaded");
+            await sleep(2000);
 
-            await page.locator("button:has-text('Edge Cases')").first().click({ timeout: 3000 });
-            console.log("    ✓ Switched to Edge Cases tab");
-            await sleep(1500);
-
-            await page.locator("button.demo-btn:has-text('Typo')").first().click({ timeout: 5000 });
-            console.log("    ✓ Clicked Typo edge case");
-
+            await typeMessageAndSubmit(page, msg, "normal");
             const result = await waitForState(page, 120000);
             console.log(`    → State: ${result}`);
             if (result === "approval") {
@@ -480,29 +484,44 @@ Object.assign(CLIPS, {
                 console.log(`    → Post-approval: ${post}`);
             }
             await sleep(5000);
-            return saveClip(context, page, `${CLIPS.typo.name}`);
+            return saveClip(context, page, `${String(num).padStart(2, "0")}-edge-${key}`);
         },
-    },
+    };
+}
 
-    notfound: {
-        name: `${String(clipNum++).padStart(2, "0")}-edge-notfound`,
-        title: "Edge Case — Customer Not Found",
+Object.assign(CLIPS, {
+    typo: makeEdgeCaseClip("typo", "Typo Correction", EDGE_MESSAGES.typo, clipNum++),
+    notfound: makeEdgeCaseClip("notfound", "Customer Not Found", EDGE_MESSAGES.notfound, clipNum++),
+    mismatch: makeEdgeCaseClip("mismatch", "Name/ID Mismatch", EDGE_MESSAGES.mismatch, clipNum++),
+    nameonly: makeEdgeCaseClip("nameonly", "Name Only Lookup", EDGE_MESSAGES.nameonly, clipNum++),
+    cancelled: makeEdgeCaseClip("cancelled", "Cancelled Account", EDGE_MESSAGES.cancelled, clipNum++),
+});
+
+// ═══ DATABASE CLIP ═══
+
+Object.assign(CLIPS, {
+    database: {
+        name: `${String(clipNum++).padStart(2, "0")}-database`,
+        title: "Database Explorer",
         record: async (browser) => {
-            try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
             const { context, page } = await createClipContext(browser);
             await page.goto(BASE_URL);
             await page.waitForLoadState("networkidle");
-            await sleep(1000);
-
-            await page.locator("button:has-text('Edge Cases')").first().click({ timeout: 3000 });
-            await sleep(1500);
-            await page.locator("button.demo-btn:has-text('Not Found')").first().click({ timeout: 5000 });
-            console.log("    ✓ Clicked Not Found edge case");
-
-            const result = await waitForState(page, 90000);
-            console.log(`    → State: ${result}`);
+            await sleep(2000);
+            const dbSection = page.locator("text=Database").first();
+            if (await dbSection.isVisible().catch(() => false)) {
+                await dbSection.scrollIntoViewIfNeeded();
+                console.log("    ✓ Database section visible");
+                await sleep(1000);
+                const customersBtn = page.locator("text=Customers").first();
+                if (await customersBtn.isVisible().catch(() => false)) {
+                    await customersBtn.click();
+                    console.log("    ✓ Expanded Customers table");
+                    await sleep(2000);
+                }
+            }
             await sleep(5000);
-            return saveClip(context, page, `${CLIPS.notfound.name}`);
+            return saveClip(context, page, `${CLIPS.database.name}`);
         },
     },
 });

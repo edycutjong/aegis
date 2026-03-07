@@ -1,5 +1,5 @@
 /**
- * Aegis Demo Recorder v4 — Full Capability Showcase
+ * Aegis Demo Recorder v5 — Full Capability Showcase
  *
  * Records ONE comprehensive video demonstrating every Aegis feature:
  *
@@ -14,16 +14,20 @@
  *   9.  🔒 Suspend — HITL Approve      (type → agent → HITL → Approve)
  *  10.  📊 Observability Metrics       (scroll right panel)
  *  11.  🔭 LangSmith Traces Panel      (open → view → close)
- *  12.  ✍️  Edge Case — Typo            (fuzzy name matching)
- *  13.  👻 Edge Case — Not Found        (customer #999)
- *  14.  📋 Ticket History + Closing     (scroll to history → back to top)
+ *  12.  🗄️  Database Explorer           (expand Customers table)
+ *  13.  ✍️  Edge Case — Typo            (type → fuzzy name matching)
+ *  14.  👻 Edge Case — Not Found        (type → customer #999)
+ *  15.  🔀 Edge Case — Mismatch        (type → name/ID mismatch)
+ *  16.  👤 Edge Case — Name Only        (type → name-only lookup)
+ *  17.  🚫 Edge Case — Cancelled        (type → cancelled account)
+ *  18.  📋 Ticket History + Closing     (scroll to history → back to top)
  *
  * Usage:
  *   docker compose up --build
  *   node scripts/record-demo.mjs
  *
- * Output: scripts/aegis-demo-v4.webm
- * Convert: ffmpeg -i scripts/aegis-demo-v4.webm -c:v libx264 -preset slow -crf 14 scripts/aegis-demo-v4.mp4
+ * Output: scripts/aegis-demo-v5.webm
+ * Convert: ffmpeg -i scripts/aegis-demo-v5.webm -c:v libx264 -preset slow -crf 14 scripts/aegis-demo-v5.mp4
  */
 
 import { chromium } from "playwright";
@@ -150,12 +154,21 @@ const MSG = {
     suspend: "Customer #20 William Allen has violated our terms of service by sharing his API keys publicly. Please suspend his account immediately.",
 };
 
+// Edge Case messages (typed to look like real work)
+const EDGE_MSG = {
+    typo: "Customer #8 Davd Martines says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
+    notfound: "Customer #999 John Phantom wants a refund for the duplicate $49 charge on their Pro subscription from 2 days ago.",
+    mismatch: "Customer #8 Sarah Chen says she was charged $49 twice this month for her Pro plan. Please investigate.",
+    nameonly: "Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
+    cancelled: "Customer #20 William Allen wants to know why his account was cancelled. He says he never requested cancellation and needs access restored.",
+};
+
 // ═══════════════════════════════════════════════════════════
 // MAIN RECORDING
 // ═══════════════════════════════════════════════════════════
 
 async function record() {
-    console.log("🎬 Aegis Demo v4 — Full Capability Showcase\n");
+    console.log("🎬 Aegis Demo v5 — Full Capability Showcase\n");
 
     // Clear cache
     try {
@@ -387,18 +400,31 @@ async function record() {
     }
 
     // ──────────────────────────────────────────────────────
-    // SCENE 12: ✍️ Edge Case — Typo Correction
+    // SCENE 12: 🗄️ Database Explorer
+    // ──────────────────────────────────────────────────────
+    scene("🗄️ Database Explorer");
+    await resetToDashboard(page);
+    const dbSection = page.locator("text=Database").first();
+    if (await dbSection.isVisible().catch(() => false)) {
+        await dbSection.scrollIntoViewIfNeeded();
+        console.log("    ✓ Database section visible");
+        await sleep(1000);
+        const customersBtn = page.locator("text=Customers").first();
+        if (await customersBtn.isVisible().catch(() => false)) {
+            await customersBtn.click();
+            console.log("    ✓ Expanded Customers table");
+            await sleep(2000);
+        }
+    }
+    await sleep(5000);
+
+    // ──────────────────────────────────────────────────────
+    // SCENE 13: ✍️ Edge Case — Typo Correction (typed)
     // ──────────────────────────────────────────────────────
     scene("✍️ Edge Case — Typo Correction");
     await resetToDashboard(page);
     try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
-
-    await page.locator("button:has-text('Edge Cases')").first().click({ timeout: 3000 });
-    console.log("    ✓ Switched to Edge Cases tab");
-    await sleep(1500);
-
-    await page.locator("button.demo-btn:has-text('Typo')").first().click({ timeout: 5000 });
-    console.log("    ✓ Clicked Typo edge case");
+    await typeAndSubmit(page, EDGE_MSG.typo, "normal");
 
     const typoResult = await waitForState(page, 120000);
     console.log(`    → State: ${typoResult}`);
@@ -411,23 +437,73 @@ async function record() {
     await sleep(5000);
 
     // ──────────────────────────────────────────────────────
-    // SCENE 13: 👻 Edge Case — Customer Not Found
+    // SCENE 14: 👻 Edge Case — Customer Not Found (typed)
     // ──────────────────────────────────────────────────────
     scene("👻 Edge Case — Customer Not Found");
     await resetToDashboard(page);
     try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
-
-    await page.locator("button:has-text('Edge Cases')").first().click({ timeout: 3000 });
-    await sleep(1500);
-    await page.locator("button.demo-btn:has-text('Not Found')").first().click({ timeout: 5000 });
-    console.log("    ✓ Clicked Not Found edge case");
+    await typeAndSubmit(page, EDGE_MSG.notfound, "normal");
 
     const nfResult = await waitForState(page, 90000);
     console.log(`    → State: ${nfResult}`);
     await sleep(5000);
 
     // ──────────────────────────────────────────────────────
-    // SCENE 14: 📋 Ticket History + Closing
+    // SCENE 15: 🔀 Edge Case — Name/ID Mismatch (typed)
+    // ──────────────────────────────────────────────────────
+    scene("🔀 Edge Case — Name/ID Mismatch");
+    await resetToDashboard(page);
+    try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+    await typeAndSubmit(page, EDGE_MSG.mismatch, "normal");
+
+    const mmResult = await waitForState(page, 120000);
+    console.log(`    → State: ${mmResult}`);
+    if (mmResult === "approval") {
+        await sleep(4000);
+        await approveIfModalOpen(page);
+        const post = await waitForState(page, 30000);
+        console.log(`    → Post-approval: ${post}`);
+    }
+    await sleep(5000);
+
+    // ──────────────────────────────────────────────────────
+    // SCENE 16: 👤 Edge Case — Name Only Lookup (typed)
+    // ──────────────────────────────────────────────────────
+    scene("👤 Edge Case — Name Only Lookup");
+    await resetToDashboard(page);
+    try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+    await typeAndSubmit(page, EDGE_MSG.nameonly, "normal");
+
+    const noResult = await waitForState(page, 120000);
+    console.log(`    → State: ${noResult}`);
+    if (noResult === "approval") {
+        await sleep(4000);
+        await approveIfModalOpen(page);
+        const post = await waitForState(page, 30000);
+        console.log(`    → Post-approval: ${post}`);
+    }
+    await sleep(5000);
+
+    // ──────────────────────────────────────────────────────
+    // SCENE 17: 🚫 Edge Case — Cancelled Account (typed)
+    // ──────────────────────────────────────────────────────
+    scene("🚫 Edge Case — Cancelled Account");
+    await resetToDashboard(page);
+    try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+    await typeAndSubmit(page, EDGE_MSG.cancelled, "normal");
+
+    const caResult = await waitForState(page, 120000);
+    console.log(`    → State: ${caResult}`);
+    if (caResult === "approval") {
+        await sleep(4000);
+        await approveIfModalOpen(page);
+        const post = await waitForState(page, 30000);
+        console.log(`    → Post-approval: ${post}`);
+    }
+    await sleep(5000);
+
+    // ──────────────────────────────────────────────────────
+    // SCENE 18: 📋 Ticket History + Closing
     // ──────────────────────────────────────────────────────
     scene("📋 Ticket History + Closing");
     await resetToDashboard(page);
@@ -448,14 +524,14 @@ async function record() {
 
     await page.close();
     const video = page.video();
-    const outputFile = "scripts/aegis-demo-v4.webm";
+    const outputFile = "scripts/aegis-demo-v5.webm";
     if (video) {
         const tmpPath = await video.path();
         await context.close();
         renameSync(tmpPath, outputFile);
         console.log(`🎬 Saved: ${outputFile}`);
         console.log(`\nConvert to MP4:`);
-        console.log(`  ffmpeg -i ${outputFile} -c:v libx264 -preset slow -crf 14 scripts/aegis-demo-v4.mp4`);
+        console.log(`  ffmpeg -i ${outputFile} -c:v libx264 -preset slow -crf 14 scripts/aegis-demo-v5.mp4`);
     } else {
         await context.close();
     }
