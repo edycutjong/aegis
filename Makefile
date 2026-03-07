@@ -40,7 +40,7 @@ test-backend: ## 🐍 Run backend tests with coverage (100% required)
 		--cov-fail-under=100 -v
 
 test-frontend: ## ⚛️  Run frontend tests with Vitest
-	cd frontend && npm test
+	cd frontend && npm test -- --coverage
 
 lint: ## 🔍 Lint backend (ruff) + frontend (eslint)
 	ruff check backend/
