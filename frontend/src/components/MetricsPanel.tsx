@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import type { Metrics, DbStatus } from "@/lib/api";
-import { clearCache, getDbStatus, getTableData } from "@/lib/api";
+import { clearCache, getDbStatus, getTableData, getTracingStatus } from "@/lib/api";
 import AnimatedNumber from "./AnimatedNumber";
 
 interface MetricsPanelProps {
@@ -47,6 +47,14 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
     const cache = metrics?.cache_metrics;
     const [clearing, setClearing] = useState(false);
     const [clearMsg, setClearMsg] = useState<string | null>(null);
+    const [tracingEnabled, setTracingEnabled] = useState(false);
+
+    // Check if LangSmith tracing is enabled on mount
+    useEffect(() => {
+        getTracingStatus()
+            .then((s) => setTracingEnabled(s.enabled))
+            .catch(() => setTracingEnabled(false));
+    }, []);
 
     // Database state
     const [db, setDb] = useState<DbStatus | null>(null);
@@ -406,22 +414,24 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                     </div>
                 )}
                 {/* ── LangSmith Traces trigger ── */}
-                <button
-                    onClick={onOpenTraces}
-                    className="w-full metric-card flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/5 cursor-pointer group"
-                >
-                    <div className="flex items-center gap-2">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                {tracingEnabled && (
+                    <button
+                        onClick={onOpenTraces}
+                        className="w-full metric-card flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/5 cursor-pointer group"
+                    >
+                        <div className="flex items-center gap-2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                            </svg>
+                            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
+                                LangSmith Traces
+                            </span>
+                        </div>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-y-[-2px]">
+                            <path d="M7 17l9.2-9.2M17 17V7H7" />
                         </svg>
-                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
-                            LangSmith Traces
-                        </span>
-                    </div>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-y-[-2px]">
-                        <path d="M7 17l9.2-9.2M17 17V7H7" />
-                    </svg>
-                </button>
+                    </button>
+                )}
             </div>
         </div>
     );

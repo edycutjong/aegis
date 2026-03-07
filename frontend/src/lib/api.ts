@@ -221,3 +221,17 @@ export async function getTraces(): Promise<TracesResponse> {
     if (!res.ok) throw new Error(`Traces fetch failed: ${res.statusText}`);
     return res.json();
 }
+
+/** Tracing status from /api/tracing-status */
+export interface TracingStatus {
+    enabled: boolean;
+    project: string;
+    connected: boolean;
+}
+
+/** Check if LangSmith tracing is enabled */
+export async function getTracingStatus(): Promise<TracingStatus> {
+    const res = await fetch(`${API_URL}/api/tracing-status`);
+    if (!res.ok) throw new Error(`Tracing status failed: ${res.statusText}`);
+    return res.json();
+}

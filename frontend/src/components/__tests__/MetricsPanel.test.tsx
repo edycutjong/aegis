@@ -12,10 +12,11 @@ vi.mock("@/lib/api", async (importOriginal) => {
         clearCache: vi.fn(),
         getDbStatus: vi.fn().mockResolvedValue({}),
         getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
+        getTracingStatus: vi.fn().mockResolvedValue({ enabled: false, project: "aegis", connected: false }),
     };
 });
 
-import { clearCache, getDbStatus, getTableData } from "@/lib/api";
+import { clearCache, getDbStatus, getTableData, getTracingStatus } from "@/lib/api";
 
 const FULL_METRICS: Metrics = {
     agent_metrics: {
@@ -515,5 +516,37 @@ describe("MetricsPanel", () => {
 
         expect(screen.queryByText("Failed to clear")).not.toBeInTheDocument();
         vi.useRealTimers();
+    });
+
+    // ── LangSmith Traces Button ──
+    it("hides LangSmith Traces button when tracing is disabled", async () => {
+        vi.mocked(getTracingStatus).mockResolvedValue({ enabled: false, project: "aegis", connected: false });
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        await waitFor(() => {
+            expect(getTracingStatus).toHaveBeenCalled();
+        });
+
+        expect(screen.queryByText("LangSmith Traces")).not.toBeInTheDocument();
+    });
+
+    it("shows LangSmith Traces button when tracing is enabled", async () => {
+        vi.mocked(getTracingStatus).mockResolvedValue({ enabled: true, project: "aegis", connected: true });
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        await waitFor(() => {
+            expect(screen.getByText("LangSmith Traces")).toBeInTheDocument();
+        });
+    });
+
+    it("hides LangSmith Traces button when getTracingStatus fails", async () => {
+        vi.mocked(getTracingStatus).mockRejectedValue(new Error("Network Error"));
+        render(<MetricsPanel metrics={FULL_METRICS} />);
+
+        await waitFor(() => {
+            expect(getTracingStatus).toHaveBeenCalled();
+        });
+
+        expect(screen.queryByText("LangSmith Traces")).not.toBeInTheDocument();
     });
 });

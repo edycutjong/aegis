@@ -3,6 +3,9 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ThoughtStream from "../ThoughtStream";
 
+// jsdom doesn't implement scrollTo
+Element.prototype.scrollTo = vi.fn();
+
 describe("ThoughtStream", () => {
     // ── Empty State ──
     it("shows placeholder when no thoughts and not processing", () => {

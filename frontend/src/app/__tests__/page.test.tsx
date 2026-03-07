@@ -5,6 +5,9 @@ import userEvent from "@testing-library/user-event";
 import Dashboard from "../page";
 import type { ActionProposal, ChatResponse } from "@/lib/api";
 
+// jsdom doesn't implement scrollTo
+Element.prototype.scrollTo = vi.fn();
+
 // ── Mock API module ──
 vi.mock("@/lib/api", () => ({
     startChat: vi.fn(),
@@ -35,6 +38,7 @@ vi.mock("@/lib/api", () => ({
     clearCache: vi.fn().mockResolvedValue({ status: "ok", keys_deleted: 0 }),
     getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
     getTraces: vi.fn().mockResolvedValue({ traces: [], error: null }),
+    getTracingStatus: vi.fn().mockResolvedValue({ enabled: true, project: "aegis", connected: true }),
 }));
 
 import { startChat, connectSSE, approveAction, getMetrics, clearCache, getTraces } from "@/lib/api";
@@ -710,7 +714,8 @@ describe("Dashboard (page.tsx)", () => {
 
     // ── Error History with Thoughts Preview ──
     it("records error ticket with preview from last thought", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        vi.useRealTimers(); // SSE callbacks use Promise.resolve — need real timers
+        const user = userEvent.setup();
         vi.mocked(startChat).mockResolvedValue({
             thread_id: "error-hist-thread",
             status: "processing",
@@ -734,8 +739,10 @@ describe("Dashboard (page.tsx)", () => {
 
         await waitFor(() => {
             // Error should have been recorded — verify error thoughts visible
-            expect(screen.getByText(/Error: Agent failed/)).toBeInTheDocument();
+            // (appears in both ThoughtStream and ticket history preview)
+            expect(screen.getAllByText(/Error: Agent failed/).length).toBeGreaterThanOrEqual(1);
         });
+        vi.useFakeTimers({ shouldAdvanceTime: true }); // Restore for other tests
     });
 
     // ── Traces Panel Toggling ──
@@ -743,8 +750,8 @@ describe("Dashboard (page.tsx)", () => {
         const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
         render(<Dashboard />);
 
-        // Find and click the LangSmith Traces button in MetricsPanel
-        const openTracesBtn = screen.getByRole("button", { name: /LangSmith Traces/i });
+        // Wait for the LangSmith Traces button (async — depends on getTracingStatus resolving)
+        const openTracesBtn = await screen.findByRole("button", { name: /LangSmith Traces/i });
         await user.click(openTracesBtn);
 
         // Wait for Traces panel to appear (checking for text inside it like 'No traces yet')
