@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 interface ThoughtStreamProps {
     thoughts: string[];
@@ -72,6 +72,15 @@ function parseAgentName(step: string): { agent: string | null; message: string }
 
 export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) {
     const [devMode, setDevMode] = useState(false);
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom when new thoughts arrive
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (el) {
+            el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+        }
+    }, [thoughts.length, status]);
 
     const getIcon = (step: string) => {
         if (step.startsWith("✓")) return "✓";
@@ -136,7 +145,7 @@ export default function ThoughtStream({ thoughts, status }: ThoughtStreamProps) 
             </div>
 
             {/* Single scroll for all content */}
-            <div className="flex-1 overflow-y-auto pl-6 pr-4 pb-6 space-y-2" style={{ scrollbarGutter: "stable" }}>
+            <div ref={scrollRef} className="flex-1 overflow-y-auto pl-6 pr-4 pb-6 space-y-2" style={{ scrollbarGutter: "stable" }}>
 
                 {/* 1. Empty States (No thoughts generated yet) */}
                 {thoughts.length === 0 && (
