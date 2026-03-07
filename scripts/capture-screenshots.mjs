@@ -126,6 +126,25 @@ async function captureAll(page, name) {
     }
 }
 
+/** Toggle to DEV mode, capture, then toggle back */
+async function captureDevMode(page, name) {
+    const devToggle = page.locator('[title="Switch to developer view with agent details"]').first();
+    if (await devToggle.isVisible().catch(() => false)) {
+        await devToggle.click();
+        console.log("    ⚙ Switched to DEV mode");
+        await sleep(1000);
+        await captureAll(page, `${name}-dev`);
+        // Switch back to user mode
+        const userToggle = page.locator('[title="Switch to user-friendly view"]').first();
+        if (await userToggle.isVisible().catch(() => false)) {
+            await userToggle.click();
+            await sleep(500);
+        }
+    } else {
+        console.log("    ⚠ DEV toggle not found — skipping dev capture");
+    }
+}
+
 /** Run a Quick Test ticket and capture result (approve/deny/auto-resolve) */
 async function runTicketShot(page, { presetLabel, shotName, hitl, action }) {
     await clearCache();
@@ -161,6 +180,7 @@ async function runTicketShot(page, { presetLabel, shotName, hitl, action }) {
     }
 
     await captureAll(page, shotName);
+    await captureDevMode(page, shotName);
 }
 
 /** Capture the HITL modal itself (before approve/deny) */
@@ -204,6 +224,7 @@ async function runEdgeCaseShot(page, { edgeLabel, shotName }) {
     }
     await sleep(3000);
     await captureAll(page, shotName);
+    await captureDevMode(page, shotName);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -234,6 +255,7 @@ const SHOTS = {
             console.log("    ⏳ Waiting for agent to start thinking...");
             await sleep(5000);
             await captureAll(page, "02-agent-thinking");
+            await captureDevMode(page, "02-agent-thinking");
             // Wait for completion so next shot starts clean
             const result = await waitForState(page, 120000);
             console.log(`    → State: ${result}`);
@@ -429,17 +451,22 @@ const SHOTS = {
         title: "🔭 LangSmith Traces",
         capture: async (page) => {
             await resetDashboard(page);
-            const tracesBtn = page.locator("text=LangSmith Traces").first();
+            // Wait for tracingStatus to resolve and button to appear
+            await sleep(3000);
+            const tracesBtn = page.locator("button:has-text('LangSmith Traces')").first();
             if (await tracesBtn.isVisible().catch(() => false)) {
                 await tracesBtn.click({ timeout: 5000 });
                 console.log("    ✓ Opened Traces panel");
+                // Wait for traces to load (free tier can be slow)
                 try {
-                    await page.waitForSelector("text=Loading traces…", { state: "hidden", timeout: 30000 });
+                    await page.waitForSelector("text=Loading traces…", { state: "hidden", timeout: 60000 });
                     console.log("    ✓ Traces loaded");
                 } catch {
-                    console.log("    ⚠ Traces may still be loading");
+                    console.log("    ⚠ Traces may still be loading — waiting extra");
                 }
-                await sleep(3000);
+                await sleep(8000);
+            } else {
+                console.log("    ⚠ LangSmith Traces button not visible (tracing may be disabled)");
             }
             await captureAll(page, "19-traces");
             // Close traces
