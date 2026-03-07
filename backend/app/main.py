@@ -456,7 +456,7 @@ async def get_table_data(name: str):
 
 # Simple in-memory TTL cache for traces (avoid hammering LangSmith)
 _traces_cache: dict = {"data": None, "ts": 0.0}
-_TRACES_TTL = 120  # seconds — LangSmith free tier has strict rate limits
+_TRACES_TTL = 300  # seconds — LangSmith free tier has strict rate limits
 
 
 @app.get("/api/traces")
@@ -464,8 +464,8 @@ async def get_traces():
     """Fetch recent LangSmith trace runs for the Aegis project.
 
     Proxies the LangSmith API through the backend so the API key
-    stays server-side.  Uses a 30-second in-memory cache and
-    parallel child-run fetches for performance.
+    stays server-side.  Uses a 5-minute in-memory cache and
+    sequential child-run fetches to avoid rate limits.
     """
     settings = get_settings()
     enabled = settings.langchain_tracing_v2 and bool(settings.langchain_api_key)
@@ -478,105 +478,111 @@ async def get_traces():
     if _traces_cache["data"] is not None and (now - _traces_cache["ts"]) < _TRACES_TTL:
         return _traces_cache["data"]
 
-    try:
-        from langsmith import Client
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            from langsmith import Client
 
-        client = Client()
+            client = Client()
 
-        # Fetch root runs (sync → offload to thread)
-        root_runs = await asyncio.to_thread(
-            lambda: list(
-                client.list_runs(
-                    project_name=settings.langchain_project,
-                    is_root=True,
-                    limit=5,
-                )
-            )
-        )
-
-        # Fetch all child runs in parallel
-        async def fetch_children(run):
-            children = await asyncio.to_thread(
+            # Fetch root runs (sync → offload to thread)
+            root_runs = await asyncio.to_thread(
                 lambda: list(
                     client.list_runs(
                         project_name=settings.langchain_project,
-                        filter=f'eq(parent_run_id, "{run.id}")',
+                        is_root=True,
+                        limit=5,
                     )
                 )
             )
-            children.sort(key=lambda r: r.start_time or run.start_time)
-            return run, children
 
-        results = await asyncio.gather(
-            *(fetch_children(run) for run in root_runs)
-        )
+            # Fetch child runs sequentially to avoid rate limit bursts
+            traces = []
+            for run in root_runs:
+                try:
+                    child_runs_raw = await asyncio.to_thread(
+                        lambda r=run: list(
+                            client.list_runs(
+                                project_name=settings.langchain_project,
+                                filter=f'eq(parent_run_id, "{r.id}")',
+                            )
+                        )
+                    )
+                    child_runs_raw.sort(key=lambda r: r.start_time or run.start_time)
+                except Exception:
+                    child_runs_raw = []
 
-        traces = []
-        for run, child_runs_raw in results:
-            child_runs = []
-            for child in child_runs_raw:
-                latency_ms = 0
-                if child.end_time and child.start_time:
-                    latency_ms = int(
-                        (child.end_time - child.start_time).total_seconds() * 1000
+                child_runs = []
+                for child in child_runs_raw:
+                    latency_ms = 0
+                    if child.end_time and child.start_time:
+                        latency_ms = int(
+                            (child.end_time - child.start_time).total_seconds() * 1000
+                        )
+
+                    total_tokens = 0
+                    if child.total_tokens is not None:
+                        total_tokens = child.total_tokens
+                    elif (
+                        hasattr(child, "token_usage")
+                        and child.token_usage
+                    ):
+                        total_tokens = child.token_usage.get("total_tokens", 0)
+
+                    # Extract model name from extra metadata
+                    model = ""
+                    if hasattr(child, "extra") and child.extra:
+                        metadata = child.extra.get("metadata", {})
+                        model = metadata.get("ls_model_name", "")
+                        if not model:
+                            invocation = child.extra.get("invocation_params", {})
+                            model = invocation.get("model", invocation.get("model_name", ""))
+
+                    total_cost = 0.0
+                    if child.total_cost is not None:
+                        total_cost = float(child.total_cost)
+
+                    child_runs.append({
+                        "id": str(child.id),
+                        "name": child.name or "unknown",
+                        "status": child.status or "unknown",
+                        "latency_ms": latency_ms,
+                        "total_tokens": total_tokens,
+                        "model": model,
+                        "total_cost": total_cost,
+                    })
+
+                root_latency_ms = 0
+                if run.end_time and run.start_time:
+                    root_latency_ms = int(
+                        (run.end_time - run.start_time).total_seconds() * 1000
                     )
 
-                total_tokens = 0
-                if child.total_tokens is not None:
-                    total_tokens = child.total_tokens
-                elif (
-                    hasattr(child, "token_usage")
-                    and child.token_usage
-                ):
-                    total_tokens = child.token_usage.get("total_tokens", 0)
-
-                # Extract model name from extra metadata
-                model = ""
-                if hasattr(child, "extra") and child.extra:
-                    metadata = child.extra.get("metadata", {})
-                    model = metadata.get("ls_model_name", "")
-                    if not model:
-                        invocation = child.extra.get("invocation_params", {})
-                        model = invocation.get("model", invocation.get("model_name", ""))
-
-                total_cost = 0.0
-                if child.total_cost is not None:
-                    total_cost = float(child.total_cost)
-
-                child_runs.append({
-                    "id": str(child.id),
-                    "name": child.name or "unknown",
-                    "status": child.status or "unknown",
-                    "latency_ms": latency_ms,
-                    "total_tokens": total_tokens,
-                    "model": model,
-                    "total_cost": total_cost,
+                traces.append({
+                    "id": str(run.id),
+                    "name": run.name or "aegis-support-workflow",
+                    "status": run.status or "unknown",
+                    "latency_ms": root_latency_ms,
+                    "total_tokens": run.total_tokens or 0,
+                    "total_cost": float(run.total_cost) if run.total_cost else 0.0,
+                    "start_time": run.start_time.isoformat() if run.start_time else None,
+                    "child_runs": child_runs,
                 })
 
-            root_latency_ms = 0
-            if run.end_time and run.start_time:
-                root_latency_ms = int(
-                    (run.end_time - run.start_time).total_seconds() * 1000
-                )
+            result = {"traces": traces, "error": None}
+            _traces_cache["data"] = result
+            _traces_cache["ts"] = time.monotonic()
+            return result
 
-            traces.append({
-                "id": str(run.id),
-                "name": run.name or "aegis-support-workflow",
-                "status": run.status or "unknown",
-                "latency_ms": root_latency_ms,
-                "total_tokens": run.total_tokens or 0,
-                "total_cost": float(run.total_cost) if run.total_cost else 0.0,
-                "start_time": run.start_time.isoformat() if run.start_time else None,
-                "child_runs": child_runs,
-            })
-
-        result = {"traces": traces, "error": None}
-        _traces_cache["data"] = result
-        _traces_cache["ts"] = now
-        return result
-
-    except Exception as e:
-        return {"traces": [], "error": str(e)}
+        except Exception as e:
+            error_str = str(e)
+            # Retry on 429 rate limit errors
+            if "429" in error_str and attempt < max_retries - 1:
+                wait = 5 * (attempt + 1)  # 5s, 10s backoff
+                print(f"⚠ LangSmith rate limit hit, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(wait)
+                continue
+            return {"traces": [], "error": f"Rate limit exceeded for LangSmith API. Traces will load after the rate limit resets (~5 minutes)." if "429" in error_str else error_str}
 
 
 @app.get("/api/tracing-status")
