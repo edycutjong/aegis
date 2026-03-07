@@ -506,8 +506,10 @@ const SHOTS = {
         name: "23-recent-tickets",
         title: "📋 Recent Tickets",
         capture: async (page) => {
-            // By this point we've processed many tickets, so history should be populated
+            // Ensure we have at least one ticket in history
             await resetDashboard(page);
+            await clickPreset(page, "Issue Refund");
+            await waitForState(page);
             await sleep(1000);
 
             // Scroll to the Ticket History section in the left panel
