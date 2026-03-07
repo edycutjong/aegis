@@ -47,6 +47,7 @@ dump.rdb
 
 # Generated / recorded media
 scripts/clips/
+scripts/screenshots/
 scripts/*.mp4
 scripts/*.webm
 scripts/*.png
