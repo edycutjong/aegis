@@ -1,31 +1,45 @@
 /**
- * Aegis Screenshot Capture — README & Case Study Assets
+ * Aegis Screenshot Capture — Full Feature Coverage
  *
- * Captures polished screenshots of key Aegis UI states at two viewport sizes:
+ * Captures polished screenshots of EVERY Aegis UI state at two viewport sizes:
  *
  *   readme/    — 1280×800 @2×  (GitHub README, renders well at ~800px content width)
  *   casestudy/ — 1440×900 @2×  (Portfolio case study hero images)
  *
- * Captures:
- *   01-dashboard        — Clean dashboard overview
- *   02-agent-thinking   — Agent processing with ThoughtStream
- *   03-hitl-modal       — Human-in-the-Loop approval modal
- *   04-resolution       — Completed resolution state
- *   05-cache-hit        — Semantic cache instant response
- *   06-metrics          — Observability metrics panel
- *   07-traces           — LangSmith Traces overlay
- *   08-ticket-history   — Ticket history section
- *   09-edge-typo        — Edge case: fuzzy name matching
- *   10-database         — Database explorer expanded
+ * Quick Test presets (6):
+ *   01-dashboard              — Clean dashboard overview
+ *   02-agent-thinking         — Agent processing with ThoughtStream
+ *   03-refund-approve         — 💳 Refund HITL Approve flow
+ *   04-refund-deny            — 💳 Refund HITL Deny flow
+ *   05-technical-resolution   — 🔧 Technical auto-resolution
+ *   06-billing-resolution     — 📄 Billing auto-resolution
+ *   07-upgrade-resolution     — ⬆️  Upgrade auto-resolution
+ *   08-reactivate-approve     — 🔓 Reactivate HITL Approve flow
+ *   09-reactivate-deny        — 🔓 Reactivate HITL Deny flow
+ *   10-suspend-approve        — 🔒 Suspend HITL Approve flow
+ *   11-suspend-deny           — 🔒 Suspend HITL Deny flow
+ *   12-cache-hit              — ⚡ Semantic cache instant response
+ *
+ * Edge Cases (5):
+ *   13-edge-notfound          — 👻 Customer not found
+ *   14-edge-mismatch          — 🔀 Name/ID mismatch
+ *   15-edge-typo              — ✍️  Typo correction (fuzzy match)
+ *   16-edge-nameonly           — 👤 Name-only lookup
+ *   17-edge-cancelled         — 🚫 Cancelled account
+ *
+ * Observability & UI:
+ *   18-metrics                — 📊 Observability panel
+ *   19-traces                 — 🔭 LangSmith Traces overlay
+ *   20-recent-tickets         — 📋 Ticket History with entries
+ *   21-database               — 🗄️  Database explorer expanded
  *
  * Usage:
- *   # Start the stack first
  *   docker compose up --build
  *   cd frontend && npm run dev
  *
- *   node scripts/capture-screenshots.mjs             # capture all
- *   node scripts/capture-screenshots.mjs dashboard    # capture one
- *   node scripts/capture-screenshots.mjs hitl metrics # capture specific
+ *   node scripts/capture-screenshots.mjs                    # capture all 21
+ *   node scripts/capture-screenshots.mjs dashboard          # single shot
+ *   node scripts/capture-screenshots.mjs refund-approve cache-hit metrics  # specific
  *
  * Output: scripts/screenshots/readme/  and  scripts/screenshots/casestudy/
  */
@@ -66,8 +80,23 @@ async function waitForState(page, timeoutMs = 120000) {
 
 /** Click a Quick Test preset button to submit a ticket */
 async function clickPreset(page, label) {
+    // Make sure we're on Quick Test tab
+    const quickTestTab = page.locator("button:has-text('Quick Test')").first();
+    if (await quickTestTab.isVisible().catch(() => false)) {
+        await quickTestTab.click();
+        await sleep(500);
+    }
     await page.locator(`button.demo-btn:has-text('${label}')`).first().click({ timeout: 5000 });
     console.log(`    ✓ Clicked ${label} preset`);
+}
+
+/** Click an Edge Case preset button */
+async function clickEdgeCase(page, label) {
+    await page.locator("button:has-text('Edge Cases')").first().click({ timeout: 3000 });
+    console.log("    ✓ Switched to Edge Cases tab");
+    await sleep(1000);
+    await page.locator(`button.demo-btn:has-text('${label}')`).first().click({ timeout: 5000 });
+    console.log(`    ✓ Clicked ${label} edge case`);
 }
 
 /** Reset to clean dashboard */
@@ -85,19 +114,72 @@ async function clearCache() {
 }
 
 /** Capture screenshot at all viewport sizes */
-async function captureAll(page, context, browser, name, label) {
+async function captureAll(page, name) {
     for (const [variant, viewport] of Object.entries(VIEWPORTS)) {
         const dir = `${OUT_DIR}/${variant}`;
         mkdirSync(dir, { recursive: true });
-
-        // Resize viewport
         await page.setViewportSize(viewport);
         await sleep(500);
-
         const path = `${dir}/${name}.png`;
         await page.screenshot({ path, fullPage: false });
         console.log(`    📸 ${variant}: ${path}`);
     }
+}
+
+/** Run a Quick Test ticket and capture result (approve/deny/auto-resolve) */
+async function runTicketShot(page, { presetLabel, shotName, hitl, action }) {
+    await clearCache();
+    await resetDashboard(page);
+    await clickPreset(page, presetLabel);
+
+    const result = await waitForState(page, 180000);
+    console.log(`    → State: ${result}`);
+
+    if (result === "approval" && hitl) {
+        console.log(`    ✓ HITL modal visible — holding 2s`);
+        await sleep(2000);
+
+        if (action === "approve") {
+            await page.locator(".btn-success:has-text('Approve')").first().click();
+            console.log("    ✓ Clicked Approve");
+            const post = await waitForState(page, 30000);
+            console.log(`    → Post-approval: ${post}`);
+            await sleep(3000);
+        } else if (action === "deny") {
+            await page.locator(".btn-danger:has-text('Deny')").first().click();
+            console.log("    ✗ Clicked Deny");
+            await sleep(5000);
+        }
+    } else if (result === "approval" && !hitl) {
+        // Unexpected HITL — auto-approve so we can continue
+        await page.locator(".btn-success:has-text('Approve')").first().click();
+        const post = await waitForState(page, 30000);
+        console.log(`    → Auto-approved: ${post}`);
+        await sleep(3000);
+    } else {
+        await sleep(3000);
+    }
+
+    await captureAll(page, shotName);
+}
+
+/** Run an Edge Case and capture result */
+async function runEdgeCaseShot(page, { edgeLabel, shotName }) {
+    await clearCache();
+    await resetDashboard(page);
+    await clickEdgeCase(page, edgeLabel);
+
+    const result = await waitForState(page, 120000);
+    console.log(`    → State: ${result}`);
+
+    if (result === "approval") {
+        await sleep(2000);
+        await page.locator(".btn-success:has-text('Approve')").first().click();
+        const post = await waitForState(page, 30000);
+        console.log(`    → Post-approval: ${post}`);
+    }
+    await sleep(3000);
+    await captureAll(page, shotName);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -105,31 +187,29 @@ async function captureAll(page, context, browser, name, label) {
 // ═══════════════════════════════════════════════════════════
 
 const SHOTS = {
+    // ── Dashboard ──
     dashboard: {
         name: "01-dashboard",
         title: "Dashboard Overview",
-        capture: async (page, context, browser) => {
+        capture: async (page) => {
             await resetDashboard(page);
             console.log("    ✓ Dashboard loaded — clean state");
             await sleep(2000);
-            await captureAll(page, context, browser, "01-dashboard", "Dashboard");
+            await captureAll(page, "01-dashboard");
         },
     },
 
-    thinking: {
+    // ── Agent Thinking ──
+    "agent-thinking": {
         name: "02-agent-thinking",
         title: "Agent Processing (ThoughtStream)",
-        capture: async (page, context, browser) => {
+        capture: async (page) => {
             await clearCache();
             await resetDashboard(page);
             await clickPreset(page, "Technical");
-
-            // Wait a few seconds for the agent to start processing
             console.log("    ⏳ Waiting for agent to start thinking...");
             await sleep(5000);
-
-            await captureAll(page, context, browser, "02-agent-thinking", "Agent Thinking");
-
+            await captureAll(page, "02-agent-thinking");
             // Wait for completion so next shot starts clean
             const result = await waitForState(page, 120000);
             console.log(`    → State: ${result}`);
@@ -141,63 +221,87 @@ const SHOTS = {
         },
     },
 
-    hitl: {
-        name: "03-hitl-modal",
-        title: "HITL Approval Modal",
-        capture: async (page, context, browser) => {
-            await clearCache();
-            await resetDashboard(page);
-            await clickPreset(page, "Refund");
-
-            console.log("    ⏳ Waiting for HITL modal...");
-            const result = await waitForState(page, 180000);
-            console.log(`    → State: ${result}`);
-
-            if (result === "approval") {
-                console.log("    ✓ HITL modal visible — capturing");
-                await sleep(1500);
-                await captureAll(page, context, browser, "03-hitl-modal", "HITL Modal");
-
-                // Approve to continue
-                await page.locator(".btn-success:has-text('Approve')").first().click();
-                await waitForState(page, 30000);
-                await sleep(2000);
-            } else {
-                console.log(`    ⚠ Got ${result} instead of approval — capturing anyway`);
-                await captureAll(page, context, browser, "03-hitl-modal", "HITL Modal");
-            }
+    // ── Quick Test: Refund (HITL) ──
+    "refund-approve": {
+        name: "03-refund-approve",
+        title: "💳 Refund — HITL Approve",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Refund", shotName: "03-refund-approve", hitl: true, action: "approve" });
+        },
+    },
+    "refund-deny": {
+        name: "04-refund-deny",
+        title: "💳 Refund — HITL Deny",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Refund", shotName: "04-refund-deny", hitl: true, action: "deny" });
         },
     },
 
-    resolution: {
-        name: "04-resolution",
-        title: "Completed Resolution",
-        capture: async (page, context, browser) => {
-            await clearCache();
-            await resetDashboard(page);
-            await clickPreset(page, "Billing");
-
-            console.log("    ⏳ Waiting for resolution...");
-            const result = await waitForState(page, 180000);
-            console.log(`    → State: ${result}`);
-
-            if (result === "approval") {
-                await page.locator(".btn-success:has-text('Approve')").first().click();
-                const post = await waitForState(page, 30000);
-                console.log(`    → Post-approval: ${post}`);
-            }
-
-            await sleep(3000);
-            console.log("    ✓ Resolution state — capturing");
-            await captureAll(page, context, browser, "04-resolution", "Resolution");
+    // ── Quick Test: Technical (no HITL) ──
+    "technical-resolution": {
+        name: "05-technical-resolution",
+        title: "🔧 Technical — Resolution",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Technical", shotName: "05-technical-resolution", hitl: false });
         },
     },
 
-    cache: {
-        name: "05-cache-hit",
-        title: "Semantic Cache Hit",
-        capture: async (page, context, browser) => {
-            // First warm the cache
+    // ── Quick Test: Billing (no HITL) ──
+    "billing-resolution": {
+        name: "06-billing-resolution",
+        title: "📄 Billing — Resolution",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Billing", shotName: "06-billing-resolution", hitl: false });
+        },
+    },
+
+    // ── Quick Test: Upgrade (no HITL) ──
+    "upgrade-resolution": {
+        name: "07-upgrade-resolution",
+        title: "⬆️ Upgrade — Resolution",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Upgrade", shotName: "07-upgrade-resolution", hitl: false });
+        },
+    },
+
+    // ── Quick Test: Reactivate (HITL) ──
+    "reactivate-approve": {
+        name: "08-reactivate-approve",
+        title: "🔓 Reactivate — HITL Approve",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "08-reactivate-approve", hitl: true, action: "approve" });
+        },
+    },
+    "reactivate-deny": {
+        name: "09-reactivate-deny",
+        title: "🔓 Reactivate — HITL Deny",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "09-reactivate-deny", hitl: true, action: "deny" });
+        },
+    },
+
+    // ── Quick Test: Suspend (HITL) ──
+    "suspend-approve": {
+        name: "10-suspend-approve",
+        title: "🔒 Suspend — HITL Approve",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Suspend", shotName: "10-suspend-approve", hitl: true, action: "approve" });
+        },
+    },
+    "suspend-deny": {
+        name: "11-suspend-deny",
+        title: "🔒 Suspend — HITL Deny",
+        capture: async (page) => {
+            await runTicketShot(page, { presetLabel: "Suspend", shotName: "11-suspend-deny", hitl: true, action: "deny" });
+        },
+    },
+
+    // ── Semantic Cache ──
+    "cache-hit": {
+        name: "12-cache-hit",
+        title: "⚡ Semantic Cache Hit",
+        capture: async (page) => {
+            // Warm the cache first
             await clearCache();
             await resetDashboard(page);
             await clickPreset(page, "Billing");
@@ -209,48 +313,81 @@ const SHOTS = {
             console.log("    ✓ Cache warmed");
             await sleep(2000);
 
-            // Now re-submit for cache hit
+            // Re-submit for cache hit
             await resetDashboard(page);
             await clickPreset(page, "Billing");
             const result = await waitForState(page, 15000);
             console.log(`    → State: ${result}`);
-
             if (result === "cached") {
                 console.log("    ⚡ Cache hit — capturing");
             }
             await sleep(2000);
-            await captureAll(page, context, browser, "05-cache-hit", "Cache Hit");
+            await captureAll(page, "12-cache-hit");
         },
     },
 
-    metrics: {
-        name: "06-metrics",
-        title: "Observability Metrics",
-        capture: async (page, context, browser) => {
-            await resetDashboard(page);
+    // ── Edge Cases ──
+    "edge-notfound": {
+        name: "13-edge-notfound",
+        title: "👻 Edge Case — Customer Not Found",
+        capture: async (page) => {
+            await runEdgeCaseShot(page, { edgeLabel: "Not Found", shotName: "13-edge-notfound" });
+        },
+    },
+    "edge-mismatch": {
+        name: "14-edge-mismatch",
+        title: "🔀 Edge Case — Name/ID Mismatch",
+        capture: async (page) => {
+            await runEdgeCaseShot(page, { edgeLabel: "Mismatch", shotName: "14-edge-mismatch" });
+        },
+    },
+    "edge-typo": {
+        name: "15-edge-typo",
+        title: "✍️ Edge Case — Typo Correction",
+        capture: async (page) => {
+            await runEdgeCaseShot(page, { edgeLabel: "Typo", shotName: "15-edge-typo" });
+        },
+    },
+    "edge-nameonly": {
+        name: "16-edge-nameonly",
+        title: "👤 Edge Case — Name Only Lookup",
+        capture: async (page) => {
+            await runEdgeCaseShot(page, { edgeLabel: "Name Only", shotName: "16-edge-nameonly" });
+        },
+    },
+    "edge-cancelled": {
+        name: "17-edge-cancelled",
+        title: "🚫 Edge Case — Cancelled Account",
+        capture: async (page) => {
+            await runEdgeCaseShot(page, { edgeLabel: "Cancelled", shotName: "17-edge-cancelled" });
+        },
+    },
 
-            // Scroll the right panel to show metrics
+    // ── Observability ──
+    metrics: {
+        name: "18-metrics",
+        title: "📊 Observability Metrics",
+        capture: async (page) => {
+            await resetDashboard(page);
             const metricsPanel = page.locator("text=Observability").first();
             if (await metricsPanel.isVisible().catch(() => false)) {
                 await metricsPanel.scrollIntoViewIfNeeded();
                 console.log("    ✓ Metrics panel visible");
             }
             await sleep(2000);
-            await captureAll(page, context, browser, "06-metrics", "Metrics");
+            await captureAll(page, "18-metrics");
         },
     },
 
     traces: {
-        name: "07-traces",
-        title: "LangSmith Traces",
-        capture: async (page, context, browser) => {
+        name: "19-traces",
+        title: "🔭 LangSmith Traces",
+        capture: async (page) => {
             await resetDashboard(page);
-
             const tracesBtn = page.locator("text=LangSmith Traces").first();
             if (await tracesBtn.isVisible().catch(() => false)) {
                 await tracesBtn.click({ timeout: 5000 });
                 console.log("    ✓ Opened Traces panel");
-
                 try {
                     await page.waitForSelector("text=Loading traces…", { state: "hidden", timeout: 30000 });
                     console.log("    ✓ Traces loaded");
@@ -259,9 +396,8 @@ const SHOTS = {
                 }
                 await sleep(3000);
             }
-            await captureAll(page, context, browser, "07-traces", "Traces");
-
-            // Close traces panel
+            await captureAll(page, "19-traces");
+            // Close traces
             const closeBtn = page.locator('[title="Close (Esc)"]').first();
             if (await closeBtn.isVisible().catch(() => false)) await closeBtn.click();
             else await page.keyboard.press("Escape");
@@ -269,62 +405,44 @@ const SHOTS = {
         },
     },
 
-    history: {
-        name: "08-ticket-history",
-        title: "Ticket History",
-        capture: async (page, context, browser) => {
+    // ── Recent Tickets ──
+    "recent-tickets": {
+        name: "20-recent-tickets",
+        title: "📋 Recent Tickets",
+        capture: async (page) => {
+            // By this point we've processed many tickets, so history should be populated
             await resetDashboard(page);
+            await sleep(1000);
 
-            const section = page.locator("text=Ticket History").first();
-            if (await section.isVisible().catch(() => false)) {
-                await section.scrollIntoViewIfNeeded();
-                console.log("    ✓ Ticket History visible");
+            // Scroll to the Ticket History section in the left panel
+            const historySection = page.locator("text=Recent Tickets").first();
+            if (await historySection.isVisible().catch(() => false)) {
+                await historySection.scrollIntoViewIfNeeded();
+                console.log("    ✓ Recent Tickets visible");
+            } else {
+                // Try alternate label
+                const altHistory = page.locator("text=Ticket History").first();
+                if (await altHistory.isVisible().catch(() => false)) {
+                    await altHistory.scrollIntoViewIfNeeded();
+                    console.log("    ✓ Ticket History visible");
+                }
             }
             await sleep(2000);
-            await captureAll(page, context, browser, "08-ticket-history", "Ticket History");
+            await captureAll(page, "20-recent-tickets");
         },
     },
 
-    typo: {
-        name: "09-edge-typo",
-        title: "Edge Case — Typo Correction",
-        capture: async (page, context, browser) => {
-            await clearCache();
-            await resetDashboard(page);
-
-            await page.locator("button:has-text('Edge Cases')").first().click({ timeout: 3000 });
-            console.log("    ✓ Switched to Edge Cases tab");
-            await sleep(1500);
-
-            await page.locator("button.demo-btn:has-text('Typo')").first().click({ timeout: 5000 });
-            console.log("    ✓ Clicked Typo edge case");
-
-            const result = await waitForState(page, 120000);
-            console.log(`    → State: ${result}`);
-            if (result === "approval") {
-                await sleep(2000);
-                await page.locator(".btn-success:has-text('Approve')").first().click();
-                await waitForState(page, 30000);
-            }
-            await sleep(3000);
-            await captureAll(page, context, browser, "09-edge-typo", "Typo Correction");
-        },
-    },
-
+    // ── Database ──
     database: {
-        name: "10-database",
-        title: "Database Explorer",
-        capture: async (page, context, browser) => {
+        name: "21-database",
+        title: "🗄️ Database Explorer",
+        capture: async (page) => {
             await resetDashboard(page);
-
-            // Scroll to database section and expand a table
             const dbSection = page.locator("text=Database").first();
             if (await dbSection.isVisible().catch(() => false)) {
                 await dbSection.scrollIntoViewIfNeeded();
                 console.log("    ✓ Database section visible");
                 await sleep(1000);
-
-                // Click on Customers table to expand
                 const customersBtn = page.locator("text=Customers").first();
                 if (await customersBtn.isVisible().catch(() => false)) {
                     await customersBtn.click();
@@ -332,7 +450,7 @@ const SHOTS = {
                     await sleep(2000);
                 }
             }
-            await captureAll(page, context, browser, "10-database", "Database Explorer");
+            await captureAll(page, "21-database");
         },
     },
 };
@@ -367,7 +485,7 @@ async function main() {
         mkdirSync(`${OUT_DIR}/${variant}`, { recursive: true });
     }
 
-    // Launch browser — start with readme viewport, will resize per-capture
+    // Launch browser
     const browser = await chromium.launch({ headless: false });
     const context = await browser.newContext({
         viewport: VIEWPORTS.readme,
@@ -382,7 +500,7 @@ async function main() {
         const shot = SHOTS[key];
         console.log(`\n═══ ${shot.title} ═══`);
         try {
-            await shot.capture(page, context, browser);
+            await shot.capture(page);
             captured++;
         } catch (err) {
             console.log(`  ✗ Failed: ${err.message?.slice(0, 120)}\n`);
