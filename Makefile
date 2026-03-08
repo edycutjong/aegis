@@ -57,44 +57,32 @@ screenshots: ## 📸 Capture all 24 UI screenshots (requires stack running)
 	node scripts/capture-screenshots.mjs
 
 # Individual screenshot targets for development
-ss-dashboard:          ## 📸 1 shot: dashboard
+ss-dashboard:          ## 📸 shot 01: dashboard
 	node scripts/capture-screenshots.mjs dashboard
-ss-refund-hitl:        ## 📸 1 shot: refund HITL modal
+ss-refund:             ## 📸 shot 02: refund HITL suite (thinking → modal → deny → approve)
 	node scripts/capture-screenshots.mjs refund-hitl
-ss-refund-approve:     ## 📸 1 shot: refund HITL approve
-	node scripts/capture-screenshots.mjs refund-approve
-ss-refund-deny:        ## 📸 1 shot: refund HITL deny
-	node scripts/capture-screenshots.mjs refund-deny
-ss-technical:          ## 📸 1 shot: technical resolution
-	node scripts/capture-screenshots.mjs technical-resolution
-ss-billing:            ## 📸 1 shot: billing resolution
+ss-technical:          ## 📸 shot 03: technical HITL suite
+	node scripts/capture-screenshots.mjs technical-hitl
+ss-billing:            ## 📸 shot 04: billing resolution
 	node scripts/capture-screenshots.mjs billing-resolution
-ss-upgrade:            ## 📸 1 shot: upgrade resolution
+ss-upgrade:            ## 📸 shot 05: upgrade HITL suite
 	node scripts/capture-screenshots.mjs upgrade-resolution
-ss-reactivate-hitl:    ## 📸 1 shot: reactivate HITL modal
-	node scripts/capture-screenshots.mjs reactivate-hitl
-ss-reactivate-approve: ## 📸 1 shot: reactivate HITL approve
-	node scripts/capture-screenshots.mjs reactivate-approve
-ss-reactivate-deny:    ## 📸 1 shot: reactivate HITL deny
-	node scripts/capture-screenshots.mjs reactivate-deny
-ss-suspend-hitl:       ## 📸 1 shot: suspend HITL modal
+ss-reactivate:         ## 📸 shot 06: reactivate resolution
+	node scripts/capture-screenshots.mjs reactivate-resolution
+ss-suspend:            ## 📸 shot 07: suspend HITL suite
 	node scripts/capture-screenshots.mjs suspend-hitl
-ss-suspend-approve:    ## 📸 1 shot: suspend HITL approve
-	node scripts/capture-screenshots.mjs suspend-approve
-ss-suspend-deny:       ## 📸 1 shot: suspend HITL deny
-	node scripts/capture-screenshots.mjs suspend-deny
-ss-cache:              ## 📸 1 shot: semantic cache hit
+ss-cache:              ## 📸 shot 08: semantic cache hit
 	node scripts/capture-screenshots.mjs cache-hit
-ss-edge:               ## 📸 5 shots: all edge cases
+ss-edge:               ## 📸 shots 09-13: all edge cases
 	node scripts/capture-screenshots.mjs edge-notfound edge-mismatch edge-typo edge-nameonly edge-cancelled
-ss-metrics:            ## 📸 1 shot: observability metrics
+ss-metrics:            ## 📸 shot 14: observability metrics
 	node scripts/capture-screenshots.mjs metrics
-ss-traces:             ## 📸 1 shot: LangSmith traces
+ss-traces:             ## 📸 shot 15: LangSmith traces
 	node scripts/capture-screenshots.mjs traces
-ss-tickets:            ## 📸 1 shot: recent tickets
+ss-tickets:            ## 📸 shot 16: recent tickets
 	node scripts/capture-screenshots.mjs recent-tickets
 ss-recent-tickets: ss-tickets ## 📸 alias for ss-tickets
-ss-database:           ## 📸 1 shot: database explorer
+ss-database:           ## 📸 shot 17: database explorer
 	node scripts/capture-screenshots.mjs database
 
 demo: ## 🎬 Record full demo video (requires stack running)
