@@ -216,44 +216,77 @@ git clone https://github.com/edycutjong/aegis.git
 cd aegis
 ```
 
-### 2. Start with Docker Compose
+### 2. Configure environment
 
 ```bash
-docker-compose up
+cp backend/.env.example backend/.env
+# Fill in your API keys (SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY, etc.)
 ```
 
-This starts the backend (port 8000), frontend (port 3000), and Redis.
-
-### 3. Or run manually
-
-> **Important:** Start Redis **before** the backend to avoid connection race conditions.
+### 3. Start the stack
 
 ```bash
-# Terminal 1: Redis (must be running before backend starts)
-docker run -d -p 6379:6379 redis:alpine redis-server --requirepass aegis-dev
-
-# Terminal 2: Backend
-cd backend
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # Fill in your API keys
-uvicorn app.main:app --reload --port 8000
-
-# Terminal 3: Frontend
-cd frontend
-npm install
-npm run dev
+make up
 ```
 
-> **Note:** Set `REDIS_URL=redis://:aegis-dev@localhost:6379` in `backend/.env`.
+Starts backend (port 8000), frontend (port 3000), and Redis. Rebuilds Docker images automatically.
 
 ### 4. Seed the database
 
-Run `seed.sql` in the [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql) to populate sample customers, billing records, support tickets, and internal docs.
+Run `seed.sql` in the [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql) to populate sample data. To reset and reseed at any time:
+
+```bash
+make db-reset   # requires SUPABASE_MANAGEMENT_KEY in backend/.env
+```
 
 ### 5. Open the dashboard
 
 Visit `http://localhost:3000` and submit a support ticket.
+
+## ⚙️ Development Commands
+
+All day-to-day workflows are managed via `make`. Run `make help` to see the full list.
+
+### Stack
+
+| Command | Description |
+|---|---|
+| `make up` | 🚀 Start full stack (backend + frontend + Redis) |
+| `make down` | 🛑 Stop stack and remove images + dangling layers |
+| `make restart` | 🔄 Restart stack (preserves DB state) |
+| `make logs` | 📋 Tail backend logs (`make logs s=frontend` for frontend) |
+| `make clean` | 🧹 Nuclear clean — remove everything including base images |
+| `make db-reset` | 🗄️ Reset & reseed Supabase database |
+
+### Testing & Lint
+
+| Command | Description |
+|---|---|
+| `make ci` | 🔁 Full CI pipeline: lint → test → build |
+| `make test` | ✅ Run all tests (backend + frontend) |
+| `make test-backend` | 🐍 Backend pytest with 100% coverage enforcement |
+| `make test-frontend` | ⚛️ Frontend Vitest with coverage |
+| `make lint` | 🔍 Lint backend (ruff) + frontend (eslint) |
+| `make build` | 🏗️ Build Docker images (no cache) |
+
+### Screenshots
+
+| Command | Description |
+|---|---|
+| `make screenshots` | 📸 Capture all 17 UI screenshots (requires stack running) |
+| `make ss-dashboard` | Shot 01: Dashboard overview |
+| `make ss-refund` | Shot 02: Refund HITL suite |
+| `make ss-technical` | Shot 03: Technical HITL suite |
+| `make ss-billing` | Shot 04: Billing resolution |
+| `make ss-upgrade` | Shot 05: Upgrade HITL suite |
+| `make ss-reactivate` | Shot 06: Reactivate resolution |
+| `make ss-suspend` | Shot 07: Suspend HITL suite |
+| `make ss-cache` | Shot 08: Semantic cache hit |
+| `make ss-edge` | Shots 09–13: All edge cases |
+| `make ss-metrics` | Shot 14: Observability metrics |
+| `make ss-traces` | Shot 15: LangSmith traces |
+| `make ss-tickets` | Shot 16: Recent tickets |
+| `make ss-database` | Shot 17: Database explorer |
 
 ## 🤖 Multi-Agent Architecture
 
@@ -365,19 +398,17 @@ curl http://localhost:8000/api/tracing-status
 
 **100% coverage** across both backend and frontend — fully offline, no API keys or network needed.
 
+```bash
+make test        # run backend + frontend tests
+make ci          # full pipeline: lint → test → build
+```
+
 ### Backend (pytest)
 
 ```bash
-cd backend
-
-# Run all tests
-python -m pytest tests/ -v
-
-# With coverage report
-python -m pytest tests/ --cov=app --cov-report=term-missing
-
-# CI enforces 100%
-python -m pytest tests/ --cov=app --cov-fail-under=100
+make test-backend
+# or directly:
+cd backend && python -m pytest tests/ --cov=app --cov-fail-under=100 -v
 ```
 
 | Module | Stmts | Cover |
@@ -397,13 +428,9 @@ python -m pytest tests/ --cov=app --cov-fail-under=100
 ### Frontend (Vitest + React Testing Library)
 
 ```bash
-cd frontend
-
-# Run all tests
-npm run test
-
-# With coverage
-npx vitest run --coverage
+make test-frontend
+# or directly:
+cd frontend && npm test -- --coverage
 ```
 
 | Test Suite | Tests |
