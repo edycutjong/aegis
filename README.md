@@ -13,14 +13,14 @@
 ## 📸 Demo
 
 <p align="center">
-  <img src="scripts/screenshots/readme/01-dashboard.png" alt="Aegis Dashboard — Autonomous Enterprise Action Engine" width="100%">
+  <img src="docs/screenshots/01-dashboard.png" alt="Aegis Dashboard — Autonomous Enterprise Action Engine" width="100%">
 </p>
 
 <details>
 <summary>🧠 Agent ThoughtStream (Real-time Processing)</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/03-technical-resolution-thinking.png" alt="Agent ThoughtStream — real-time step-by-step processing with intent classification, customer validation, SQL execution" width="100%">
+  <img src="docs/screenshots/03-technical-resolution-thinking.png" alt="Agent ThoughtStream — real-time step-by-step processing with intent classification, customer validation, SQL execution" width="100%">
 </p>
 <p align="center"><em>Watch the agent think step-by-step: intent classification → customer validation → SQL generation → policy search → action proposal</em></p>
 </details>
@@ -29,7 +29,7 @@
 <summary>⚡ Full Resolution Workflow</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/04-billing-resolution.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
+  <img src="docs/screenshots/04-billing-resolution.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
 </p>
 <p align="center">
   <em>Agent resolves a ticket end-to-end: intent classification → customer validation → SQL execution → policy search → human approval → resolution</em>
@@ -40,7 +40,7 @@
 <summary>🔒 Human-in-the-Loop Approval Modal</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/02-refund-modal.png" alt="HITL Approval Modal — Agent pauses for human authorization before executing destructive actions" width="80%">
+  <img src="docs/screenshots/02-refund-modal.png" alt="HITL Approval Modal — Agent pauses for human authorization before executing destructive actions" width="80%">
 </p>
 <p align="center"><em>The agent pauses and waits for human authorization before executing any action requiring strict oversight</em></p>
 </details>
@@ -49,17 +49,17 @@
 <summary>🔧 Multi-Ticket Type Support (Technical, Billing, Upgrade, Reactivate, Suspend)</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/03-technical-resolution-approve.png" alt="Technical ticket resolution — API rate limiting investigation" width="100%">
+  <img src="docs/screenshots/03-technical-resolution-approve.png" alt="Technical ticket resolution — API rate limiting investigation" width="100%">
 </p>
 <p align="center"><em>Technical ticket: Investigates API rate limiting errors with SQL queries and resolves automatically (no HITL needed)</em></p>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/06-reactivate.png" alt="Reactivation HITL — Account reactivation requires human approval" width="80%">
+  <img src="docs/screenshots/06-reactivate.png" alt="Reactivation HITL — Account reactivation requires human approval" width="80%">
 </p>
 <p align="center"><em>Account reactivation: HITL approval required before restoring suspended enterprise accounts</em></p>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/07-suspend.png" alt="Suspension HITL — Account suspension requires human approval" width="80%">
+  <img src="docs/screenshots/07-suspend.png" alt="Suspension HITL — Account suspension requires human approval" width="80%">
 </p>
 <p align="center"><em>Account suspension: HITL approval required before suspending accounts for ToS violations</em></p>
 </details>
@@ -68,17 +68,17 @@
 <summary>✍️ Smart Customer Validation (Edge Cases)</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/11-edge-typo.png" alt="Typo correction — fuzzy name matching auto-corrects misspellings" width="100%">
+  <img src="docs/screenshots/11-edge-typo.png" alt="Typo correction — fuzzy name matching auto-corrects misspellings" width="100%">
 </p>
 <p align="center"><em>Typo correction: "Davd Martines" fuzzy-matched to "David Martinez" (≥80% similarity)</em></p>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/09-edge-notfound.png" alt="Customer not found — graceful error handling for nonexistent customers" width="100%">
+  <img src="docs/screenshots/09-edge-notfound.png" alt="Customer not found — graceful error handling for nonexistent customers" width="100%">
 </p>
 <p align="center"><em>Customer #999 not found — the agent stops gracefully with a clear error message</em></p>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/10-edge-mismatch.png" alt="Name/ID mismatch — security check catches wrong name for customer ID" width="100%">
+  <img src="docs/screenshots/10-edge-mismatch.png" alt="Name/ID mismatch — security check catches wrong name for customer ID" width="100%">
 </p>
 <p align="center"><em>Name/ID mismatch: Customer #8 is David Martinez, not Sarah Chen — agent flags the security mismatch</em></p>
 </details>
@@ -87,7 +87,7 @@
 <summary>⚡ Semantic Cache</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/08-cache-hit.png" alt="Semantic cache hit — identical query served instantly at $0.00 cost" width="100%">
+  <img src="docs/screenshots/15-cache-hit.png" alt="Semantic cache hit — identical query served instantly at $0.00 cost" width="100%">
 </p>
 <p align="center"><em>Identical query served from Redis cache in &lt;50ms at $0.00 cost</em></p>
 </details>
@@ -96,7 +96,7 @@
 <summary>📊 Observability Metrics</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/14-metrics.png" alt="Observability metrics — token usage, cost tracking, model distribution, cache hit ratio" width="100%">
+  <img src="docs/screenshots/18-metrics.png" alt="Observability metrics — token usage, cost tracking, model distribution, cache hit ratio" width="100%">
 </p>
 <p align="center"><em>Real-time observability: total tokens, cost per request, cache hit ratio, model distribution, HITL wait times</em></p>
 </details>
@@ -105,7 +105,7 @@
 <summary>🔭 LangSmith Traces</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/15-traces.png" alt="LangSmith traces panel — full pipeline visibility with latency and token counts" width="100%">
+  <img src="docs/screenshots/19-traces.png" alt="LangSmith traces panel — full pipeline visibility with latency and token counts" width="100%">
 </p>
 <p align="center"><em>Built-in LangSmith traces panel with run details, latency, token counts, and status per trace</em></p>
 </details>
@@ -114,12 +114,12 @@
 <summary>🗄️ Database Explorer & Ticket History</summary>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/17-database.png" alt="Database explorer — browse Supabase tables directly from the dashboard" width="100%">
+  <img src="docs/screenshots/21-database.png" alt="Database explorer — browse Supabase tables directly from the dashboard" width="100%">
 </p>
 <p align="center"><em>Database explorer: browse Supabase tables (customers, billing, tickets, docs) directly from the dashboard</em></p>
 <br>
 <p align="center">
-  <img src="scripts/screenshots/readme/16-recent-tickets.png" alt="Ticket history — localStorage-persisted recent ticket log" width="100%">
+  <img src="docs/screenshots/23-recent-tickets.png" alt="Ticket history — localStorage-persisted recent ticket log" width="100%">
 </p>
 <p align="center"><em>Ticket history: all processed tickets persisted in localStorage with status and response preview</em></p>
 </details>
@@ -273,20 +273,20 @@ All day-to-day workflows are managed via `make`. Run `make help` to see the full
 
 | Command | Description |
 |---|---|
-| `make screenshots` | 📸 Capture all 17 UI screenshots (requires stack running) |
+| `make screenshots` | 📸 Capture all UI screenshots (requires stack running) |
 | `make ss-dashboard` | Shot 01: Dashboard overview |
-| `make ss-refund` | Shot 02: Refund HITL suite |
-| `make ss-technical` | Shot 03: Technical HITL suite |
+| `make ss-refund` | Shots 02: Refund HITL suite |
+| `make ss-technical` | Shots 03: Technical HITL suite |
 | `make ss-billing` | Shot 04: Billing resolution |
-| `make ss-upgrade` | Shot 05: Upgrade HITL suite |
+| `make ss-upgrade` | Shots 05: Upgrade HITL suite |
 | `make ss-reactivate` | Shot 06: Reactivate resolution |
 | `make ss-suspend` | Shot 07: Suspend HITL suite |
-| `make ss-cache` | Shot 08: Semantic cache hit |
 | `make ss-edge` | Shots 09–13: All edge cases |
-| `make ss-metrics` | Shot 14: Observability metrics |
-| `make ss-traces` | Shot 15: LangSmith traces |
-| `make ss-tickets` | Shot 16: Recent tickets |
-| `make ss-database` | Shot 17: Database explorer |
+| `make ss-cache` | Shot 15: Semantic cache hit |
+| `make ss-metrics` | Shot 18: Observability metrics |
+| `make ss-traces` | Shot 19: LangSmith traces |
+| `make ss-database` | Shot 21: Database explorer |
+| `make ss-tickets` | Shot 23: Recent tickets |
 
 ## 🤖 Multi-Agent Architecture
 
@@ -452,19 +452,22 @@ Copy `backend/.env.example` to `backend/.env` and configure:
 |---|---|---|
 | `SUPABASE_URL` | ✅ | Supabase project URL |
 | `SUPABASE_KEY` | ✅ | Supabase anon/public key |
-| `GROQ_API_KEY` | ✅ | Groq API key (free — handles fast tasks) |
-| `OPENAI_API_KEY` | ⚡ | OpenAI key (need at least one "smart" provider) |
-| `ANTHROPIC_API_KEY` | ⚡ | Anthropic key (alternative to OpenAI) |
-| `GOOGLE_API_KEY` | ➖ | Google Gemini key (optional fallback) |
+| `SUPABASE_MANAGEMENT_KEY` | ➖ | Management API key — needed for `make db-reset` |
+| `GOOGLE_API_KEY` | ⚡ | Google Gemini key (recommended — free tier available) |
+| `OPENAI_API_KEY` | ⚡ | OpenAI key (GPT-4.1 as smart model) |
+| `ANTHROPIC_API_KEY` | ⚡ | Anthropic key (Claude as alternative smart model) |
+| `GROQ_API_KEY` | ⚡ | Groq key (free, fast inference — good for classification) |
 | `FAST_MODEL` | ➖ | Fast model name (default: `llama-3.1-8b-instant`) |
 | `SMART_MODEL` | ➖ | Smart model name (default: `gpt-4.1`) |
 | `REDIS_URL` | ➖ | Redis connection URL (default: `redis://localhost:6379`) |
 | `CACHE_TTL_SECONDS` | ➖ | Cache TTL in seconds (default: `3600`) |
 | `FRONTEND_URL` | ➖ | CORS origin (default: `http://localhost:3000`) |
+| `LANGCHAIN_TRACING_V2` | ➖ | Enable LangSmith tracing (default: `true`) |
 | `LANGCHAIN_API_KEY` | ➖ | LangSmith API key for tracing |
+| `LANGCHAIN_PROJECT` | ➖ | LangSmith project name (default: `aegis`) |
 | `DEBUG` | ➖ | Enable debug logging (default: `false`) |
 
-> ✅ = required, ⚡ = need at least one, ➖ = optional
+> ✅ = required, ⚡ = need at least one LLM key, ➖ = optional
 
 ## 📄 License
 
