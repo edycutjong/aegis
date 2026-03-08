@@ -532,11 +532,11 @@ async def get_traces():
                     # Separate direct children and map nested LLM runs to their top-level child
                     child_runs_raw = []
                     llm_runs_by_top_child: dict[str, list] = {}
-                    
+
                     for desc in all_descendants:
                         if str(desc.parent_run_id) == run_id_str:
                             child_runs_raw.append(desc)
-                        
+
                         if desc.run_type == "llm":
                             top_child_id = get_top_level_child(str(desc.id))
                             if top_child_id:
