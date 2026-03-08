@@ -54,12 +54,12 @@
 <p align="center"><em>Technical ticket: Investigates API rate limiting errors with SQL queries and resolves automatically (no HITL needed)</em></p>
 <br>
 <p align="center">
-  <img src="docs/screenshots/06-reactivate.png" alt="Reactivation HITL — Account reactivation requires human approval" width="80%">
+  <img src="docs/screenshots/06-reactivate.png" alt="Reactivation HITL — Account reactivation requires human approval" width="100%">
 </p>
 <p align="center"><em>Account reactivation: HITL approval required before restoring suspended enterprise accounts</em></p>
 <br>
 <p align="center">
-  <img src="docs/screenshots/07-suspend.png" alt="Suspension HITL — Account suspension requires human approval" width="80%">
+  <img src="docs/screenshots/07-suspend.png" alt="Suspension HITL — Account suspension requires human approval" width="100%">
 </p>
 <p align="center"><em>Account suspension: HITL approval required before suspending accounts for ToS violations</em></p>
 </details>
