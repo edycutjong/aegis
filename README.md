@@ -108,6 +108,16 @@
   <img src="docs/screenshots/19-traces.png" alt="LangSmith traces panel — full pipeline visibility with latency and token counts" width="100%">
 </p>
 <p align="center"><em>Built-in LangSmith traces panel with run details, latency, token counts, and status per trace</em></p>
+<br>
+<p align="center">
+  <img src="docs/screenshots/19-traces-1.png" alt="LangSmith trace expanded — node-level spans showing each agent step with latency" width="100%">
+</p>
+<p align="center"><em>Expanded trace: node-level spans for every agent step — classify → validate → SQL → search → propose → approve → execute</em></p>
+<br>
+<p align="center">
+  <img src="docs/screenshots/19-traces-2.png" alt="LangSmith trace detail — LLM call inputs, outputs, token counts and model name" width="100%">
+</p>
+<p align="center"><em>LLM call detail: inputs, outputs, token counts, model name, and latency per invocation</em></p>
 </details>
 
 <details>
