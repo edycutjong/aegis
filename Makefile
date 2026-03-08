@@ -7,7 +7,7 @@
 
 # ── Stack ──────────────────────────────────────────────────
 
-.PHONY: up down restart logs clean
+.PHONY: up down restart logs clean db-reset
 
 up: ## 🚀 Start the full stack (backend + frontend + redis)
 	docker compose up --build
@@ -16,7 +16,7 @@ down: ## 🛑 Stop stack and remove images + dangling layers
 	docker compose down -v --rmi local
 	docker image prune -f
 
-restart: ## 🔄 Restart the full stack
+restart: ## 🔄 Restart the full stack (preserves DB state)
 	docker compose down
 	docker compose up --build
 
@@ -26,6 +26,9 @@ logs: ## 📋 Tail backend logs (use: make logs s=frontend)
 clean: ## 🧹 Nuclear clean — remove everything including base images
 	docker compose down -v --rmi all
 	docker image prune -f
+
+db-reset: ## 🗄️  Reset & reseed the Supabase database (requires SUPABASE_MANAGEMENT_KEY in backend/.env)
+	node scripts/db-reset.mjs
 
 # ── Testing ────────────────────────────────────────────────
 

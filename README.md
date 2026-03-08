@@ -13,14 +13,14 @@
 ## 📸 Demo
 
 <p align="center">
-  <img src="docs/screenshot-dashboard.png" alt="Aegis Dashboard — Autonomous Enterprise Action Engine" width="100%">
+  <img src="scripts/screenshots/readme/01-dashboard.png" alt="Aegis Dashboard — Autonomous Enterprise Action Engine" width="100%">
 </p>
 
 <details>
 <summary>🧠 Agent ThoughtStream (Real-time Processing)</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-thinking.png" alt="Agent ThoughtStream — real-time step-by-step processing with intent classification, customer validation, SQL execution" width="100%">
+  <img src="scripts/screenshots/readme/03-technical-resolution-thinking.png" alt="Agent ThoughtStream — real-time step-by-step processing with intent classification, customer validation, SQL execution" width="100%">
 </p>
 <p align="center"><em>Watch the agent think step-by-step: intent classification → customer validation → SQL generation → policy search → action proposal</em></p>
 </details>
@@ -29,7 +29,7 @@
 <summary>⚡ Full Resolution Workflow</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-completed.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
+  <img src="scripts/screenshots/readme/04-billing-resolution.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
 </p>
 <p align="center">
   <em>Agent resolves a ticket end-to-end: intent classification → customer validation → SQL execution → policy search → human approval → resolution</em>
@@ -40,7 +40,7 @@
 <summary>🔒 Human-in-the-Loop Approval Modal</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-approval.png" alt="HITL Approval Modal — Agent pauses for human authorization before executing destructive actions" width="80%">
+  <img src="scripts/screenshots/readme/02-refund-modal.png" alt="HITL Approval Modal — Agent pauses for human authorization before executing destructive actions" width="80%">
 </p>
 <p align="center"><em>The agent pauses and waits for human authorization before executing any action requiring strict oversight</em></p>
 </details>
@@ -49,17 +49,17 @@
 <summary>🔧 Multi-Ticket Type Support (Technical, Billing, Upgrade, Reactivate, Suspend)</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-technical.png" alt="Technical ticket resolution — API rate limiting investigation" width="100%">
+  <img src="scripts/screenshots/readme/03-technical-resolution-approve.png" alt="Technical ticket resolution — API rate limiting investigation" width="100%">
 </p>
 <p align="center"><em>Technical ticket: Investigates API rate limiting errors with SQL queries and resolves automatically (no HITL needed)</em></p>
 <br>
 <p align="center">
-  <img src="docs/screenshot-reactivate-hitl.png" alt="Reactivation HITL — Account reactivation requires human approval" width="80%">
+  <img src="scripts/screenshots/readme/06-reactivate.png" alt="Reactivation HITL — Account reactivation requires human approval" width="80%">
 </p>
 <p align="center"><em>Account reactivation: HITL approval required before restoring suspended enterprise accounts</em></p>
 <br>
 <p align="center">
-  <img src="docs/screenshot-suspend-hitl.png" alt="Suspension HITL — Account suspension requires human approval" width="80%">
+  <img src="scripts/screenshots/readme/07-suspend.png" alt="Suspension HITL — Account suspension requires human approval" width="80%">
 </p>
 <p align="center"><em>Account suspension: HITL approval required before suspending accounts for ToS violations</em></p>
 </details>
@@ -68,17 +68,17 @@
 <summary>✍️ Smart Customer Validation (Edge Cases)</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-edge-typo.png" alt="Typo correction — fuzzy name matching auto-corrects misspellings" width="100%">
+  <img src="scripts/screenshots/readme/11-edge-typo.png" alt="Typo correction — fuzzy name matching auto-corrects misspellings" width="100%">
 </p>
 <p align="center"><em>Typo correction: "Davd Martines" fuzzy-matched to "David Martinez" (≥80% similarity)</em></p>
 <br>
 <p align="center">
-  <img src="docs/screenshot-edge-notfound.png" alt="Customer not found — graceful error handling for nonexistent customers" width="100%">
+  <img src="scripts/screenshots/readme/09-edge-notfound.png" alt="Customer not found — graceful error handling for nonexistent customers" width="100%">
 </p>
 <p align="center"><em>Customer #999 not found — the agent stops gracefully with a clear error message</em></p>
 <br>
 <p align="center">
-  <img src="docs/screenshot-edge-mismatch.png" alt="Name/ID mismatch — security check catches wrong name for customer ID" width="100%">
+  <img src="scripts/screenshots/readme/10-edge-mismatch.png" alt="Name/ID mismatch — security check catches wrong name for customer ID" width="100%">
 </p>
 <p align="center"><em>Name/ID mismatch: Customer #8 is David Martinez, not Sarah Chen — agent flags the security mismatch</em></p>
 </details>
@@ -87,7 +87,7 @@
 <summary>⚡ Semantic Cache</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-cache.png" alt="Semantic cache hit — identical query served instantly at $0.00 cost" width="100%">
+  <img src="scripts/screenshots/readme/08-cache-hit.png" alt="Semantic cache hit — identical query served instantly at $0.00 cost" width="100%">
 </p>
 <p align="center"><em>Identical query served from Redis cache in &lt;50ms at $0.00 cost</em></p>
 </details>
@@ -96,7 +96,7 @@
 <summary>📊 Observability Metrics</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-metrics.png" alt="Observability metrics — token usage, cost tracking, model distribution, cache hit ratio" width="100%">
+  <img src="scripts/screenshots/readme/14-metrics.png" alt="Observability metrics — token usage, cost tracking, model distribution, cache hit ratio" width="100%">
 </p>
 <p align="center"><em>Real-time observability: total tokens, cost per request, cache hit ratio, model distribution, HITL wait times</em></p>
 </details>
@@ -105,7 +105,7 @@
 <summary>🔭 LangSmith Traces</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-traces.png" alt="LangSmith traces panel — full pipeline visibility with latency and token counts" width="100%">
+  <img src="scripts/screenshots/readme/15-traces.png" alt="LangSmith traces panel — full pipeline visibility with latency and token counts" width="100%">
 </p>
 <p align="center"><em>Built-in LangSmith traces panel with run details, latency, token counts, and status per trace</em></p>
 </details>
@@ -114,12 +114,12 @@
 <summary>🗄️ Database Explorer & Ticket History</summary>
 <br>
 <p align="center">
-  <img src="docs/screenshot-database.png" alt="Database explorer — browse Supabase tables directly from the dashboard" width="100%">
+  <img src="scripts/screenshots/readme/17-database.png" alt="Database explorer — browse Supabase tables directly from the dashboard" width="100%">
 </p>
 <p align="center"><em>Database explorer: browse Supabase tables (customers, billing, tickets, docs) directly from the dashboard</em></p>
 <br>
 <p align="center">
-  <img src="docs/screenshot-tickets.png" alt="Ticket history — localStorage-persisted recent ticket log" width="100%">
+  <img src="scripts/screenshots/readme/16-recent-tickets.png" alt="Ticket history — localStorage-persisted recent ticket log" width="100%">
 </p>
 <p align="center"><em>Ticket history: all processed tickets persisted in localStorage with status and response preview</em></p>
 </details>
