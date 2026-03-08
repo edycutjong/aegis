@@ -8,7 +8,6 @@
  *
  * Quick Test presets (6):
  *   01-dashboard              — Clean dashboard overview
- *   02-agent-thinking         — Agent processing with ThoughtStream
  *   03-refund-approve         — 💳 Refund HITL Approve flow
  *   04-refund-deny            — 💳 Refund HITL Deny flow
  *   05-technical-resolution   — 🔧 Technical auto-resolution
@@ -191,33 +190,107 @@ async function runTicketShot(page, { presetLabel, shotName, hitl, action }) {
     await captureDevMode(page, shotName);
 }
 
-/** Capture the HITL modal itself (before approve/deny) */
-async function runHitlModalShot(page, { presetLabel, shotName }) {
+/**
+ * Wait until the HITL modal is fully visible, then pause for the
+ * entry animation — simple sequential waits, no async racing.
+ */
+async function waitForHitlModal(page, timeoutMs = 20000) {
+    // 1. Wait for the modal heading to appear
+    console.log("    ⏳ Waiting for HITL modal heading...");
+    await page.waitForSelector("text=Human Approval Required", {
+        state: "visible",
+        timeout: timeoutMs,
+    });
+    console.log("    ✓ Modal heading visible");
+
+    // 2. Wait for Deny button
+    await page.waitForSelector(".btn-danger", { state: "visible", timeout: 5000 });
+    console.log("    ✓ Deny button visible");
+
+    // 3. Wait for Approve button
+    await page.waitForSelector(".btn-success", { state: "visible", timeout: 5000 });
+    console.log("    ✓ Approve button visible");
+
+    // 4. Let the CSS entry animation finish before snapping
+    await sleep(1500);
+    console.log("    ✓ Modal ready — taking screenshot");
+}
+
+
+/**
+ * All-in-one HITL capture — runs the preset twice:
+ *   Pass 1: thinking → modal → deny    → deny-dev
+ *   Pass 2: thinking → modal → approve → approve-dev
+ *
+ * Outputs: {base}-thinking, {base}-modal,
+ *          {base}-deny,    {base}-deny-dev,
+ *          {base}-approve, {base}-approve-dev
+ */
+async function runHitlModalShot(page, { presetLabel, shotBase }) {
+    // ── Pass 1: Deny ──────────────────────────────────────────
+    console.log("    [Pass 1] Starting deny run...");
     await clearCache();
     await resetDashboard(page);
     await clickPreset(page, presetLabel);
 
-    const result = await waitForState(page, 60000);
-    console.log(`    → State: ${result}`);
+    // 1a. Thinking — capture a few seconds after submit
+    console.log("    ⏳ Capturing thinking state...");
+    await sleep(4000);
+    await captureAll(page, `${shotBase}-thinking`);
 
-    if (result === "approval") {
-        // Wait for the modal entry animation to finish — buttons must be stable/visible
-        try {
-            await page.waitForSelector(".btn-success", { state: "visible", timeout: 10000 });
-            console.log("    ✓ HITL modal fully rendered — holding 1.5s for animation");
-        } catch {
-            console.log("    ⚠ .btn-success not found — proceeding anyway");
-        }
-        await sleep(1500);
-        await captureAll(page, shotName);
-        // Approve so we leave a clean state
+    // 1b. Wait for HITL modal
+    const r1 = await waitForState(page, 60000);
+    console.log(`    → State: ${r1}`);
+
+    if (r1 === "approval") {
+        await waitForHitlModal(page);
+
+        // 1c. Modal screenshot — modal is confirmed visible
+        await captureAll(page, `${shotBase}-modal`);
+
+        // 1d. Deny
+        await page.locator(".btn-danger:has-text('Deny')").first().click({ timeout: 5000 }).catch(() => { });
+        console.log("    ✗ Clicked Deny");
+        await sleep(5000);
+
+        // 1e. Deny result — user mode + dev mode
+        await captureAll(page, `${shotBase}-deny`);
+        await captureDevMode(page, `${shotBase}-deny`);
+    } else {
+        console.log(`    ⚠ Got ${r1} instead of HITL modal on Pass 1 — capturing anyway`);
+        await sleep(2000);
+        await captureAll(page, `${shotBase}-modal`);
+    }
+
+    // ── Pass 2: Approve ───────────────────────────────────────
+    console.log("    [Pass 2] Starting approve run...");
+    await clearCache();
+    await resetDashboard(page);
+    await clickPreset(page, presetLabel);
+
+    // 2a. Thinking (re-run for approve session — skip re-capture, already done in pass 1)
+    await sleep(4000);
+
+    // 2b. Wait for HITL modal
+    const r2 = await waitForState(page, 60000);
+    console.log(`    → State: ${r2}`);
+
+    if (r2 === "approval") {
+        await waitForHitlModal(page);
+
+        // 2c. Approve
         await page.locator(".btn-success:has-text('Approve')").first().click({ timeout: 5000 }).catch(() => { });
+        console.log("    ✓ Clicked Approve");
         await waitForState(page, 30000);
         await sleep(2000);
+
+        // 2d. Approve result — user mode + dev mode
+        await captureAll(page, `${shotBase}-approve`);
+        await captureDevMode(page, `${shotBase}-approve`);
     } else {
-        console.log(`    ⚠ Got ${result} instead of HITL modal — capturing anyway`);
+        console.log(`    ⚠ Got ${r2} instead of HITL modal on Pass 2 — capturing anyway`);
         await sleep(2000);
-        await captureAll(page, shotName);
+        await captureAll(page, `${shotBase}-approve`);
     }
 }
 
@@ -258,130 +331,67 @@ const SHOTS = {
         },
     },
 
-    // ── Agent Thinking ──
-    "agent-thinking": {
-        name: "02-agent-thinking",
-        title: "Agent Processing (ThoughtStream)",
-        capture: async (page) => {
-            await clearCache();
-            await resetDashboard(page);
-            await clickPreset(page, "Technical");
-            console.log("    ⏳ Waiting for agent to start thinking...");
-            await sleep(5000);
-            await captureAll(page, "02-agent-thinking");
-            await captureDevMode(page, "02-agent-thinking");
-            // Wait for completion so next shot starts clean
-            const result = await waitForState(page, 60000);
-            console.log(`    → State: ${result}`);
-            if (result === "approval") {
-                await page.locator(".btn-success:has-text('Approve')").first().click();
-                await waitForState(page, 30000);
-            }
-            await sleep(2000);
-        },
-    },
 
-    // ── Quick Test: Refund HITL shots (use Reactivate — guaranteed HITL) ──
-    // Note: The Refund preset auto-resolves because Customer #8's duplicate charge is already
-    // recorded as refunded in the DB. Reactivate always triggers HITL.
+    // ── Quick Test: Refund HITL (thinking + modal + approve/deny + dev modes) ──
+    // Note: Both Refund and Reactivate presets auto-resolve (customer state already satisfied
+    // in the DB). Suspend reliably triggers HITL regardless of prior runs.
     "refund-hitl": {
-        name: "03-refund-hitl",
-        title: "💳 Refund — HITL Modal",
+        name: "02-refund",
+        title: "💳 Refund — Full HITL Suite",
         capture: async (page) => {
-            await runHitlModalShot(page, { presetLabel: "Reactivate", shotName: "03-refund-hitl" });
-        },
-    },
-    "refund-approve": {
-        name: "04-refund-approve",
-        title: "💳 Refund — HITL Approve",
-        capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "04-refund-approve", hitl: true, action: "approve" });
-        },
-    },
-    "refund-deny": {
-        name: "05-refund-deny",
-        title: "💳 Refund — HITL Deny",
-        capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "05-refund-deny", hitl: true, action: "deny" });
+            await runHitlModalShot(page, { presetLabel: "Refund", shotBase: "02-refund" });
         },
     },
 
     // ── Quick Test: Technical (no HITL) ──
-    "technical-resolution": {
-        name: "06-technical-resolution",
-        title: "🔧 Technical — Resolution",
+    "technical-hitl": {
+        name: "03-technical-hitl",
+        title: "🔧 Technical — Full HITL Suite",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Technical", shotName: "06-technical-resolution", hitl: false });
+            await runHitlModalShot(page, { presetLabel: "Technical", shotBase: "03-technical-resolution" });
         },
     },
 
     // ── Quick Test: Billing (no HITL) ──
     "billing-resolution": {
-        name: "07-billing-resolution",
+        name: "04-billing-resolution",
         title: "📄 Billing — Resolution",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Billing", shotName: "07-billing-resolution", hitl: false });
+            await runTicketShot(page, { presetLabel: "Billing", shotName: "04-billing-resolution", hitl: false });
         },
     },
 
     // ── Quick Test: Upgrade (no HITL) ──
     "upgrade-resolution": {
-        name: "08-upgrade-resolution",
+        name: "05-upgrade-resolution",
         title: "⬆️ Upgrade — Resolution",
         capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Upgrade", shotName: "08-upgrade-resolution", hitl: false });
+            await runHitlModalShot(page, { presetLabel: "Upgrade", shotBase: "05-upgrade-resolution" });
         },
     },
 
-    // ── Quick Test: Reactivate (HITL) ──
-    "reactivate-hitl": {
-        name: "09-reactivate-hitl",
-        title: "🔓 Reactivate — HITL Modal",
+    // ── Quick Test: Reactivate — Full HITL Suite ──
+    // Note: Uses Suspend preset since Reactivate auto-resolves when customer is already active.
+    "reactivate-resolution": {
+        name: "06-reactivate",
+        title: "🔓 Reactivate — Resolution",
         capture: async (page) => {
-            await runHitlModalShot(page, { presetLabel: "Reactivate", shotName: "09-reactivate-hitl" });
-        },
-    },
-    "reactivate-approve": {
-        name: "10-reactivate-approve",
-        title: "🔓 Reactivate — HITL Approve",
-        capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "10-reactivate-approve", hitl: true, action: "approve" });
-        },
-    },
-    "reactivate-deny": {
-        name: "11-reactivate-deny",
-        title: "🔓 Reactivate — HITL Deny",
-        capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "11-reactivate-deny", hitl: true, action: "deny" });
+            await runTicketShot(page, { presetLabel: "Reactivate", shotName: "06-reactivate", hitl: false });
         },
     },
 
-    // ── Quick Test: Suspend (HITL) ──
+    // ── Quick Test: Suspend — Full HITL Suite ──
     "suspend-hitl": {
-        name: "12-suspend-hitl",
-        title: "🔒 Suspend — HITL Modal",
+        name: "07-suspend",
+        title: "🔒 Suspend — Full HITL Suite",
         capture: async (page) => {
-            await runHitlModalShot(page, { presetLabel: "Suspend", shotName: "12-suspend-hitl" });
-        },
-    },
-    "suspend-approve": {
-        name: "13-suspend-approve",
-        title: "🔒 Suspend — HITL Approve",
-        capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Suspend", shotName: "13-suspend-approve", hitl: true, action: "approve" });
-        },
-    },
-    "suspend-deny": {
-        name: "14-suspend-deny",
-        title: "🔒 Suspend — HITL Deny",
-        capture: async (page) => {
-            await runTicketShot(page, { presetLabel: "Suspend", shotName: "14-suspend-deny", hitl: true, action: "deny" });
+            await runTicketShot(page, { presetLabel: "Suspend", shotName: "07-suspend", hitl: false });
         },
     },
 
     // ── Semantic Cache ──
     "cache-hit": {
-        name: "15-cache-hit",
+        name: "08-cache-hit",
         title: "⚡ Semantic Cache Hit",
         capture: async (page) => {
             // Warm the cache first
@@ -405,50 +415,50 @@ const SHOTS = {
                 console.log("    ⚡ Cache hit — capturing");
             }
             await sleep(2000);
-            await captureAll(page, "15-cache-hit");
+            await captureAll(page, "08-cache-hit");
         },
     },
 
     // ── Edge Cases ──
     "edge-notfound": {
-        name: "16-edge-notfound",
+        name: "09-edge-notfound",
         title: "👻 Edge Case — Customer Not Found",
         capture: async (page) => {
-            await runEdgeCaseShot(page, { edgeLabel: "Not Found", shotName: "13-edge-notfound" });
+            await runEdgeCaseShot(page, { edgeLabel: "Not Found", shotName: "09-edge-notfound" });
         },
     },
     "edge-mismatch": {
-        name: "17-edge-mismatch",
+        name: "10-edge-mismatch",
         title: "🔀 Edge Case — Name/ID Mismatch",
         capture: async (page) => {
-            await runEdgeCaseShot(page, { edgeLabel: "Mismatch", shotName: "14-edge-mismatch" });
+            await runEdgeCaseShot(page, { edgeLabel: "Mismatch", shotName: "10-edge-mismatch" });
         },
     },
     "edge-typo": {
-        name: "18-edge-typo",
+        name: "11-edge-typo",
         title: "✍️ Edge Case — Typo Correction",
         capture: async (page) => {
-            await runEdgeCaseShot(page, { edgeLabel: "Typo", shotName: "15-edge-typo" });
+            await runEdgeCaseShot(page, { edgeLabel: "Typo", shotName: "11-edge-typo" });
         },
     },
     "edge-nameonly": {
-        name: "19-edge-nameonly",
+        name: "12-edge-nameonly",
         title: "👤 Edge Case — Name Only Lookup",
         capture: async (page) => {
-            await runEdgeCaseShot(page, { edgeLabel: "Name Only", shotName: "16-edge-nameonly" });
+            await runEdgeCaseShot(page, { edgeLabel: "Name Only", shotName: "12-edge-nameonly" });
         },
     },
     "edge-cancelled": {
-        name: "20-edge-cancelled",
+        name: "13-edge-cancelled",
         title: "🚫 Edge Case — Cancelled Account",
         capture: async (page) => {
-            await runEdgeCaseShot(page, { edgeLabel: "Cancelled", shotName: "17-edge-cancelled" });
+            await runEdgeCaseShot(page, { edgeLabel: "Cancelled", shotName: "13-edge-cancelled" });
         },
     },
 
     // ── Observability ──
     metrics: {
-        name: "21-metrics",
+        name: "14-metrics",
         title: "📊 Observability Metrics",
         capture: async (page) => {
             await resetDashboard(page);
@@ -458,12 +468,12 @@ const SHOTS = {
                 console.log("    ✓ Metrics panel visible");
             }
             await sleep(2000);
-            await captureAll(page, "18-metrics");
+            await captureAll(page, "14-metrics");
         },
     },
 
     traces: {
-        name: "22-traces",
+        name: "15-traces",
         title: "🔭 LangSmith Traces",
         capture: async (page) => {
             await resetDashboard(page);
@@ -485,7 +495,7 @@ const SHOTS = {
             } else {
                 console.log("    ⚠ LangSmith Traces button not visible (tracing may be disabled)");
             }
-            await captureAll(page, "19-traces");
+            await captureAll(page, "15-traces");
 
             // Expand each trace individually and capture a separate screenshot
             try {
@@ -498,7 +508,7 @@ const SHOTS = {
                     await traceRows.nth(i).evaluate(el => el.scrollIntoView({ block: "start", behavior: "instant" }));
                     await sleep(500);
                     console.log(`    ✓ Expanded trace ${i + 1}/${count}`);
-                    await captureAll(page, `19-traces-${i + 1}`);
+                    await captureAll(page, `15-traces-${i + 1}`);
                     // Collapse before next
                     await traceRows.nth(i).click({ timeout: 3000 });
                     await sleep(300);
@@ -515,59 +525,74 @@ const SHOTS = {
 
     // ── Recent Tickets ──
     "recent-tickets": {
-        name: "23-recent-tickets",
+        name: "16-recent-tickets",
         title: "📋 Recent Tickets",
         capture: async (page) => {
-            // Ensure we have at least one ticket in history
             await resetDashboard(page);
-            await clickPreset(page, "Issue Refund");
-            await waitForState(page);
+
+            // Populate history with several diverse tickets
+            const fills = ["Billing", "Technical", "Upgrade", "Billing", "Technical"];
+            for (const preset of fills) {
+                await clickPreset(page, preset);
+                await waitForState(page, 30000);
+                // Auto-approve any HITL that comes up so we don't block
+                await page
+                    .locator(".btn-success:has-text('Approve')")
+                    .first()
+                    .click({ timeout: 2000 })
+                    .catch(() => { });
+                await sleep(800);
+            }
             await sleep(1000);
 
-            // Scroll to the Ticket History section in the left panel
-            const historySection = page.locator("text=Recent Tickets").first();
-            if (await historySection.isVisible().catch(() => false)) {
-                await historySection.scrollIntoViewIfNeeded();
-                console.log("    ✓ Recent Tickets visible");
-            } else {
-                // Try alternate label
-                const altHistory = page.locator("text=Ticket History").first();
-                if (await altHistory.isVisible().catch(() => false)) {
-                    await altHistory.scrollIntoViewIfNeeded();
-                    console.log("    ✓ Ticket History visible");
-                }
-            }
-
-            // Expand the accordion
+            // Expand the Recent Tickets accordion
             const header = page.locator(".ticket-history-header").first();
             if (await header.isVisible().catch(() => false)) {
                 await header.click();
+                console.log("    ✓ Ticket history expanded");
+                await sleep(600); // let maxHeight transition finish
+            } else {
+                console.log("    ⚠ .ticket-history-header not found");
             }
 
-            await sleep(2000);
-            await captureAll(page, "20-recent-tickets");
+            // Scroll it into view then take full-viewport screenshot
+            await page.locator(".ticket-history-container").first()
+                .scrollIntoViewIfNeeded().catch(() => { });
+            await sleep(400);
+            await captureAll(page, "16-recent-tickets");
         },
     },
 
+
     // ── Database ──
     database: {
-        name: "24-database",
+        name: "17-database",
         title: "🗄️ Database Explorer",
         capture: async (page) => {
             await resetDashboard(page);
-            const dbSection = page.locator("text=Database").first();
+
+            // Scroll the DATABASE section into view so it's fully visible
+            const dbSection = page.locator("text=DATABASE").first();
             if (await dbSection.isVisible().catch(() => false)) {
                 await dbSection.scrollIntoViewIfNeeded();
-                console.log("    ✓ Database section visible");
-                await sleep(1000);
+                console.log("    ✓ Database section in view");
+                await sleep(800);
+
+                // Click Customers to expand the table
                 const customersBtn = page.locator("text=Customers").first();
                 if (await customersBtn.isVisible().catch(() => false)) {
                     await customersBtn.click();
                     console.log("    ✓ Expanded Customers table");
                     await sleep(2000);
                 }
+
+                // Scroll the expanded DB section back into view after expansion
+                await dbSection.scrollIntoViewIfNeeded();
+                await sleep(600);
+            } else {
+                console.log("    ⚠ DATABASE section not found");
             }
-            await captureAll(page, "21-database");
+            await captureAll(page, "17-database");
         },
     },
 };
