@@ -10,6 +10,34 @@
 
 > A multi-agent AI system that acts as a Tier-2 Support Engineer. Investigates complex issues via SQL + documentation, proposes financial/technical actions, and **waits for human approval** before executing.
 
+## ✨ Key Features
+
+| Feature | Description |
+|---|---|
+| **Human-in-the-Loop (HITL)** | Agent pauses execution and waits for human approval before taking destructive actions (refunds, suspensions). Non-destructive actions are auto-approved. |
+| **Dynamic Model Routing** | Routes simple intents to Groq Llama-3 (~$0.00003), complex intents to GPT-4.1/Gemini (~$0.008) — with automatic fallback |
+| **Smart Customer Validation** | Handles 8 edge cases: ID+name match, fuzzy name matching, typo correction, name-only search, disambiguation, suspended/cancelled accounts, not-found, and ID mismatch |
+| **Self-Healing SQL** | Generates SQL from natural language, executes against Supabase, and auto-retries up to 3× by feeding errors back to the LLM |
+| **Semantic Caching** | Identical queries served from Redis cache in <50ms at $0.00 cost — failures are never cached |
+| **Real-time Streaming** | Watch the agent's thought process step-by-step via Server-Sent Events (SSE) |
+| **Dual-Mode ThoughtStream** | Toggle between clean User mode and detailed Dev mode with color-coded agent badges |
+| **Observability Dashboard** | Track token usage, cost per request, cache hit ratio, model distribution, and database status |
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TD
+    A["Next.js Frontend"] -- REST + SSE --> B["FastAPI Backend"]
+    B -- cache check --> D["Redis Cache"]
+    B -- cache miss --> F["LangGraph Agent"]
+    F --> G["Classify → Validate → Write SQL → Execute"]
+    G --> G2["Search Docs → Propose → ⏸ HITL Approval"]
+    G2 --> G3["Execute Action → Respond → Frontend"]
+    F --> C["Model Router → LLM APIs"]
+    G --> I["Supabase PostgreSQL"]
+    F -. traces .-> J["LangSmith"]
+```
+
 ## 📸 Demo
 
 <p align="center">
@@ -134,170 +162,6 @@
 <p align="center"><em>Ticket history: all processed tickets persisted in localStorage with status and response preview</em></p>
 </details>
 
-## ✨ Key Features
-
-| Feature | Description |
-|---|---|
-| **Human-in-the-Loop (HITL)** | Agent pauses execution and waits for human approval before taking destructive actions (refunds, suspensions). Non-destructive actions are auto-approved. |
-| **Dynamic Model Routing** | Routes simple intents to Groq Llama-3 (~$0.00003), complex intents to GPT-4.1/Gemini (~$0.008) — with automatic fallback |
-| **Smart Customer Validation** | Handles 8 edge cases: ID+name match, fuzzy name matching, typo correction, name-only search, disambiguation, suspended/cancelled accounts, not-found, and ID mismatch |
-| **Self-Healing SQL** | Generates SQL from natural language, executes against Supabase, and auto-retries up to 3× by feeding errors back to the LLM |
-| **Semantic Caching** | Identical queries served from Redis cache in <50ms at $0.00 cost — failures are never cached |
-| **Real-time Streaming** | Watch the agent's thought process step-by-step via Server-Sent Events (SSE) |
-| **Dual-Mode ThoughtStream** | Toggle between clean User mode and detailed Dev mode with color-coded agent badges |
-| **Observability Dashboard** | Track token usage, cost per request, cache hit ratio, model distribution, and database status |
-
-## 🏗️ Architecture
-
-```mermaid
-flowchart TD
-    A["Next.js Frontend"] -- REST + SSE --> B["FastAPI Backend"]
-    B -- cache check --> D["Redis Cache"]
-    B -- cache miss --> F["LangGraph Agent"]
-    F --> G["Classify → Validate → Write SQL → Execute"]
-    G --> G2["Search Docs → Propose → ⏸ HITL Approval"]
-    G2 --> G3["Execute Action → Respond → Frontend"]
-    F --> C["Model Router → LLM APIs"]
-    G --> I["Supabase PostgreSQL"]
-    F -. traces .-> J["LangSmith"]
-```
-
-## 📁 Project Structure
-
-```
-aegis/
-├── backend/
-│   ├── app/
-│   │   ├── agent/
-│   │   │   ├── agents/          # 4 specialized agents
-│   │   │   │   ├── classifier.py    # Triage Agent — intent classification
-│   │   │   │   ├── investigator.py  # Investigator — customer validation + SQL
-│   │   │   │   ├── researcher.py    # Knowledge Agent — doc search
-│   │   │   │   └── resolver.py      # Resolution Agent — actions + HITL
-│   │   │   ├── graph.py         # LangGraph workflow definition
-│   │   │   ├── state.py         # AgentState TypedDict
-│   │   │   └── nodes.py         # Re-export shim for backward compat
-│   │   ├── cache/semantic.py    # Redis semantic caching
-│   │   ├── db/supabase.py       # Async Supabase client
-│   │   ├── routing/model_router.py  # Dynamic LLM routing + pricing
-│   │   ├── observability/tracker.py # Token/cost tracking
-│   │   ├── config.py            # Pydantic Settings
-│   │   └── main.py              # FastAPI app + SSE endpoints
-│   ├── tests/                   # 8 test files, 100% coverage
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── app/page.tsx         # Main dashboard
-│   │   ├── components/          # 6 React components
-│   │   │   ├── AnimatedNumber.tsx    # Smooth animated value counter
-│   │   │   ├── ApprovalModal.tsx     # HITL approval UI
-│   │   │   ├── DatabaseStatus.tsx    # DB table explorer
-│   │   │   ├── MetricsPanel.tsx      # Observability dashboard
-│   │   │   ├── ThoughtStream.tsx     # Agent progress + Dev/User toggle
-│   │   │   └── TicketHistory.tsx     # Recent tickets (localStorage)
-│   │   ├── hooks/useTicketHistory.ts
-│   │   └── lib/api.ts           # API client + SSE
-│   ├── src/components/__tests__/ # 8 test files (Vitest + RTL)
-│   ├── src/app/__tests__/       # 1 test file (Vitest + RTL)
-│   ├── Dockerfile               # Multi-stage standalone build
-│   └── package.json
-├── docker-compose.yml           # Backend + Frontend + Redis
-├── seed.sql                     # Sample data for Supabase
-└── .github/workflows/ci.yml    # Ruff + pytest + ESLint + Docker build
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Python 3.12+
-- Node.js 22+
-- Docker & Docker Compose (for Redis)
-- **API keys (minimum 2):**
-  - [Groq](https://console.groq.com/keys) — free tier, handles fast tasks (classification, docs, response)
-  - [OpenAI](https://platform.openai.com/api-keys) **or** [Anthropic](https://console.anthropic.com/settings/keys) — one is enough for complex tasks (SQL, action proposal)
-  - [Google AI / Gemini](https://aistudio.google.com/apikey) — optional fallback
-
-### 1. Clone & Setup
-
-```bash
-git clone https://github.com/edycutjong/aegis.git
-cd aegis
-```
-
-### 2. Configure environment
-
-```bash
-cp backend/.env.example backend/.env
-# Fill in your API keys (SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY, etc.)
-```
-
-### 3. Start the stack
-
-```bash
-make up
-```
-
-Starts backend (port 8000), frontend (port 3000), and Redis. Rebuilds Docker images automatically.
-
-### 4. Seed the database
-
-Run `seed.sql` in the [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql) to populate sample data. To reset and reseed at any time:
-
-```bash
-make db-reset   # requires SUPABASE_MANAGEMENT_KEY in backend/.env
-```
-
-### 5. Open the dashboard
-
-Visit `http://localhost:3000` and submit a support ticket.
-
-## ⚙️ Development Commands
-
-All day-to-day workflows are managed via `make`. Run `make help` to see the full list.
-
-### Stack
-
-| Command | Description |
-|---|---|
-| `make up` | 🚀 Start full stack (backend + frontend + Redis) |
-| `make down` | 🛑 Stop stack and remove images + dangling layers |
-| `make restart` | 🔄 Restart stack (preserves DB state) |
-| `make logs` | 📋 Tail backend logs (`make logs s=frontend` for frontend) |
-| `make clean` | 🧹 Nuclear clean — remove everything including base images |
-| `make db-reset` | 🗄️ Reset & reseed Supabase database |
-
-### Testing & Lint
-
-| Command | Description |
-|---|---|
-| `make ci` | 🔁 Full CI pipeline: lint → test → build |
-| `make test` | ✅ Run all tests (backend + frontend) |
-| `make test-backend` | 🐍 Backend pytest with 100% coverage enforcement |
-| `make test-frontend` | ⚛️ Frontend Vitest with coverage |
-| `make lint` | 🔍 Lint backend (ruff) + frontend (eslint) |
-| `make build` | 🏗️ Build Docker images (no cache) |
-
-### Screenshots
-
-| Command | Description |
-|---|---|
-| `make screenshots` | 📸 Capture all UI screenshots (requires stack running) |
-| `make ss-dashboard` | Shot 01: Dashboard overview |
-| `make ss-refund` | Shots 02: Refund HITL suite |
-| `make ss-technical` | Shots 03: Technical HITL suite |
-| `make ss-billing` | Shot 04: Billing resolution |
-| `make ss-upgrade` | Shots 05: Upgrade HITL suite |
-| `make ss-reactivate` | Shot 06: Reactivate resolution |
-| `make ss-suspend` | Shot 07: Suspend HITL suite |
-| `make ss-edge` | Shots 09–13: All edge cases |
-| `make ss-cache` | Shot 15: Semantic cache hit |
-| `make ss-metrics` | Shot 18: Observability metrics |
-| `make ss-traces` | Shot 19: LangSmith traces |
-| `make ss-database` | Shot 21: Database explorer |
-| `make ss-tickets` | Shot 23: Recent tickets |
-
 ## 🤖 Multi-Agent Architecture
 
 Aegis organizes its workflow as **4 specialized agents** collaborating in sequence. Each agent has a clear responsibility and reports its progress via the real-time thought stream:
@@ -370,40 +234,6 @@ Groq unavailable?  →  Automatic fallback to Gemini
 | **Testing** | pytest + pytest-cov (backend), Vitest + React Testing Library (frontend) |
 | **CI/CD** | GitHub Actions — lint, test, coverage, Docker build |
 
-## 🔭 Observability
-
-Every LangGraph run produces a full trace in [LangSmith](https://smith.langchain.com/) showing the complete pipeline with token counts and latency per step:
-
-```
-classify_intent → validate_customer → write_sql → execute_sql
-  → search_docs → propose_action → await_approval → execute_action → generate_response
-```
-
-### Setup
-
-1. Create a free account at [smith.langchain.com](https://smith.langchain.com/)
-2. Get your API key from **Settings → API Keys**
-3. Add to your `backend/.env`:
-
-```bash
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=lsv2_pt_...
-LANGCHAIN_PROJECT=aegis
-```
-
-4. Verify connectivity:
-
-```bash
-curl http://localhost:8000/api/tracing-status
-# → {"enabled": true, "project": "aegis", "connected": true}
-```
-
-### What's Traced
-
-- **Node-level spans** via `@traceable` decorators on all agent nodes
-- **LLM calls** auto-traced by LangChain (input/output, token counts, model name)
-- **Graph execution** with `run_name="aegis-support-workflow"` for easy filtering
-
 ## 🧪 Testing
 
 **100% coverage** across both backend and frontend — fully offline, no API keys or network needed.
@@ -453,6 +283,176 @@ cd frontend && npm test -- --coverage
 | `TicketHistory.test.tsx` | History persistence, clear, selection |
 | `useTicketHistory.test.ts` | Hook behavior, localStorage |
 | `api.test.ts` | API client, SSE connection, error handling |
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.12+
+- Node.js 22+
+- Docker & Docker Compose (for Redis)
+- **API keys (minimum 2):**
+  - [Groq](https://console.groq.com/keys) — free tier, handles fast tasks (classification, docs, response)
+  - [OpenAI](https://platform.openai.com/api-keys) **or** [Anthropic](https://console.anthropic.com/settings/keys) — one is enough for complex tasks (SQL, action proposal)
+  - [Google AI / Gemini](https://aistudio.google.com/apikey) — optional fallback
+
+### 1. Clone & Setup
+
+```bash
+git clone https://github.com/edycutjong/aegis.git
+cd aegis
+```
+
+### 2. Configure environment
+
+```bash
+cp backend/.env.example backend/.env
+# Fill in your API keys (SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY, etc.)
+```
+
+### 3. Start the stack
+
+```bash
+make up
+```
+
+Starts backend (port 8000), frontend (port 3000), and Redis. Rebuilds Docker images automatically.
+
+### 4. Seed the database
+
+Run `seed.sql` in the [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql) to populate sample data. To reset and reseed at any time:
+
+```bash
+make db-reset   # requires SUPABASE_MANAGEMENT_KEY in backend/.env
+```
+
+### 5. Open the dashboard
+
+Visit `http://localhost:3000` and submit a support ticket.
+
+## 📁 Project Structure
+
+```
+aegis/
+├── backend/
+│   ├── app/
+│   │   ├── agent/
+│   │   │   ├── agents/          # 4 specialized agents
+│   │   │   │   ├── classifier.py    # Triage Agent — intent classification
+│   │   │   │   ├── investigator.py  # Investigator — customer validation + SQL
+│   │   │   │   ├── researcher.py    # Knowledge Agent — doc search
+│   │   │   │   └── resolver.py      # Resolution Agent — actions + HITL
+│   │   │   ├── graph.py         # LangGraph workflow definition
+│   │   │   ├── state.py         # AgentState TypedDict
+│   │   │   └── nodes.py         # Re-export shim for backward compat
+│   │   ├── cache/semantic.py    # Redis semantic caching
+│   │   ├── db/supabase.py       # Async Supabase client
+│   │   ├── routing/model_router.py  # Dynamic LLM routing + pricing
+│   │   ├── observability/tracker.py # Token/cost tracking
+│   │   ├── config.py            # Pydantic Settings
+│   │   └── main.py              # FastAPI app + SSE endpoints
+│   ├── tests/                   # 8 test files, 100% coverage
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── app/page.tsx         # Main dashboard
+│   │   ├── components/          # 6 React components
+│   │   │   ├── AnimatedNumber.tsx    # Smooth animated value counter
+│   │   │   ├── ApprovalModal.tsx     # HITL approval UI
+│   │   │   ├── DatabaseStatus.tsx    # DB table explorer
+│   │   │   ├── MetricsPanel.tsx      # Observability dashboard
+│   │   │   ├── ThoughtStream.tsx     # Agent progress + Dev/User toggle
+│   │   │   └── TicketHistory.tsx     # Recent tickets (localStorage)
+│   │   ├── hooks/useTicketHistory.ts
+│   │   └── lib/api.ts           # API client + SSE
+│   ├── src/components/__tests__/ # 8 test files (Vitest + RTL)
+│   ├── src/app/__tests__/       # 1 test file (Vitest + RTL)
+│   ├── Dockerfile               # Multi-stage standalone build
+│   └── package.json
+├── docker-compose.yml           # Backend + Frontend + Redis
+├── seed.sql                     # Sample data for Supabase
+└── .github/workflows/ci.yml    # Ruff + pytest + ESLint + Docker build
+```
+
+## ⚙️ Development Commands
+
+All day-to-day workflows are managed via `make`. Run `make help` to see the full list.
+
+### Stack
+
+| Command | Description |
+|---|---|
+| `make up` | 🚀 Start full stack (backend + frontend + Redis) |
+| `make down` | 🛑 Stop stack and remove images + dangling layers |
+| `make restart` | 🔄 Restart stack (preserves DB state) |
+| `make logs` | 📋 Tail backend logs (`make logs s=frontend` for frontend) |
+| `make clean` | 🧹 Nuclear clean — remove everything including base images |
+| `make db-reset` | 🗄️ Reset & reseed Supabase database |
+
+### Testing & Lint
+
+| Command | Description |
+|---|---|
+| `make ci` | 🔁 Full CI pipeline: lint → test → build |
+| `make test` | ✅ Run all tests (backend + frontend) |
+| `make test-backend` | 🐍 Backend pytest with 100% coverage enforcement |
+| `make test-frontend` | ⚛️ Frontend Vitest with coverage |
+| `make lint` | 🔍 Lint backend (ruff) + frontend (eslint) |
+| `make build` | 🏗️ Build Docker images (no cache) |
+
+### Screenshots
+
+| Command | Description |
+|---|---|
+| `make screenshots` | 📸 Capture all UI screenshots (requires stack running) |
+| `make ss-dashboard` | Shot 01: Dashboard overview |
+| `make ss-refund` | Shots 02: Refund HITL suite |
+| `make ss-technical` | Shots 03: Technical HITL suite |
+| `make ss-billing` | Shot 04: Billing resolution |
+| `make ss-upgrade` | Shots 05: Upgrade HITL suite |
+| `make ss-reactivate` | Shot 06: Reactivate resolution |
+| `make ss-suspend` | Shot 07: Suspend HITL suite |
+| `make ss-edge` | Shots 09–13: All edge cases |
+| `make ss-cache` | Shot 15: Semantic cache hit |
+| `make ss-metrics` | Shot 18: Observability metrics |
+| `make ss-traces` | Shot 19: LangSmith traces |
+| `make ss-database` | Shot 21: Database explorer |
+| `make ss-tickets` | Shot 23: Recent tickets |
+
+##  Observability
+
+Every LangGraph run produces a full trace in [LangSmith](https://smith.langchain.com/) showing the complete pipeline with token counts and latency per step:
+
+```
+classify_intent → validate_customer → write_sql → execute_sql
+  → search_docs → propose_action → await_approval → execute_action → generate_response
+```
+
+### Setup
+
+1. Create a free account at [smith.langchain.com](https://smith.langchain.com/)
+2. Get your API key from **Settings → API Keys**
+3. Add to your `backend/.env`:
+
+```bash
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_...
+LANGCHAIN_PROJECT=aegis
+```
+
+4. Verify connectivity:
+
+```bash
+curl http://localhost:8000/api/tracing-status
+# → {"enabled": true, "project": "aegis", "connected": true}
+```
+
+### What's Traced
+
+- **Node-level spans** via `@traceable` decorators on all agent nodes
+- **LLM calls** auto-traced by LangChain (input/output, token counts, model name)
+- **Graph execution** with `run_name="aegis-support-workflow"` for easy filtering
 
 ## ⚙️ Environment Variables
 

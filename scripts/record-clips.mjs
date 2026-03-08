@@ -28,6 +28,50 @@ function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Clear the backend semantic cache */
+async function clearCache() {
+    try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+}
+
+/** Reset to clean dashboard */
+async function resetDashboard(page) {
+    await page.goto(BASE_URL);
+    await page.waitForLoadState("networkidle");
+    await sleep(1500);
+}
+
+/** Click a Quick Test preset button to submit a ticket */
+async function clickPreset(page, label) {
+    const quickTestTab = page.locator("button:has-text('Quick Test')").first();
+    if (await quickTestTab.isVisible().catch(() => false)) {
+        await quickTestTab.click();
+        await sleep(500);
+    }
+    await page.locator(`button.demo-btn:has-text('${label}')`).first().click({ timeout: 5000 });
+    console.log(`    ✓ Clicked ${label} preset`);
+}
+
+/** Click an Edge Case preset button */
+async function clickEdgeCase(page, label) {
+    await page.locator("button:has-text('Edge Cases')").first().click({ timeout: 3000 });
+    console.log("    ✓ Switched to Edge Cases tab");
+    await sleep(1000);
+    await page.locator(`button.demo-btn:has-text('${label}')`).first().click({ timeout: 5000 });
+    console.log(`    ✓ Clicked ${label} edge case`);
+}
+
+/**
+ * Wait until the HITL modal is fully visible + entry animation done.
+ */
+async function waitForHitlModal(page, timeoutMs = 20000) {
+    console.log("    ⏳ Waiting for HITL modal...");
+    await page.waitForSelector("text=Human Approval Required", { state: "visible", timeout: timeoutMs });
+    await page.waitForSelector(".btn-danger", { state: "visible", timeout: 5000 });
+    await page.waitForSelector(".btn-success", { state: "visible", timeout: 5000 });
+    await sleep(1500);
+    console.log("    ✓ HITL modal ready");
+}
+
 /** Inject click-ripple visualizer into page */
 async function injectClickRipple(page) {
     await page.addInitScript(() => {
@@ -59,7 +103,7 @@ async function injectClickRipple(page) {
     });
 }
 
-/** Click Approve if the HITL modal is open */
+/** Auto-approve HITL modal if open */
 async function approveIfModalOpen(page) {
     const btn = page.locator(".btn-success:has-text('Approve')").first();
     if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
@@ -115,128 +159,49 @@ async function saveClip(context, page, filename) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// CLIP DEFINITIONS — each is a self-contained recording
-// ═══════════════════════════════════════════════════════════
-
-/** Type text character-by-character with human-like timing */
-async function humanType(page, selector, text, speed = "normal") {
-    const el = page.locator(selector);
-    await el.click();
-    await sleep(300);
-
-    if (speed === "instant") {
-        // Fill the text box in one shot
-        await el.fill(text);
-    } else {
-        const delay = speed === "fast"
-            ? () => 3 + Math.random() * 5    // fast:    3–8ms per char
-            : () => 10 + Math.random() * 30;  // normal: 10–40ms per char
-        for (const char of text) {
-            await el.pressSequentially(char, { delay: 0 });
-            await sleep(delay());
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════
 // TICKET TYPES — data-driven clip generation
 // ═══════════════════════════════════════════════════════════
 
 const TICKETS = [
-    {
-        key: "refund",
-        label: "Refund",
-        icon: "💳",
-        msg: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and process a refund if confirmed.",
-        hitl: true,   // triggers HITL approval
-        btnSelector: "button.demo-btn:has-text('Refund')",
-    },
-    {
-        key: "technical",
-        label: "Technical",
-        icon: "🔧",
-        msg: "Customer #3 Maria Garcia reports getting 429 API rate limiting errors. Their enterprise plan should support 10K requests/min but they're hitting limits at 5K.",
-        hitl: false,
-        btnSelector: "button.demo-btn:has-text('Technical')",
-    },
-    {
-        key: "billing",
-        label: "Billing",
-        icon: "📄",
-        msg: "Customer #1 Sarah Chen asks if there's a discount for switching from monthly to annual billing on her Enterprise plan.",
-        hitl: false,
-        btnSelector: "button.demo-btn:has-text('Billing')",
-    },
-    {
-        key: "upgrade",
-        label: "Upgrade",
-        icon: "⬆️",
-        msg: "Customer #17 Sophia Lewis wants to upgrade from the Free plan to Pro. She wants to know if she'll lose any existing data during the upgrade.",
-        hitl: false,
-        btnSelector: "button.demo-btn:has-text('Upgrade')",
-    },
-    {
-        key: "reactivate",
-        label: "Reactivate",
-        icon: "🔓",
-        msg: "Customer #5 Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
-        hitl: true,
-        btnSelector: "button.demo-btn:has-text('Reactivate')",
-    },
-    {
-        key: "suspend",
-        label: "Suspend",
-        icon: "🔒",
-        msg: "Customer #20 William Allen has violated our terms of service by sharing his API keys publicly. Please suspend his account immediately.",
-        hitl: true,
-        btnSelector: "button.demo-btn:has-text('Suspend')",
-    },
+    { key: "refund", label: "Refund", icon: "💳", hitl: true },
+    { key: "technical", label: "Technical", icon: "🔧", hitl: false },
+    { key: "billing", label: "Billing", icon: "📄", hitl: false },
+    { key: "upgrade", label: "Upgrade", icon: "⬆️", hitl: false },
+    { key: "reactivate", label: "Reactivate", icon: "🔓", hitl: true },
+    { key: "suspend", label: "Suspend", icon: "🔒", hitl: true },
 ];
-
-/** Type a specific message and submit */
-async function typeMessageAndSubmit(page, msg, speed = "normal") {
-    const textarea = "textarea";
-    console.log("    ✓ Focusing on prompt box...");
-    await page.locator(textarea).click();
-    await sleep(500);
-    console.log(`    ⌨ Typing message... [${speed}]`);
-    await humanType(page, textarea, msg, speed);
-    await sleep(speed === "instant" ? 800 : 1500);
-    await page.locator("button:has-text('Submit Ticket')").click();
-    console.log("    ✓ Clicked Submit Ticket");
-}
 
 /** Generate clips for a single ticket type */
 function makeTicketClips(ticket, startNum) {
     const clips = {};
-    const { key, label, msg, hitl } = ticket;
+    const { key, label, hitl } = ticket;
     let num = startNum;
 
     if (hitl) {
         // — DENY clip
         const denyId = `${key}-deny`;
-        const denyNum = String(num++).padStart(2, "0");
+        const denyNum = String(num++).padStart(2, "00");
         clips[denyId] = {
             name: `${denyNum}-${key}-deny`,
             title: `${label} — HITL Deny`,
             record: async (browser) => {
-                try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+                await clearCache();
                 const { context, page } = await createClipContext(browser);
-                await page.goto(BASE_URL);
-                await page.waitForLoadState("networkidle");
+                await resetDashboard(page);
                 console.log("    ✓ Dashboard loaded");
-                await sleep(2000);
+                await sleep(1000);
 
-                await typeMessageAndSubmit(page, msg, "normal");
+                await clickPreset(page, label);
                 const result = await waitForState(page, 180000);
                 console.log(`    → State: ${result}`);
 
                 if (result === "approval") {
-                    console.log("    ✓ HITL modal — holding 6s");
-                    await sleep(6000);
-                    await page.locator(".btn-danger:has-text('Deny')").first().click();
+                    await waitForHitlModal(page);
+                    await page.locator(".btn-danger:has-text('Deny')").first().click({ timeout: 5000 });
                     console.log("    ✗ Clicked Deny");
-                    await sleep(10000);
+                    const postDeny = await waitForState(page, 15000);
+                    console.log(`    → Post-deny: ${postDeny}`);
+                    await sleep(5000);
                 } else {
                     console.log(`    ⚠ Got ${result} instead of approval`);
                     await sleep(3000);
@@ -247,30 +212,28 @@ function makeTicketClips(ticket, startNum) {
 
         // — APPROVE clip
         const approveId = `${key}-approve`;
-        const approveNum = String(num++).padStart(2, "0");
+        const approveNum = String(num++).padStart(2, "00");
         clips[approveId] = {
             name: `${approveNum}-${key}-approve`,
             title: `${label} — HITL Approve`,
             record: async (browser) => {
-                try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+                await clearCache();
                 const { context, page } = await createClipContext(browser);
-                await page.goto(BASE_URL);
-                await page.waitForLoadState("networkidle");
+                await resetDashboard(page);
                 console.log("    ✓ Dashboard loaded");
-                await sleep(2000);
+                await sleep(1000);
 
-                await typeMessageAndSubmit(page, msg, "fast");
+                await clickPreset(page, label);
                 const result = await waitForState(page, 180000);
                 console.log(`    → State: ${result}`);
 
                 if (result === "approval") {
-                    console.log("    ✓ HITL modal — holding 6s");
-                    await sleep(6000);
-                    await page.locator(".btn-success:has-text('Approve')").first().click();
+                    await waitForHitlModal(page);
+                    await page.locator(".btn-success:has-text('Approve')").first().click({ timeout: 5000 });
                     console.log("    ✓ Clicked Approve");
                     const post = await waitForState(page, 30000);
                     console.log(`    → Post-approval: ${post}`);
-                    await sleep(7000);
+                    await sleep(5000);
                 } else {
                     console.log(`    ⚠ Got ${result} instead of approval`);
                     await sleep(3000);
@@ -279,31 +242,30 @@ function makeTicketClips(ticket, startNum) {
             },
         };
     } else {
-        // — FLOW clip (no HITL — just submit and show result)
+        // — FLOW clip (no HITL — just click preset and show result)
         const flowId = `${key}-flow`;
-        const flowNum = String(num++).padStart(2, "0");
+        const flowNum = String(num++).padStart(2, "00");
         clips[flowId] = {
             name: `${flowNum}-${key}-flow`,
             title: `${label} — Agent Flow`,
             record: async (browser) => {
-                try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+                await clearCache();
                 const { context, page } = await createClipContext(browser);
-                await page.goto(BASE_URL);
-                await page.waitForLoadState("networkidle");
+                await resetDashboard(page);
                 console.log("    ✓ Dashboard loaded");
-                await sleep(2000);
+                await sleep(1000);
 
-                await typeMessageAndSubmit(page, msg, "normal");
+                await clickPreset(page, label);
                 const result = await waitForState(page, 180000);
                 console.log(`    → State: ${result}`);
 
                 if (result === "approval") {
-                    await sleep(4000);
+                    await sleep(3000);
                     await approveIfModalOpen(page);
                     const post = await waitForState(page, 30000);
                     console.log(`    → Post-approval: ${post}`);
                 }
-                await sleep(7000);
+                await sleep(5000);
                 return saveClip(context, page, `${flowNum}-${key}-flow`);
             },
         };
@@ -311,16 +273,15 @@ function makeTicketClips(ticket, startNum) {
 
     // — CACHED clip (all types get one)
     const cachedId = `${key}-cached`;
-    const cachedNum = String(num++).padStart(2, "0");
+    const cachedNum = String(num++).padStart(2, "00");
     clips[cachedId] = {
         name: `${cachedNum}-${key}-cached`,
         title: `${label} — Cached`,
         record: async (browser) => {
-            // Warm-up: build cache entry first
+            // Warm-up: build cache entry using preset button
             const { context: warmCtx, page: warmPage } = await createClipContext(browser);
-            await warmPage.goto(BASE_URL);
-            await warmPage.waitForLoadState("networkidle");
-            await warmPage.locator(ticket.btnSelector).first().click();
+            await resetDashboard(warmPage);
+            await clickPreset(warmPage, label);
             console.log("    ↻ Warming cache...");
             const warmResult = await waitForState(warmPage, 180000);
             if (warmResult === "approval") {
@@ -332,14 +293,13 @@ function makeTicketClips(ticket, startNum) {
             console.log("    ✓ Cache primed");
             await sleep(1000);
 
-            // Record the cache-hit clip
+            // Record the cache-hit clip — preset button fires instantly from cache
             const { context, page } = await createClipContext(browser);
-            await page.goto(BASE_URL);
-            await page.waitForLoadState("networkidle");
+            await resetDashboard(page);
             console.log("    ✓ Dashboard loaded");
-            await sleep(2000);
+            await sleep(1000);
 
-            await typeMessageAndSubmit(page, msg, "instant");
+            await clickPreset(page, label);
             const result = await waitForState(page, 15000);
             console.log(`    → State: ${result}`);
             if (result === "cached") {
@@ -377,8 +337,7 @@ Object.assign(CLIPS, {
         title: "Dashboard Overview",
         record: async (browser) => {
             const { context, page } = await createClipContext(browser);
-            await page.goto(BASE_URL);
-            await page.waitForLoadState("networkidle");
+            await resetDashboard(page);
             console.log("    ✓ Dashboard loaded");
             await sleep(5000);
             return saveClip(context, page, `${CLIPS.dashboard.name}`);
@@ -390,8 +349,7 @@ Object.assign(CLIPS, {
         title: "Observability Metrics",
         record: async (browser) => {
             const { context, page } = await createClipContext(browser);
-            await page.goto(BASE_URL);
-            await page.waitForLoadState("networkidle");
+            await resetDashboard(page);
             await sleep(2000);
             const panel = page.locator("text=Observability").first();
             if (await panel.isVisible().catch(() => false)) {
@@ -408,18 +366,17 @@ Object.assign(CLIPS, {
         title: "LangSmith Traces Panel",
         record: async (browser) => {
             const { context, page } = await createClipContext(browser);
-            await page.goto(BASE_URL);
-            await page.waitForLoadState("networkidle");
-            await sleep(2000);
-            const btn = page.locator("text=LangSmith Traces").first();
+            await resetDashboard(page);
+            await sleep(3000);
+            const btn = page.locator("button:has-text('LangSmith Traces')").first();
             if (await btn.isVisible().catch(() => false)) {
                 await btn.click({ timeout: 5000 });
                 console.log("    ✓ Opened Traces panel");
                 try {
-                    await page.waitForSelector("text=Loading traces…", { state: "hidden", timeout: 30000 });
+                    await page.waitForSelector("text=Loading traces…", { state: "hidden", timeout: 90000 });
                     console.log("    ✓ Traces loaded");
                 } catch {
-                    console.log("    ⚠ Traces still loading");
+                    console.log("    ⚠ Traces still loading after 90s — continuing");
                 }
                 await sleep(8000);
                 const close = page.locator('[title="Close (Esc)"]').first();
@@ -437,65 +394,79 @@ Object.assign(CLIPS, {
         title: "Ticket History",
         record: async (browser) => {
             const { context, page } = await createClipContext(browser);
-            await page.goto(BASE_URL);
-            await page.waitForLoadState("networkidle");
-            await sleep(2000);
-            const section = page.locator("text=Ticket History").first();
-            if (await section.isVisible().catch(() => false)) {
-                await section.scrollIntoViewIfNeeded();
-                console.log("    ✓ Ticket History visible");
+            await resetDashboard(page);
+
+            // Populate history with several diverse tickets
+            const fills = ["Billing", "Technical", "Upgrade", "Billing", "Technical"];
+            for (const preset of fills) {
+                await clickPreset(page, preset);
+                await waitForState(page, 30000);
+                // Auto-approve any HITL that comes up
+                await page.locator(".btn-success:has-text('Approve')")
+                    .first().click({ timeout: 2000 }).catch(() => { });
+                await sleep(800);
             }
+            await sleep(1000);
+
+            // Expand the Ticket History accordion
+            const header = page.locator(".ticket-history-header").first();
+            if (await header.isVisible().catch(() => false)) {
+                await header.click();
+                console.log("    ✓ Ticket history expanded");
+                await sleep(600);
+            }
+
+            // Scroll into view and record
+            await page.locator(".ticket-history-container").first()
+                .scrollIntoViewIfNeeded().catch(() => { });
             await sleep(5000);
             return saveClip(context, page, `${CLIPS.history.name}`);
         },
     },
 });
 
-// ═══ EDGE CASE CLIPS — typed messages to look like real work ═══
+// ═══ EDGE CASE CLIPS — click Edge Cases tab presets ═══
 
-const EDGE_MESSAGES = {
-    typo: "Customer #8 Davd Martines says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
-    notfound: "Customer #999 John Phantom wants a refund for the duplicate $49 charge on their Pro subscription from 2 days ago.",
-    mismatch: "Customer #8 Sarah Chen says she was charged $49 twice this month for her Pro plan. Please investigate.",
-    nameonly: "Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
-    cancelled: "Customer #20 William Allen wants to know why his account was cancelled. He says he never requested cancellation and needs access restored.",
-};
+const EDGE_CASES = [
+    { key: "typo", label: "Typo", title: "Typo Correction" },
+    { key: "notfound", label: "Not Found", title: "Customer Not Found" },
+    { key: "mismatch", label: "Mismatch", title: "Name/ID Mismatch" },
+    { key: "nameonly", label: "Name Only", title: "Name Only Lookup" },
+    { key: "cancelled", label: "Cancelled", title: "Cancelled Account" },
+];
 
-/** Record an edge case clip by typing the message */
-function makeEdgeCaseClip(key, title, msg, num) {
+/** Record an edge case clip using the Edge Cases tab button */
+function makeEdgeCaseClip(edgeCase, num) {
+    const { key, label, title } = edgeCase;
+    const padded = String(num).padStart(2, "00");
     return {
-        name: `${String(num).padStart(2, "0")}-edge-${key}`,
+        name: `${padded}-edge-${key}`,
         title: `Edge Case — ${title}`,
         record: async (browser) => {
-            try { await fetch(`${API_URL}/api/cache`, { method: "DELETE" }); } catch { }
+            await clearCache();
             const { context, page } = await createClipContext(browser);
-            await page.goto(BASE_URL);
-            await page.waitForLoadState("networkidle");
+            await resetDashboard(page);
             console.log("    ✓ Dashboard loaded");
-            await sleep(2000);
+            await sleep(1000);
 
-            await typeMessageAndSubmit(page, msg, "normal");
+            await clickEdgeCase(page, label);
             const result = await waitForState(page, 120000);
             console.log(`    → State: ${result}`);
             if (result === "approval") {
-                await sleep(4000);
+                await sleep(3000);
                 await approveIfModalOpen(page);
                 const post = await waitForState(page, 30000);
                 console.log(`    → Post-approval: ${post}`);
             }
             await sleep(5000);
-            return saveClip(context, page, `${String(num).padStart(2, "0")}-edge-${key}`);
+            return saveClip(context, page, `${padded}-edge-${key}`);
         },
     };
 }
 
-Object.assign(CLIPS, {
-    typo: makeEdgeCaseClip("typo", "Typo Correction", EDGE_MESSAGES.typo, clipNum++),
-    notfound: makeEdgeCaseClip("notfound", "Customer Not Found", EDGE_MESSAGES.notfound, clipNum++),
-    mismatch: makeEdgeCaseClip("mismatch", "Name/ID Mismatch", EDGE_MESSAGES.mismatch, clipNum++),
-    nameonly: makeEdgeCaseClip("nameonly", "Name Only Lookup", EDGE_MESSAGES.nameonly, clipNum++),
-    cancelled: makeEdgeCaseClip("cancelled", "Cancelled Account", EDGE_MESSAGES.cancelled, clipNum++),
-});
+for (const edgeCase of EDGE_CASES) {
+    CLIPS[edgeCase.key] = makeEdgeCaseClip(edgeCase, clipNum++);
+}
 
 // ═══ DATABASE CLIP ═══
 
@@ -505,20 +476,21 @@ Object.assign(CLIPS, {
         title: "Database Explorer",
         record: async (browser) => {
             const { context, page } = await createClipContext(browser);
-            await page.goto(BASE_URL);
-            await page.waitForLoadState("networkidle");
-            await sleep(2000);
-            const dbSection = page.locator("text=Database").first();
+            await resetDashboard(page);
+            const dbSection = page.locator("text=DATABASE").first();
             if (await dbSection.isVisible().catch(() => false)) {
                 await dbSection.scrollIntoViewIfNeeded();
                 console.log("    ✓ Database section visible");
-                await sleep(1000);
+                await sleep(800);
                 const customersBtn = page.locator("text=Customers").first();
                 if (await customersBtn.isVisible().catch(() => false)) {
                     await customersBtn.click();
                     console.log("    ✓ Expanded Customers table");
                     await sleep(2000);
                 }
+                // Scroll back into view after expansion
+                await dbSection.scrollIntoViewIfNeeded();
+                await sleep(600);
             }
             await sleep(5000);
             return saveClip(context, page, `${CLIPS.database.name}`);
