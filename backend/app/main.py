@@ -632,7 +632,7 @@ async def get_traces():
                 print(f"⚠ LangSmith rate limit hit, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(wait)
                 continue
-            return {"traces": [], "error": f"Rate limit exceeded for LangSmith API. Traces will load after the rate limit resets (~5 minutes)." if "429" in error_str else error_str}
+            return {"traces": [], "error": "Rate limit exceeded for LangSmith API. Traces will load after the rate limit resets (~5 minutes)." if "429" in error_str else error_str}
 
 
 @app.get("/api/tracing-status")
