@@ -1150,7 +1150,7 @@ class TestTracesEndpoint:
                 with TestClient(app, raise_server_exceptions=False) as c:
                     response = c.get("/api/traces")
                     data = response.json()
-                    
+
                     child1 = data["traces"][0]["child_runs"][0]
                     # Model should be extracted from grandchild LLM run via metadata.ls_model_name
                     assert child1["model"] == "groq/llama-3.3-70b"
