@@ -51,7 +51,8 @@ export default function AnimatedNumber({ value, duration = 800, format }: Animat
                 animationFrame.current = null;
             }
         };
-    }, [value, duration]); // Intentionally omitting displayValue so it doesn't restart
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- displayValue intentionally omitted: adding it causes infinite re-renders
+    }, [value, duration]);
 
     return <>{format ? format(displayValue) : Math.round(displayValue)}</>;
 }
