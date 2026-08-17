@@ -4,19 +4,19 @@ import { useState, useEffect, useCallback } from "react";
 import type { TraceRun, TracesResponse } from "@/lib/api";
 import { getTraces } from "@/lib/api";
 
-const NODE_META: Record<string, { icon: string; color: string }> = {
-    classify_intent: { icon: "🏷️", color: "#34d399" },
-    validate_customer: { icon: "🔍", color: "#3b82f6" },
-    write_sql: { icon: "📝", color: "#3b82f6" },
-    execute_sql: { icon: "⚡", color: "#22d3ee" },
-    search_docs: { icon: "📚", color: "#a78bfa" },
-    propose_action: { icon: "💡", color: "#f59e0b" },
-    await_approval: { icon: "⏸️", color: "#f472b6" },
-    execute_action: { icon: "🔧", color: "#22d3ee" },
-    generate_response: { icon: "✉️", color: "#34d399" },
+const NODE_META: Record<string, { color: string }> = {
+    classify_intent: { color: "#34d399" },
+    validate_customer: { color: "#3b82f6" },
+    write_sql: { color: "#3b82f6" },
+    execute_sql: { color: "#22d3ee" },
+    search_docs: { color: "#a78bfa" },
+    propose_action: { color: "#f59e0b" },
+    await_approval: { color: "#f59e0b" },
+    execute_action: { color: "#22d3ee" },
+    generate_response: { color: "#34d399" },
 };
 
-const DEFAULT_META = { icon: "⬜", color: "#94a3b8" };
+const DEFAULT_META = { color: "#94a3b8" };
 
 function getMeta(name: string) {
     if (NODE_META[name]) return NODE_META[name];
@@ -97,18 +97,22 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
             {/* Slide-up panel */}
             <div
                 className="traces-overlay"
+                role="dialog"
+                aria-label="LangSmith traces"
+                aria-hidden={!open}
+                inert={!open}
                 style={{ transform: open ? "translateY(0)" : "translateY(100%)" }}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--aegis-border)" }}>
+                <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: "1px solid var(--aegis-border)" }}>
                     <div className="flex items-center gap-3">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
                         </svg>
-                        <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: "var(--aegis-text)" }}>
+                        <h2 className="text-[11px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--aegis-text)" }}>
                             LangSmith Traces
                         </h2>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "var(--aegis-border)", color: "var(--aegis-text-muted)" }}>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-mono" style={{ background: "var(--aegis-surface-2)", border: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)" }}>
                             {traces.length} trace{traces.length !== 1 ? "s" : ""}
                         </span>
                     </div>
@@ -126,21 +130,27 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto px-6 py-4">
                     {loading ? (
-                        <div className="flex items-center justify-center py-12 gap-2">
-                            <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2">
+                        <div className="flex items-center justify-center py-12 gap-2" style={{ color: "var(--aegis-text-muted)" }}>
+                            <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                             </svg>
-                            <span className="text-xs" style={{ color: "var(--aegis-text-muted)" }}>Loading traces…</span>
+                            <span className="text-xs">Loading traces…</span>
                         </div>
                     ) : error && traces.length === 0 ? (
-                        <div className="text-center py-12">
-                            <span className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>⚠ {error}</span>
+                        <div className="offline-state max-w-md mx-auto my-8">
+                            <p className="text-[13px] font-medium mb-1" style={{ color: "var(--hold-text)" }}>⚠ {error}</p>
+                            <p className="text-[11px]" style={{ color: "var(--aegis-text-muted)" }}>
+                                Traces come from LangSmith via the backend — check the API connection.
+                            </p>
                         </div>
                     ) : traces.length === 0 ? (
-                        <div className="text-center py-12">
-                            <span className="text-sm" style={{ color: "var(--aegis-text-muted)" }}>
+                        <div className="offline-state max-w-md mx-auto my-8">
+                            <p className="text-[13px] font-medium mb-1" style={{ color: "var(--aegis-text-2)" }}>
                                 No traces yet — submit a ticket to generate one
-                            </span>
+                            </p>
+                            <p className="text-[11px]" style={{ color: "var(--aegis-text-muted)" }}>
+                                Every run records per-node latency, tokens, and cost.
+                            </p>
                         </div>
                     ) : (
                         <div className="space-y-3">
@@ -192,7 +202,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
 
                                         {/* Child runs — full width waterfall */}
                                         {isOpen && trace.child_runs.length > 0 && (
-                                            <div style={{ borderTop: "1px solid var(--aegis-border)" }}>
+                                            <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--aegis-border)" }}>
                                                 {/* Column headers */}
                                                 <div
                                                     className="grid px-4 py-1.5 text-[10px] uppercase tracking-wider font-medium"
@@ -235,9 +245,8 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                                                             </div>
 
                                                             {/* Node name */}
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="text-xs">{meta.icon}</span>
-                                                                <span className="text-xs font-medium" style={{ color: "var(--aegis-text)" }}>
+                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                <span className="text-xs font-medium font-mono truncate" style={{ color: "var(--aegis-text)" }}>
                                                                     {child.name}
                                                                 </span>
                                                             </div>

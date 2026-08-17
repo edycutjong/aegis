@@ -23,32 +23,26 @@ import {
 const REAL_INTENTS = [
     {
         label: "Refund",
-        icon: "💳",
         message: "Customer #8 David Martinez says he was charged $49 twice this month for his Pro plan. Please investigate and process a refund if confirmed.",
     },
     {
         label: "Technical",
-        icon: "🔧",
         message: "Customer #3 Maria Garcia reports getting 429 API rate limiting errors. Their enterprise plan should support 10K requests/min but they're hitting limits at 5K.",
     },
     {
         label: "Billing",
-        icon: "📄",
         message: "Customer #1 Sarah Chen asks if there's a discount for switching from monthly to annual billing on her Enterprise plan.",
     },
     {
         label: "Upgrade",
-        icon: "⬆️",
         message: "Customer #17 Sophia Lewis wants to upgrade from the Free plan to Pro. She wants to know if she'll lose any existing data during the upgrade.",
     },
     {
         label: "Reactivate",
-        icon: "🔓",
         message: "Customer #5 Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
     },
     {
         label: "Suspend",
-        icon: "🔒",
         message: "Customer #20 William Allen has violated our terms of service by sharing his API keys publicly. Please suspend his account immediately.",
     },
 ];
@@ -57,30 +51,38 @@ const REAL_INTENTS = [
 const EDGE_CASES = [
     {
         label: "Not Found",
-        icon: "👻",
         message: "Customer #999 John Phantom wants a refund for the duplicate $49 charge on their Pro subscription from 2 days ago.",
     },
     {
         label: "Mismatch",
-        icon: "🔀",
         message: "Customer #8 Sarah Chen says she was charged $49 twice this month for her Pro plan. Please investigate.",
     },
     {
         label: "Typo",
-        icon: "✍️",
         message: "Customer #8 Davd Martines says he was charged $49 twice this month for his Pro plan. Please investigate and resolve.",
     },
     {
         label: "Name Only",
-        icon: "👤",
         message: "Emily Davis reports her enterprise account was suspended after a failed payment. She has updated her payment method and needs reactivation.",
     },
     {
         label: "Cancelled",
-        icon: "🚫",
         message: "Customer #20 William Allen wants to know why his account was cancelled. He says he never requested cancellation and needs access restored.",
     },
 ];
+
+/** Brand mark: the payload arrested at the bar — blue runs, amber holds. */
+function RailMark() {
+    return (
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="35" height="35" rx="8.5" fill="var(--aegis-surface-2)" stroke="var(--aegis-border-strong)" />
+            <line x1="7" y1="18" x2="29" y2="18" stroke="var(--aegis-border-strong)" strokeWidth="1.5" />
+            <line x1="9" y1="18" x2="18" y2="18" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" />
+            <circle cx="19" cy="18" r="3.2" fill="#3b82f6" />
+            <rect x="24" y="10.5" width="2.5" height="15" rx="1.25" fill="#f59e0b" />
+        </svg>
+    );
+}
 
 export default function Dashboard() {
     // Core state
@@ -97,6 +99,8 @@ export default function Dashboard() {
 
     // Metrics state
     const [metrics, setMetrics] = useState<Metrics | null>(null);
+    // Backend reachability: null = first probe in flight, then true/false
+    const [backendUp, setBackendUp] = useState<boolean | null>(null);
 
     // Disambiguation state
     const [candidates, setCandidates] = useState<CustomerCandidate[]>([]);
@@ -119,8 +123,9 @@ export default function Dashboard() {
             try {
                 const m = await getMetrics();
                 setMetrics(m);
+                setBackendUp(true);
             } catch {
-                // Backend not available yet
+                setBackendUp(false);
             }
         };
         fetchMetrics();
@@ -197,7 +202,7 @@ export default function Dashboard() {
                     setStatus("disambiguation");
                 }
             );
-        } catch (err) {
+        } catch {
             setStatus("error");
             setThoughts(["✗ Failed to connect to Aegis backend. Is it running on port 8000?"]);
         }
@@ -215,7 +220,7 @@ export default function Dashboard() {
             setFinalResponse(res.result || "Action executed successfully.");
             setPendingAction(null);
             setStatus("completed");
-        } catch (err) {
+        } catch {
             setThoughts((prev) => [...prev, "✗ Approval failed"]);
         }
         setApprovalLoading(false);
@@ -233,7 +238,7 @@ export default function Dashboard() {
             setFinalResponse(res.result || "Action denied. No changes were made.");
             setPendingAction(null);
             setStatus("completed");
-        } catch (err) {
+        } catch {
             setThoughts((prev) => [...prev, "✗ Denial submission failed"]);
         }
         setApprovalLoading(false);
@@ -254,80 +259,82 @@ export default function Dashboard() {
         handleSubmit(correctedMessage);
     }, [originalMessage, handleSubmit]);
 
+    const backendStatus = backendUp === null
+        ? { label: "Connecting", color: "var(--aegis-text-muted)", pulse: true }
+        : backendUp
+            ? { label: "Operational", color: "var(--aegis-success)", pulse: false }
+            : { label: "Backend Offline", color: "var(--aegis-danger)", pulse: false };
+
     return (
-        <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--aegis-bg)" }}>
+        <div className="app-root">
             {/* ── Top Navigation ── */}
-            <nav className="flex items-center justify-between px-6 py-4 animate-slide-up-fade" style={{ borderBottom: "1px solid var(--aegis-border)", animationDelay: "0s" }}>
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1e3a5f, #3b82f6)" }}>
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(59,130,246,0.2)" />
-                            <path d="M9 11.5l2.5 2.5 4-4.5" />
-                        </svg>
-                    </div>
-                    <div>
-                        <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--aegis-text)" }}>Aegis</h1>
-                        <p className="text-xs" style={{ color: "var(--aegis-text-muted)" }}>Autonomous Enterprise Action Engine</p>
+            <nav className="flex items-center justify-between px-4 sm:px-5 py-3 shrink-0" style={{ borderBottom: "1px solid var(--aegis-border)" }}>
+                <div className="flex items-center gap-3 min-w-0">
+                    <RailMark />
+                    <div className="min-w-0">
+                        <div className="flex items-baseline gap-2.5">
+                            <h1 className="text-base font-bold tracking-tight leading-tight" style={{ color: "var(--aegis-text)" }}>Aegis</h1>
+                            <span className="hidden sm:inline text-[11px] font-medium truncate" style={{ color: "var(--aegis-text-muted)" }}>
+                                Autonomous Enterprise Action Engine
+                            </span>
+                        </div>
+                        <p className="hidden sm:block text-[11px] leading-tight truncate" style={{ color: "var(--aegis-text-muted)" }}>
+                            AI works the queue — humans hold the pen
+                        </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                        <span className="text-xs font-medium" style={{ color: "var(--aegis-text-muted)" }}>System Online</span>
-                    </div>
+                <div
+                    className="flex items-center gap-2 px-2.5 py-1 rounded-full shrink-0"
+                    style={{ border: "1px solid var(--aegis-border)", background: "var(--aegis-surface)" }}
+                >
+                    <span
+                        className={`w-1.5 h-1.5 rounded-full ${backendStatus.pulse ? "animate-pulse" : ""}`}
+                        style={{ background: backendStatus.color }}
+                    />
+                    <span className="text-[11px] font-medium whitespace-nowrap" style={{ color: "var(--aegis-text-2)" }}>
+                        {backendStatus.label}
+                    </span>
                 </div>
             </nav>
 
-            {/* ── Status Bar ── */}
+            {/* ── The rail: blue while moving, locked amber when arrested ── */}
             <div className="status-bar">
                 <div className={`status-bar-fill ${status}`} />
             </div>
 
             {/* ── Main Dashboard ── */}
-            <div className="flex-1 min-h-0 p-4 grid gap-4 dashboard-grid">
+            <div className="dashboard-grid">
 
                 {/* Left Panel: Ticket Submission */}
-                <div className="glass-panel h-full min-h-0 flex flex-col overflow-hidden animate-slide-up-fade" style={{ animationDelay: "0.1s" }}>
-                    <div className="flex items-center gap-3 mb-5 px-6 pt-6 shrink-0">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="glass-panel min-h-0 flex flex-col overflow-hidden animate-slide-up-fade" style={{ animationDelay: "0.05s" }}>
+                    <div className="panel-header">
+                        <h2 className="panel-title">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                             </svg>
-                        </div>
-                        <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: "var(--aegis-text-muted)" }}>
                             Support Ticket
                         </h2>
                     </div>
 
                     {/* Scrollable content */}
-                    <div className="flex-1 overflow-y-auto pl-6 pr-4 pb-6 space-y-4" style={{ scrollbarGutter: "stable" }}>
+                    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" style={{ scrollbarGutter: "stable" }}>
                         {/* Demo Presets — Tabbed */}
-                        <div className="animate-slide-up-fade" style={{ animationDelay: "0.2s" }}>
-                            <div className="flex gap-1 mb-3">
+                        <div>
+                            <div className="flex gap-1 mb-2.5">
                                 <button
                                     onClick={() => setActiveTab("intents")}
-                                    className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                                    style={{
-                                        background: activeTab === "intents" ? "rgba(59,130,246,0.15)" : "transparent",
-                                        color: activeTab === "intents" ? "#60a5fa" : "var(--aegis-text-muted)",
-                                        border: activeTab === "intents" ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
-                                    }}
+                                    className={`preset-tab ${activeTab === "intents" ? "active-release" : ""}`}
                                 >
                                     Quick Test
                                 </button>
                                 <button
                                     onClick={() => setActiveTab("edge")}
-                                    className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                                    style={{
-                                        background: activeTab === "edge" ? "rgba(245,158,11,0.15)" : "transparent",
-                                        color: activeTab === "edge" ? "#fbbf24" : "var(--aegis-text-muted)",
-                                        border: activeTab === "edge" ? "1px solid rgba(245,158,11,0.3)" : "1px solid transparent",
-                                    }}
+                                    className={`preset-tab ${activeTab === "edge" ? "active-hold" : ""}`}
                                 >
                                     Edge Cases
                                 </button>
                             </div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-1.5">
                                 {(activeTab === "intents" ? REAL_INTENTS : EDGE_CASES).map((t, i) => (
                                     <button
                                         key={`${activeTab}-${i}`}
@@ -338,53 +345,50 @@ export default function Dashboard() {
                                         disabled={status === "processing"}
                                         className="demo-btn"
                                     >
-                                        <span>{t.icon}</span>
                                         {t.label}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        <div className="animate-slide-up-fade" style={{ animationDelay: "0.3s" }}>
-                            <TicketHistory
-                                entries={historyEntries}
-                                onSelect={setMessage}
-                                onClear={clearHistory}
-                            />
-                        </div>
+                        <TicketHistory
+                            entries={historyEntries}
+                            onSelect={setMessage}
+                            onClear={clearHistory}
+                        />
 
-                        {/* Disambiguation Selector */}
+                        {/* Disambiguation Selector — the run is held for a human choice */}
                         {candidates.length > 0 && (
-                            <div className="response-card">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <div className="response-card hold-card">
+                                <div className="flex items-center gap-2 mb-2.5">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--hold-text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <circle cx="12" cy="12" r="10" />
                                         <path d="M12 16v-4" />
                                         <path d="M12 8h.01" />
                                     </svg>
-                                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#f59e0b" }}>Select Customer</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--hold-text)" }}>Select Customer</span>
                                 </div>
-                                <p className="text-sm mb-3" style={{ color: "var(--aegis-text-muted)" }}>{disambiguationMessage}</p>
-                                <div className="space-y-2">
+                                <p className="text-[13px] mb-3" style={{ color: "var(--aegis-text-2)" }}>{disambiguationMessage}</p>
+                                <div className="space-y-1.5">
                                     {candidates.map((c) => (
                                         <button
                                             key={c.id}
                                             onClick={() => handleSelectCustomer(c)}
-                                            className="w-full text-left rounded-lg p-3 transition-all hover:brightness-125"
+                                            className="w-full text-left rounded-lg px-3 py-2.5 transition-colors"
                                             style={{
                                                 background: "var(--aegis-surface)",
-                                                border: "1px solid var(--aegis-border)",
+                                                border: "1px solid var(--aegis-border-strong)",
                                             }}
                                         >
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <span className="text-sm font-semibold" style={{ color: "var(--aegis-text)" }}>#{c.id} {c.name}</span>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <span className="text-[13px] font-semibold" style={{ color: "var(--aegis-text)" }}>#{c.id} {c.name}</span>
                                                     {c.email && <span className="text-xs ml-2" style={{ color: "var(--aegis-text-muted)" }}>{c.email}</span>}
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    {c.plan && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}>{c.plan}</span>}
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    {c.plan && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "rgba(59,130,246,0.14)", color: "var(--release-text)" }}>{c.plan}</span>}
                                                     {c.status && c.status !== "active" && (
-                                                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.15)", color: "#f87171" }}>{c.status}</span>
+                                                        <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "rgba(248,113,113,0.12)", color: "var(--aegis-danger)" }}>{c.status}</span>
                                                     )}
                                                 </div>
                                             </div>
@@ -397,19 +401,19 @@ export default function Dashboard() {
                         {/* Final Response */}
                         {finalResponse && (
                             <div className="response-card">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <div className="flex items-center gap-2 mb-2.5">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                                         <path d="M22 4L12 14.01l-3-3" />
                                     </svg>
-                                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#4ade80" }}>Resolution Complete</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--aegis-success)" }}>Resolution Complete</span>
                                 </div>
-                                <p className="text-sm leading-relaxed" style={{ color: "var(--aegis-text)" }}>{finalResponse}</p>
+                                <p className="text-[13px] leading-relaxed" style={{ color: "var(--aegis-text)" }}>{finalResponse}</p>
                             </div>
                         )}
 
                         {/* Textarea + Submit */}
-                        <div className="pt-2 animate-slide-up-fade" style={{ animationDelay: "0.4s" }}>
+                        <div className="pt-1">
                             <textarea
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
@@ -421,19 +425,13 @@ export default function Dashboard() {
                                 }}
                                 placeholder="Describe the support issue... e.g. 'Customer #8 says they were double-charged $49 for their Pro plan'"
                                 disabled={status === "processing"}
-                                className="w-full rounded-xl p-4 text-sm leading-relaxed resize-none outline-none transition-all focus:border-blue-500/30 disabled:opacity-50"
-                                style={{
-                                    background: "var(--aegis-surface)",
-                                    border: "1px solid var(--aegis-border)",
-                                    color: "var(--aegis-text)",
-                                    fontFamily: "var(--font-sans)",
-                                    minHeight: "100px",
-                                }}
+                                className="ticket-input"
+                                aria-label="Support ticket description"
                             />
                             <button
                                 onClick={() => handleSubmit()}
                                 disabled={!message.trim() || status === "processing"}
-                                className="btn-primary mt-3 w-full flex items-center justify-center gap-2 disabled:opacity-40"
+                                className="btn-primary mt-2.5 w-full flex items-center justify-center gap-2 disabled:opacity-40"
                             >
                                 {status === "processing" ? (
                                     <>
@@ -442,7 +440,7 @@ export default function Dashboard() {
                                     </>
                                 ) : (
                                     <>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                             <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
                                         </svg>
                                         Submit Ticket
@@ -454,12 +452,12 @@ export default function Dashboard() {
                 </div>
 
                 {/* Center Panel: Thought Stream */}
-                <div className="h-full min-h-0 animate-slide-up-fade" style={{ animationDelay: "0.2s" }}>
+                <div className="panel-stream min-h-0 animate-slide-up-fade" style={{ animationDelay: "0.1s" }}>
                     <ThoughtStream thoughts={thoughts} status={status} />
                 </div>
 
                 {/* Right Panel: Metrics */}
-                <div className="h-full min-h-0 flex flex-col animate-slide-up-fade" style={{ animationDelay: "0.3s" }}>
+                <div className="panel-metrics min-h-0 flex flex-col animate-slide-up-fade" style={{ animationDelay: "0.15s" }}>
                     <MetricsPanel metrics={metrics} onCacheCleared={async () => {
                         try { setMetrics(await getMetrics()); } catch { }
                     }} onOpenTraces={() => setTracesOpen(true)} />
@@ -467,12 +465,11 @@ export default function Dashboard() {
             </div>
 
             {/* ── Footer ── */}
-            <footer className="px-6 py-4 flex items-center justify-between text-xs shrink-0" style={{ borderTop: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)" }}>
-                <span>Aegis v{require("../../package.json").version} — Autonomous Enterprise Action Engine</span>
-                <div className="flex items-center gap-4">
-
-                    <span title={threadId ? `Thread: ${threadId}` : undefined}>FastAPI + LangGraph + Next.js</span>
-                </div>
+            <footer className="px-4 sm:px-5 py-3 flex items-center justify-between gap-3 text-[11px] shrink-0" style={{ borderTop: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)" }}>
+                <span className="truncate">Aegis v{require("../../package.json").version} — Autonomous Enterprise Action Engine</span>
+                <span className="font-mono whitespace-nowrap" title={threadId ? `Thread: ${threadId}` : undefined}>
+                    FastAPI + LangGraph + Next.js
+                </span>
             </footer>
 
             {/* ── HITL Approval Modal ── */}

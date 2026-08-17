@@ -50,11 +50,28 @@ describe("MetricsPanel", () => {
     });
 
     // ── Null Metrics ──
-    it("renders zero defaults when metrics is null", () => {
+    it("renders a deliberate offline state instead of fake zeros when metrics is null", () => {
         render(<MetricsPanel metrics={null} />);
-        const zeroCosts = screen.getAllByText("$0.0000");
-        expect(zeroCosts.length).toBeGreaterThanOrEqual(2); // avg cost + total cost
-        expect(screen.getByText("0.0%")).toBeInTheDocument(); // hit rate
+        expect(screen.getByText("Telemetry offline")).toBeInTheDocument();
+        // No fabricated values while the backend is unreachable
+        expect(screen.queryByText("$0.0000")).not.toBeInTheDocument();
+        expect(screen.queryByText("0.0%")).not.toBeInTheDocument();
+        expect(screen.queryByTitle("Clear cache")).not.toBeInTheDocument();
+    });
+
+    it("renders em-dash placeholders for HITL metrics that are not yet measured", () => {
+        const sparseMetrics: Metrics = {
+            ...FULL_METRICS,
+            agent_metrics: {
+                ...FULL_METRICS.agent_metrics,
+                hitl_approval_rate: null,
+                avg_duration_seconds: 0,
+                avg_hitl_wait_seconds: null,
+            },
+        };
+        render(<MetricsPanel metrics={sparseMetrics} />);
+        // HITL approval, avg resolution, and HITL wait all show "—", never a fake 0
+        expect(screen.getAllByText("—").length).toBe(3);
     });
 
     // ── Observability Header ──

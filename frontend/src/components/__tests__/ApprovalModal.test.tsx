@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ApprovalModal from "../ApprovalModal";
 import type { ActionProposal } from "@/lib/api";
@@ -56,16 +56,16 @@ describe("ApprovalModal", () => {
         expect(screen.queryByText(/^#\d+$/)).not.toBeInTheDocument();
     });
 
-    // ── getActionIcon coverage ──
+    // ── ActionIcon coverage ──
     it.each([
-        ["refund", "💰"],
-        ["credit", "🎁"],
-        ["tier_change", "📊"],
-        ["escalate", "🚨"],
-        ["suspend", "🔒"],
-        ["reactivate", "🔓"],
-        ["unknown_type", "⚡"],
-    ])("shows correct icon for action type '%s'", (type, icon) => {
+        ["refund", "action-icon-refund"],
+        ["credit", "action-icon-credit"],
+        ["tier_change", "action-icon-tier_change"],
+        ["escalate", "action-icon-escalate"],
+        ["suspend", "action-icon-suspend"],
+        ["reactivate", "action-icon-reactivate"],
+        ["unknown_type", "action-icon-default"],
+    ])("shows correct icon for action type '%s'", (type, testId) => {
         render(
             <ApprovalModal
                 action={{ ...baseAction, type }}
@@ -74,7 +74,44 @@ describe("ApprovalModal", () => {
                 isLoading={false}
             />
         );
-        expect(screen.getByText(icon)).toBeInTheDocument();
+        expect(screen.getByTestId(testId)).toBeInTheDocument();
+    });
+
+    // ── Dialog semantics + focus management ──
+    it("renders as an aria-modal dialog and focuses the safe action first", () => {
+        render(
+            <ApprovalModal action={baseAction} onApprove={vi.fn()} onDeny={vi.fn()} isLoading={false} />
+        );
+        const dialog = screen.getByRole("dialog");
+        expect(dialog).toHaveAttribute("aria-modal", "true");
+        expect(screen.getByRole("button", { name: /deny/i })).toHaveFocus();
+    });
+
+    it("traps focus: Tab cycles between Deny and Approve", async () => {
+        const user = userEvent.setup();
+        render(
+            <ApprovalModal action={baseAction} onApprove={vi.fn()} onDeny={vi.fn()} isLoading={false} />
+        );
+        const denyBtn = screen.getByRole("button", { name: /deny/i });
+        const approveBtn = screen.getByRole("button", { name: /approve/i });
+
+        expect(denyBtn).toHaveFocus();
+        await user.keyboard("{Tab}");
+        expect(approveBtn).toHaveFocus();
+        await user.keyboard("{Tab}");
+        expect(denyBtn).toHaveFocus();
+    });
+
+    it("ignores unrelated keys", async () => {
+        const onDeny = vi.fn();
+        const onApprove = vi.fn();
+        const user = userEvent.setup();
+        render(
+            <ApprovalModal action={baseAction} onApprove={onApprove} onDeny={onDeny} isLoading={false} />
+        );
+        await user.keyboard("a");
+        expect(onDeny).not.toHaveBeenCalled();
+        expect(onApprove).not.toHaveBeenCalled();
     });
 
     // ── getActionColor coverage ──
@@ -167,6 +204,62 @@ describe("ApprovalModal", () => {
             act(() => {
                 vi.advanceTimersByTime(300);
             });
+        });
+
+        it("denies with a dismissal reason when Escape is pressed", async () => {
+            const onDeny = vi.fn();
+            render(
+                <ApprovalModal action={baseAction} onApprove={vi.fn()} onDeny={onDeny} isLoading={false} />
+            );
+
+            const denyBtn = screen.getByRole("button", { name: /deny/i });
+            await act(async () => {
+                fireEvent.keyDown(denyBtn, { key: "Escape" });
+            });
+
+            expect(onDeny).not.toHaveBeenCalled();
+            act(() => {
+                vi.advanceTimersByTime(300);
+            });
+            expect(onDeny).toHaveBeenCalledWith("Manager dismissed the approval request");
+        });
+
+        it("ignores Escape while the modal is already closing", async () => {
+            const onDeny = vi.fn();
+            const onApprove = vi.fn();
+            render(
+                <ApprovalModal action={baseAction} onApprove={onApprove} onDeny={onDeny} isLoading={false} />
+            );
+
+            const approveBtn = screen.getByRole("button", { name: /approve/i });
+            await act(async () => {
+                approveBtn.click();
+            });
+            // Now closing — Escape must not queue a second decision
+            await act(async () => {
+                fireEvent.keyDown(approveBtn, { key: "Escape" });
+            });
+
+            act(() => {
+                vi.advanceTimersByTime(300);
+            });
+            expect(onApprove).toHaveBeenCalledOnce();
+            expect(onDeny).not.toHaveBeenCalled();
+        });
+
+        it("ignores Escape while a decision is in flight (isLoading)", async () => {
+            const onDeny = vi.fn();
+            render(
+                <ApprovalModal action={baseAction} onApprove={vi.fn()} onDeny={onDeny} isLoading={true} />
+            );
+
+            await act(async () => {
+                fireEvent.keyDown(screen.getByRole("button", { name: /deny/i }), { key: "Escape" });
+            });
+            act(() => {
+                vi.advanceTimersByTime(300);
+            });
+            expect(onDeny).not.toHaveBeenCalled();
         });
 
         it("applies modal-exit classes when closing", async () => {

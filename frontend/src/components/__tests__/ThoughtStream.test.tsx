@@ -226,7 +226,7 @@ describe("ThoughtStream", () => {
 
         // Dev mode — badge visible
         expect(screen.getByText("Triage")).toBeInTheDocument();
-        expect(screen.getByText("🏷")).toBeInTheDocument();
+        expect(screen.getByTestId("agent-badge-Triage")).toBeInTheDocument();
     });
 
     // ── Status Badges ──

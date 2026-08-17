@@ -58,7 +58,22 @@ describe("Dashboard (page.tsx)", () => {
         render(<Dashboard />);
         expect(screen.getByText("Aegis")).toBeInTheDocument();
         expect(screen.getByText("Support Ticket")).toBeInTheDocument();
-        expect(screen.getByText("System Online")).toBeInTheDocument();
+        // First paint: the backend probe is still in flight
+        expect(screen.getByText("Connecting")).toBeInTheDocument();
+    });
+
+    // ── Backend status pill ──
+    it("shows Operational once the metrics probe succeeds", async () => {
+        render(<Dashboard />);
+        expect(await screen.findByText("Operational")).toBeInTheDocument();
+    });
+
+    it("shows Backend Offline when the metrics probe fails", async () => {
+        vi.mocked(getMetrics).mockRejectedValueOnce(new Error("down"));
+        render(<Dashboard />);
+        expect(await screen.findByText("Backend Offline")).toBeInTheDocument();
+        // No fabricated telemetry while offline
+        expect(screen.getByText("Telemetry offline")).toBeInTheDocument();
     });
 
     it("renders textarea and submit button", () => {

@@ -1,23 +1,47 @@
 @import "tailwindcss";
 
-/* ── Aegis Design System ── */
+/* ═══════════════════════════════════════════════════════════════════
+   Aegis Design System — "instrumented hold"
+   Axis: moving ↔ arrested.
+   --release (#3b82f6) = action moving.  --hold (#f59e0b) = action
+   arrested at the gate.  Both hexes are the brand contract — locked.
+   Everything else is neutral instrument-panel surface.
+   ═══════════════════════════════════════════════════════════════════ */
 :root {
-  --aegis-bg: #0a0e17;
-  --aegis-surface: #111827;
-  --aegis-surface-2: #1a2332;
-  --aegis-border: #1e293b;
-  --aegis-border-glow: #3b82f6;
-  --aegis-text: #e2e8f0;
-  --aegis-text-muted: #64748b;
-  --aegis-accent: #3b82f6;
-  --aegis-accent-glow: rgba(59, 130, 246, 0.15);
-  --aegis-success: #22c55e;
-  --aegis-warning: #f59e0b;
-  --aegis-danger: #ef4444;
-  --aegis-purple: #8b5cf6;
+  /* Brand state tokens — LOCKED (see assets/ASSETS.md) */
+  --release: #3b82f6;
+  --hold: #f59e0b;
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* Derivatives of the locked hues (text-safe on dark) */
+  --release-text: #7cadfb;
+  --release-deep: #2563eb;
+  --hold-text: #fbbf24;
+  --input-border: #546a8c;
+
+  /* Neutrals — deep blue-black instrument panel */
+  --aegis-bg: #070b14;
+  --aegis-surface: #0c1220;
+  --aegis-surface-2: #111a2b;
+  --aegis-surface-3: #16233a;
+  --aegis-border: #1c2637;
+  --aegis-border-strong: #2b3a52;
+  --aegis-text: #e8edf6;
+  --aegis-text-2: #a9b6cb;
+  --aegis-text-muted: #8b99b0;
+
+  /* Semantic */
+  --aegis-accent: var(--release);
+  --aegis-accent-glow: rgba(59, 130, 246, 0.14);
+  --aegis-success: #34d399;
+  --aegis-warning: var(--hold);
+  --aegis-danger: #f87171;
+  --aegis-error: #f87171;
+
+  --font-sans: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", "Fira Code", monospace;
+
+  --radius-panel: 12px;
+  --radius-card: 8px;
 }
 
 /* ── Base ── */
@@ -31,14 +55,38 @@ body {
   color: var(--aegis-text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
-/* Ensure Tailwind font-mono maps to JetBrains Mono */
 .font-mono,
 code,
 pre,
 kbd {
   font-family: var(--font-mono);
+}
+
+/* Numbers line up like instruments, not like prose */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Every keyboard-focusable control gets a visible ring */
+:focus-visible {
+  outline: 2px solid var(--release);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ── Scrollbar ── */
@@ -50,11 +98,10 @@ kbd {
 ::-webkit-scrollbar-track {
   background: transparent;
   margin: 16px 0;
-  /* Prevents scrollbar from clipping into rounded panel corners */
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--aegis-border);
+  background: var(--aegis-border-strong);
   border-radius: 4px;
 }
 
@@ -62,47 +109,237 @@ kbd {
   background: var(--aegis-text-muted);
 }
 
-/* ── Glass Panel ── */
+/* ═══ Layout shell ═══
+   <1200px: document flow, the page scrolls (panels stack).
+   ≥1200px: locked cockpit layout, each panel scrolls internally. */
+.app-root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--aegis-bg);
+}
+
+.dashboard-grid {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .panel-metrics {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1200px) {
+  .app-root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .dashboard-grid {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 380px minmax(0, 1fr) 360px;
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+  }
+}
+
+/* Below the cockpit breakpoint, panels size to content but the
+   stream keeps a working viewport of its own. */
+@media (max-width: 1199px) {
+  .panel-stream {
+    min-height: 280px;
+    max-height: 560px;
+  }
+}
+
+/* ── Panels — flat instrument surfaces, no glass ── */
 .glass-panel {
-  background: linear-gradient(135deg, rgba(17, 24, 39, 0.8), rgba(26, 35, 50, 0.6));
-  backdrop-filter: blur(20px);
+  background: var(--aegis-surface);
   border: 1px solid var(--aegis-border);
-  border-radius: 16px;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  border-radius: var(--radius-panel);
+  transition: border-color 0.25s ease;
 }
 
-.glass-panel:hover {
-  border-color: rgba(59, 130, 246, 0.3);
-  box-shadow: 0 0 30px rgba(59, 130, 246, 0.05);
+/* The stream panel shifts to the arrested state when the gate drops */
+.glass-panel.held {
+  border-color: rgba(245, 158, 11, 0.5);
 }
 
-/* ── Thought Step Animation ── */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--aegis-border);
+  min-height: 46px;
+  flex-shrink: 0;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--aegis-text-muted);
+}
+
+.panel-title svg {
+  color: var(--aegis-text-muted);
+  flex-shrink: 0;
+}
+
+/* ── The rail — status bar under the nav.
+     Blue and animated while the action moves; solid, still amber the
+     instant it is arrested. ── */
+.status-bar {
+  height: 3px;
+  background: var(--aegis-border);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.status-bar-fill {
+  height: 100%;
+  transition: width 0.6s ease;
+}
+
+.status-bar-fill.idle {
+  width: 0%;
+  background: var(--aegis-border);
+}
+
+.status-bar-fill.processing {
+  width: 60%;
+  background: var(--release);
+  animation: railFlow 1.4s ease-in-out infinite;
+}
+
+/* Arrested: no pulse, no motion. A hard amber edge = the gate. */
+.status-bar-fill.awaiting_approval {
+  width: 80%;
+  background: var(--hold);
+  box-shadow: 4px 0 0 0 rgba(245, 158, 11, 0.35);
+}
+
+.status-bar-fill.completed {
+  width: 100%;
+  background: var(--aegis-success);
+}
+
+.status-bar-fill.error {
+  width: 100%;
+  background: var(--aegis-danger);
+}
+
+.status-bar-fill.cached {
+  width: 100%;
+  background: var(--release);
+}
+
+.status-bar-fill.disambiguation {
+  width: 70%;
+  background: var(--hold);
+}
+
+@keyframes railFlow {
+
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ── ThoughtStream rail — a live process, not a log dump ── */
+.stream-rail {
+  position: relative;
+}
+
 .thought-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 8px 7px 4px;
   animation: stepSlideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   opacity: 0;
   transform: translateY(8px);
-  filter: blur(4px);
+}
+
+/* connecting line between step markers */
+.thought-step::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 28px;
+  bottom: -8px;
+  width: 1px;
+  background: var(--aegis-border-strong);
+}
+
+.thought-step:last-child::before {
+  display: none;
+}
+
+.step-marker {
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: var(--aegis-surface-2);
+  border: 1px solid var(--aegis-border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes stepSlideUp {
   to {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0);
   }
 }
 
-/* ── Initial Load Animation ── */
-.animate-slide-up-fade {
-  animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  opacity: 0;
-  transform: translateY(16px);
+/* The gate: drawn across the rail when the action is arrested */
+.stream-gate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 4px 2px;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-left: 3px solid var(--hold);
+  border-radius: var(--radius-card);
+  background: rgba(245, 158, 11, 0.07);
+  animation: gateDrop 0.3s ease-out forwards;
 }
 
-@keyframes slideUpFade {
+@keyframes gateDrop {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(-4px);
   }
 
   to {
@@ -111,19 +348,59 @@ kbd {
   }
 }
 
-/* ── Typing Indicator ── */
+.gate-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hold);
+  flex-shrink: 0;
+  animation: gateBreathe 2.4s ease-in-out infinite;
+}
+
+@keyframes gateBreathe {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ── Initial load ── */
+.animate-slide-up-fade {
+  animation: slideUpFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Typing indicator ── */
 .typing-indicator {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 12px 16px;
+  padding: 10px 14px;
 }
 
 .typing-indicator span {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: var(--aegis-text-muted);
+  background: var(--release-text);
   animation: typingBounce 1.4s ease-in-out infinite;
 }
 
@@ -150,43 +427,13 @@ kbd {
   }
 }
 
-/* ── Dashboard Grid ── */
-.dashboard-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 340px;
-  grid-template-rows: 1fr;
-}
-
-
-@media (max-width: 767px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ── Pulse for awaiting ── */
-.pulse-glow {
-  animation: pulseGlow 2s ease-in-out infinite;
-}
-
-@keyframes pulseGlow {
-
-  0%,
-  100% {
-    box-shadow: 0 0 5px rgba(59, 130, 246, 0.2);
-  }
-
-  50% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
-  }
-}
-
-/* ── Modal Entrance Animation ── */
+/* ── Modal: the gate itself ── */
 .modal-backdrop {
   animation: fadeIn 0.2s ease-out forwards;
 }
 
 .modal-enter {
-  animation: scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: scaleIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes fadeIn {
@@ -202,7 +449,7 @@ kbd {
 @keyframes scaleIn {
   from {
     opacity: 0;
-    transform: scale(0.92) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   to {
@@ -211,7 +458,6 @@ kbd {
   }
 }
 
-/* ── Modal Exit Animation ── */
 .modal-backdrop-exit {
   animation: fadeOut 0.2s ease-in forwards;
 }
@@ -238,89 +484,186 @@ kbd {
 
   to {
     opacity: 0;
-    transform: scale(0.92) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 }
 
-/* ── Button styles ── */
+/* The approval dialog carries the hold state on its frame */
+.gate-modal {
+  background: var(--aegis-surface);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-top: 3px solid var(--hold);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+/* Rail motif inside the modal header: payload runs blue, stops at the bar */
+.gate-rail {
+  position: relative;
+  height: 20px;
+  overflow: hidden;
+}
+
+.gate-rail-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--aegis-border-strong);
+}
+
+.gate-rail-run {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: linear-gradient(90deg, transparent, var(--release));
+  width: 62%;
+  animation: railRun 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: left center;
+}
+
+@keyframes railRun {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.gate-rail-payload {
+  position: absolute;
+  top: 50%;
+  left: 62%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--release);
+  animation: payloadArrive 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes payloadArrive {
+  from {
+    transform: translateX(-140px);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+.gate-rail-bar {
+  position: absolute;
+  left: calc(62% + 10px);
+  top: 2px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--hold);
+  animation: barDrop 0.35s ease-out 0.75s backwards;
+}
+
+@keyframes barDrop {
+  from {
+    transform: translateY(-22px);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* ── Buttons ── */
 .btn-primary {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: white;
+  background: var(--release-deep);
+  border: 1px solid var(--release);
+  color: #ffffff;
   font-weight: 600;
   padding: 10px 24px;
-  border-radius: 10px;
-  border: none;
+  border-radius: var(--radius-card);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
   font-size: 0.875rem;
 }
 
-.btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+.btn-primary:hover:not(:disabled) {
+  background: #2d6ce6;
+  box-shadow: 0 2px 16px rgba(59, 130, 246, 0.35);
 }
 
-.btn-primary:active {
-  transform: translateY(0);
+.btn-primary:disabled {
+  cursor: not-allowed;
 }
 
 .btn-danger {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  color: white;
+  background: transparent;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  color: var(--aegis-danger);
   font-weight: 600;
-  padding: 10px 24px;
-  border-radius: 10px;
-  border: none;
+  padding: 10px 16px;
+  border-radius: var(--radius-card);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
   font-size: 0.875rem;
 }
 
-.btn-danger:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+.btn-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.1);
+  border-color: var(--aegis-danger);
 }
 
 .btn-success {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-  color: white;
+  background: var(--release-deep);
+  border: 1px solid var(--release);
+  color: #ffffff;
   font-weight: 600;
-  padding: 10px 24px;
-  border-radius: 10px;
-  border: none;
+  padding: 10px 16px;
+  border-radius: var(--radius-card);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
   font-size: 0.875rem;
 }
 
-.btn-success:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+.btn-success:hover:not(:disabled) {
+  background: #2d6ce6;
+  box-shadow: 0 2px 16px rgba(59, 130, 246, 0.35);
 }
 
-/* ── Metric Card ── */
+/* ── Cards ── */
 .metric-card {
-  background: linear-gradient(135deg, var(--aegis-surface), var(--aegis-surface-2));
+  background: var(--aegis-surface-2);
   border: 1px solid var(--aegis-border);
-  border-radius: 12px;
-  padding: 12px 14px;
-  transition: all 0.2s ease;
+  border-radius: var(--radius-card);
+  padding: 10px 12px;
 }
 
 .metric-card .metric-label {
   white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--aegis-text-muted);
 }
 
-.metric-card:hover {
-  border-color: rgba(59, 130, 246, 0.2);
+.metric-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--aegis-text);
+  line-height: 1.3;
 }
 
-/* ── Loading spinner ── */
+/* ── Spinner ── */
 .spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--aegis-border);
-  border-top-color: var(--aegis-accent);
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -331,122 +674,72 @@ kbd {
   }
 }
 
-/* ── Status badge ── */
+/* ── Badges ── */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+  border: 1px solid transparent;
 }
 
 .badge-processing {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--release-text);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .badge-awaiting {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--hold-text);
+  border-color: rgba(245, 158, 11, 0.4);
 }
 
 .badge-completed {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--aegis-success);
+  border-color: rgba(52, 211, 153, 0.3);
 }
 
 .badge-error {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--aegis-danger);
+  border-color: rgba(248, 113, 113, 0.3);
 }
 
 .badge-cached {
-  background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--release-text);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
-/* ── Status Bar ── */
-.status-bar {
-  height: 3px;
-  background: var(--aegis-border);
-  position: relative;
-  overflow: hidden;
-}
-
-.status-bar-fill {
-  height: 100%;
-  transition: width 0.6s ease;
-  border-radius: 0 2px 2px 0;
-}
-
-.status-bar-fill.idle {
-  width: 0%;
-  background: var(--aegis-border);
-}
-
-.status-bar-fill.processing {
-  width: 60%;
-  background: linear-gradient(90deg, #3b82f6, #60a5fa);
-  animation: statusPulse 1.5s ease-in-out infinite;
-}
-
-.status-bar-fill.awaiting_approval {
-  width: 80%;
-  background: linear-gradient(90deg, #f59e0b, #fbbf24);
-  animation: statusPulse 1.5s ease-in-out infinite;
-}
-
-.status-bar-fill.completed {
-  width: 100%;
-  background: linear-gradient(90deg, #22c55e, #4ade80);
-}
-
-.status-bar-fill.error {
-  width: 100%;
-  background: linear-gradient(90deg, #ef4444, #f87171);
-}
-
-@keyframes statusPulse {
-
-  0%,
-  100% {
-    opacity: 0.7;
-  }
-
-  50% {
-    opacity: 1;
-  }
-}
-
-/* ── Response Card ── */
+/* ── Response / hold cards in the ticket panel ── */
 .response-card {
   position: relative;
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(59, 130, 246, 0.05));
-  border: 1px solid rgba(34, 197, 94, 0.25);
-  border-radius: 16px;
-  padding: 20px;
-  animation: responseSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-  overflow: hidden;
+  background: var(--aegis-surface-2);
+  border: 1px solid var(--aegis-border);
+  border-left: 3px solid var(--aegis-success);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  animation: responseSlideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.response-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #22c55e, #3b82f6, transparent);
+.response-card.hold-card {
+  border-left-color: var(--hold);
+  border-color: rgba(245, 158, 11, 0.35);
+  border-left-width: 3px;
+  background: rgba(245, 158, 11, 0.05);
 }
 
 @keyframes responseSlideIn {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
 
   to {
@@ -455,51 +748,101 @@ kbd {
   }
 }
 
-/* ── Demo Preset Buttons ── */
+/* ── Preset chips ── */
 .demo-btn {
-  padding: 8px 14px;
-  border-radius: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
   background: var(--aegis-surface-2);
-  border: 1px solid var(--aegis-border);
-  color: var(--aegis-text);
+  border: 1px solid var(--aegis-border-strong);
+  color: var(--aegis-text-2);
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 30px;
 }
 
-.demo-btn:hover {
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.1);
-  transform: translateY(-1px);
+.demo-btn:hover:not(:disabled) {
+  border-color: var(--release);
+  color: var(--aegis-text);
+  background: var(--aegis-surface-3);
 }
 
 .demo-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  transform: none;
 }
 
-/* ── Panel Active Glow ── */
-.glass-panel.active {
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 0 24px rgba(59, 130, 246, 0.08);
+.preset-tab {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--aegis-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
-/* ── Ticket History ── */
+.preset-tab:hover {
+  color: var(--aegis-text-2);
+}
+
+.preset-tab.active-release {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--release-text);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.preset-tab.active-hold {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--hold-text);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+/* ── Ticket input ── */
+.ticket-input {
+  width: 100%;
+  border-radius: var(--radius-card);
+  padding: 12px 14px;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  resize: none;
+  background: var(--aegis-surface-2);
+  border: 1px solid var(--input-border);
+  color: var(--aegis-text);
+  font-family: var(--font-sans);
+  min-height: 96px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ticket-input::placeholder {
+  color: var(--aegis-text-muted);
+}
+
+.ticket-input:focus {
+  outline: none;
+  border-color: var(--release);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.ticket-input:disabled {
+  opacity: 0.55;
+}
+
+/* ── Ticket history ── */
 .ticket-history-container {
   border: 1px solid var(--aegis-border);
-  border-radius: 12px;
-  background: var(--aegis-surface);
+  border-radius: var(--radius-card);
+  background: var(--aegis-surface-2);
   overflow: hidden;
-  transition: border-color 0.2s ease;
-}
-
-.ticket-history-container:hover {
-  border-color: rgba(100, 116, 139, 0.4);
 }
 
 .ticket-history-header {
@@ -507,7 +850,7 @@ kbd {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 10px 14px;
+  padding: 9px 12px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -516,17 +859,18 @@ kbd {
 }
 
 .ticket-history-header:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--aegis-surface-3);
 }
 
 .ticket-history-badge {
   font-size: 0.625rem;
   font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  line-height: 1.4;
+  font-family: var(--font-mono);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--release-text);
+  line-height: 1.5;
 }
 
 .ticket-history-clear-btn {
@@ -539,18 +883,18 @@ kbd {
   background: transparent;
   color: var(--aegis-text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .ticket-history-clear-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--aegis-danger);
 }
 
 .ticket-history-body {
   overflow: hidden;
   transition: max-height 0.25s ease;
-  padding: 0 8px;
+  padding: 0 6px;
 }
 
 .ticket-history-entry {
@@ -559,8 +903,8 @@ kbd {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -569,7 +913,7 @@ kbd {
 }
 
 .ticket-history-entry:hover {
-  background: var(--aegis-surface-2);
+  background: var(--aegis-surface-3);
 }
 
 .ticket-history-status-dot {
@@ -577,23 +921,24 @@ kbd {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 4px;
+  margin-top: 5px;
 }
 
 .ticket-history-time {
   font-size: 0.625rem;
+  font-family: var(--font-mono);
   color: var(--aegis-text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-/* ── Trace waterfall animations ── */
+/* ── Trace waterfall ── */
 .trace-node-row {
   animation: traceSlideIn 0.3s ease-out both;
 }
 
 .trace-node-row:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--aegis-surface-3);
 }
 
 @keyframes traceSlideIn {
@@ -612,8 +957,8 @@ kbd {
 .traces-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  background: rgba(3, 5, 10, 0.65);
+  backdrop-filter: blur(3px);
   z-index: 50;
   transition: opacity 0.3s ease;
 }
@@ -625,11 +970,19 @@ kbd {
   bottom: 0;
   height: 70vh;
   background: var(--aegis-bg);
-  border-top: 1px solid var(--aegis-border);
-  border-radius: 16px 16px 0 0;
+  border-top: 1px solid var(--aegis-border-strong);
+  border-radius: 12px 12px 0 0;
   z-index: 51;
   display: flex;
   flex-direction: column;
   transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Offline / empty state block ── */
+.offline-state {
+  border: 1px dashed var(--aegis-border-strong);
+  border-radius: var(--radius-card);
+  padding: 20px 16px;
+  text-align: center;
 }
