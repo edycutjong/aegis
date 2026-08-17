@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model
+from app.routing.model_router import INTENT_MODEL_MAP, get_model
 from app.observability.tracker import get_tracker
 
 
@@ -70,7 +70,12 @@ Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0
     SIMPLE_INTENTS = {"billing", "general"}
     is_simple = intent in SIMPLE_INTENTS
     model_provider = "groq" if is_simple else "gemini"
-    model_label = "⚡ Routed to Groq Llama-3.3" if is_simple else "🧠 Routed to Gemini 2.5 Flash"
+    # Label is derived from the routing table, not hardcoded — a stale literal
+    # here silently misreports which model actually ran.
+    model_label = (
+        f"⚡ Routed to Groq {INTENT_MODEL_MAP['groq']}" if is_simple
+        else f"🧠 Routed to {INTENT_MODEL_MAP['gemini']}"
+    )
 
     return {
         "intent": intent,

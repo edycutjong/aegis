@@ -23,6 +23,8 @@ class TestModelPricing:
 
     def test_contains_all_expected_models(self):
         expected = {
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
             "gemini-2.5-flash",
@@ -42,9 +44,9 @@ class TestModelPricing:
             assert pricing["output"] >= 0, f"{model} has negative output price"
 
     def test_groq_is_cheapest(self):
-        """Llama-3.1-8b should be the cheapest model by input cost."""
+        """The fast Groq model should be the cheapest by input cost."""
         cheapest = min(MODEL_PRICING.items(), key=lambda x: x[1]["input"])
-        assert cheapest[0] == "llama-3.1-8b-instant"
+        assert cheapest[0] == "llama-3.1-8b-instant"  # retired, kept for historical pricing
 
 
 # ─────────────────────────────────────────────────────────────
@@ -121,7 +123,7 @@ class TestGetModel:
     def test_fast_task_routes_to_fast_model(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("classify_intent")
-        mock_create.assert_called_once_with("llama-3.1-8b-instant")
+        mock_create.assert_called_once_with("openai/gpt-oss-20b")
 
     @patch("app.routing.model_router._create_model")
     def test_smart_task_routes_to_smart_model(self, mock_create, mock_settings):
@@ -139,7 +141,7 @@ class TestGetModel:
     def test_unknown_task_defaults_to_fast(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("some_unknown_task")
-        mock_create.assert_called_once_with("llama-3.1-8b-instant")
+        mock_create.assert_called_once_with("openai/gpt-oss-20b")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -167,6 +169,7 @@ class TestCreateModel:
 
     @patch("app.routing.model_router.ChatGroq")
     def test_llama_prefix(self, mock_cls, mock_settings):
+        """Legacy bare llama-* ids still pass through to Groq unchanged."""
         _create_model("llama-3.1-8b-instant")
         mock_cls.assert_called_once()
         assert mock_cls.call_args.kwargs["model"] == "llama-3.1-8b-instant"
@@ -175,7 +178,19 @@ class TestCreateModel:
     def test_unknown_prefix_falls_back_to_groq(self, mock_cls, mock_settings):
         _create_model("some-random-model")
         mock_cls.assert_called_once()
-        assert mock_cls.call_args.kwargs["model"] == "llama-3.1-8b-instant"
+        assert mock_cls.call_args.kwargs["model"] == "openai/gpt-oss-20b"
+
+    @patch("app.routing.model_router.ChatGroq")
+    def test_openai_namespaced_model_routes_to_groq_not_openai(self, mock_cls, mock_settings):
+        """Regression: "openai/gpt-oss-20b".startswith("o") is True.
+
+        Before the namespace check was moved ahead of the OpenAI branch, every
+        Groq-hosted `openai/*` model was constructed as a ChatOpenAI client with
+        the OpenAI key, which 404s. Pins the branch order.
+        """
+        _create_model("openai/gpt-oss-20b")
+        mock_cls.assert_called_once()
+        assert mock_cls.call_args.kwargs["model"] == "openai/gpt-oss-20b"
 
     @patch("app.routing.model_router.ChatOpenAI")
     def test_o_prefix_routes_to_openai(self, mock_cls, mock_settings):
@@ -194,7 +209,7 @@ class TestGetModelForIntent:
 
     @patch("app.routing.model_router._create_model")
     def test_simple_intent_routes_to_groq(self, mock_create, mock_settings):
-        """model_provider='groq' should route to Groq Llama-3.3-70b."""
+        """model_provider='groq' should route to the configured Groq model."""
         mock_create.return_value = MagicMock()
         get_model_for_intent("generate_response", "groq")
         mock_create.assert_called_once_with(INTENT_MODEL_MAP["groq"])
@@ -212,7 +227,7 @@ class TestGetModelForIntent:
         mock_create.return_value = MagicMock()
         get_model_for_intent("classify_intent", None)
         # Should use the standard FAST_MODEL for classify_intent
-        mock_create.assert_called_once_with("llama-3.1-8b-instant")
+        mock_create.assert_called_once_with("openai/gpt-oss-20b")
 
     @patch("app.routing.model_router._create_model")
     def test_groq_failure_falls_back_to_gemini(self, mock_create, mock_settings):
@@ -239,5 +254,5 @@ class TestGetModelForIntent:
         mock_create.return_value = MagicMock()
         get_model_for_intent("generate_response", "some-unknown-provider")
         # generate_response is a "fast" task -> default fast model, not gemini
-        mock_create.assert_called_once_with("llama-3.1-8b-instant")
+        mock_create.assert_called_once_with("openai/gpt-oss-20b")
 

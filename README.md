@@ -467,7 +467,7 @@ Copy `backend/.env.example` to `backend/.env` and configure:
 | `OPENAI_API_KEY` | ⚡ | OpenAI key (GPT-4.1 as smart model) |
 | `ANTHROPIC_API_KEY` | ⚡ | Anthropic key (Claude as alternative smart model) |
 | `GROQ_API_KEY` | ⚡ | Groq key (free, fast inference — good for classification) |
-| `FAST_MODEL` | ➖ | Fast model name (default: `llama-3.1-8b-instant`) |
+| `FAST_MODEL` | ➖ | Fast model name (default: `openai/gpt-oss-20b`) |
 | `SMART_MODEL` | ➖ | Smart model name (default: `gpt-4.1`) |
 | `REDIS_URL` | ➖ | Redis connection URL (default: `redis://localhost:6379`) |
 | `CACHE_TTL_SECONDS` | ➖ | Cache TTL in seconds (default: `3600`) |

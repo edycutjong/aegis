@@ -11,8 +11,15 @@ from langchain_groq import ChatGroq
 from app.config import get_settings
 
 # Model pricing per 1M tokens (input/output)
+# Groq rates verified against console.groq.com/docs/model/<id> on 2026-08-18.
 MODEL_PRICING = {
-    # Groq (open-source Llama models)
+    # Groq (open-weight models)
+    # NOTE: gpt-oss are reasoning models — reasoning tokens are billed as
+    # completion tokens, so real output cost per call runs higher than a
+    # non-reasoning model at the same headline rate.
+    "openai/gpt-oss-120b": {"input": 0.15, "output": 0.60},
+    "openai/gpt-oss-20b": {"input": 0.075, "output": 0.30},
+    # Retired by Groq (2026) — kept so historical tracker data still prices.
     "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
     "llama-3.1-8b-instant": {"input": 0.05, "output": 0.08},
     # Google
@@ -37,8 +44,8 @@ TASK_MODEL_MAP = {
 
 # Intent → Model provider routing (set by classifier)
 INTENT_MODEL_MAP = {
-    "groq": "llama-3.3-70b-versatile",     # Simple intents (billing, general)
-    "gemini": "gemini-2.5-flash",           # Complex intents (technical, account)
+    "groq": "openai/gpt-oss-120b",   # Simple intents (billing, general)
+    "gemini": "gemini-2.5-flash",     # Complex intents (technical, account)
 }
 
 
@@ -94,7 +101,17 @@ def _create_model(model_name: str):
     """Create a LangChain model instance by name."""
     settings = get_settings()
 
-    if model_name.startswith("gemini"):
+    # Groq's catalogue is namespaced (openai/…, qwen/…, groq/…) plus the legacy
+    # bare llama-* ids. This branch MUST come before the OpenAI check: it also
+    # matches startswith("o"), which would otherwise route "openai/gpt-oss-20b"
+    # to ChatOpenAI with the wrong API key.
+    if "/" in model_name or model_name.startswith("llama"):
+        return ChatGroq(
+            model=model_name,
+            api_key=settings.groq_api_key,
+            temperature=0.1,
+        )
+    elif model_name.startswith("gemini"):
         return ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=settings.google_api_key,
@@ -112,16 +129,10 @@ def _create_model(model_name: str):
             api_key=settings.anthropic_api_key,
             temperature=0.1,
         )
-    elif model_name.startswith("llama"):
-        return ChatGroq(
-            model=model_name,
-            api_key=settings.groq_api_key,
-            temperature=0.1,
-        )
     else:
-        # Default to Llama-3 via Groq as cheapest option
+        # Default to the cheapest Groq option
         return ChatGroq(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-20b",
             api_key=settings.groq_api_key,
             temperature=0.1,
         )

@@ -377,7 +377,9 @@ class TestClassifyIntentAsync:
 
         assert result["model_provider"] == "gemini"
         assert any("🧠" in t for t in result["thought_log"])
-        assert any("Gemini" in t for t in result["thought_log"])
+        # Label is derived from INTENT_MODEL_MAP, so match the model id
+        # case-insensitively rather than a hardcoded display name.
+        assert any("gemini" in t.lower() for t in result["thought_log"])
 
 
 # ─────────────────────────────────────────────────────────────
