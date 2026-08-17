@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/edycutjong/aegis/compare/v1.5.3...v2.0.0) (2026-08-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* `reactivate` no longer auto-approves. Reactivating a suspended or cancelled account undoes a compliance action and resumes billing, so it is a real account-state change and now pauses at the human gate like every other mutating action. Only `resolve` completes autonomously.
+
+### ✨ Features
+
+* **frontend:** redesign dashboard around the approval gate ([a9126c2](https://github.com/edycutjong/aegis/commit/a9126c2cabc9105e9f4fca57f9f1c5e738ed4bba))
+* require human approval for account reactivation ([96e87ab](https://github.com/edycutjong/aegis/commit/96e87aba60ea13335b5bc6a522add9a317e4a78f))
+
+
+### 🐛 Bug Fixes
+
+* **ci:** match release-please tags to the existing v* convention ([282aa9d](https://github.com/edycutjong/aegis/commit/282aa9da9d442fa2fe7eb7515b66567645330b95))
+* **deps:** bump vitest to 4.1.10 (CVE-2026-47429, critical) ([1c8dd30](https://github.com/edycutjong/aegis/commit/1c8dd30193afdf896589bf96eee54698b3c80a05))
+* **deps:** resolve 112 dependency vulnerabilities via lockfile ([2be99b3](https://github.com/edycutjong/aegis/commit/2be99b394db4b0795a235de34814d39572d238d6))
+* replace decommissioned Groq models ([8721711](https://github.com/edycutjong/aegis/commit/87217112121e620ee98fc743e0254c5572f97146))
+
+
+### 🧪 Tests
+
+* add exhaustive safety invariants ([98e7115](https://github.com/edycutjong/aegis/commit/98e711548ab6c7aa548e2327a95bfcf29e1bd27a))
+* add Playwright E2E infrastructure ([f7d1b98](https://github.com/edycutjong/aegis/commit/f7d1b98e8bdda2363498142971d3aa62248ef1a5))
+* expand unit coverage to every source module ([88ea8f1](https://github.com/edycutjong/aegis/commit/88ea8f19729c16b49b356e2e8d9662f38d11f0c5))
+
+
+### 📚 Documentation
+
+* add GitHub community health files ([a34c52c](https://github.com/edycutjong/aegis/commit/a34c52cd44b3d86241506cc3f52279f887c9198b))
+* correct claims that no longer match the code ([5659a06](https://github.com/edycutjong/aegis/commit/5659a063fc9cdbeedcd47d66b08254a0cdb09bc4))
+
+
+### 📦 Build System
+
+* add release-please semantic versioning ([d0b2f32](https://github.com/edycutjong/aegis/commit/d0b2f32f8451ab24de1ecce561483df80c2fac0a))
+* add tooling targets, scripts, and social metadata ([24e2f35](https://github.com/edycutjong/aegis/commit/24e2f355b206d59c3e3bdafcb065e6ae41272660))
+
+
+### 🔁 CI/CD
+
+* add CodeQL, gitleaks, and Dependabot configuration ([cea51fe](https://github.com/edycutjong/aegis/commit/cea51fe0a7f3382a9bf20143b88e935873f4e21e))
+* restructure pipeline into five gated stages ([fa30274](https://github.com/edycutjong/aegis/commit/fa30274a9f1d387763e63691a610437742604a55))
+
 ## [1.1.3] - 2026-03-05
 
 ### Added
