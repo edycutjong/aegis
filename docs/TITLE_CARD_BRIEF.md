@@ -22,7 +22,7 @@
 
 ## Layout (Centered, Vertical Stack)
 
-![Title Card Mockup](./title-card-mockup.png)
+_(Mockup rendered locally; `title-card-mockup.png` is generated output and intentionally gitignored.)_
 
 **Elements (top to bottom, all centered):**
 

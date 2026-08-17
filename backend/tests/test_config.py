@@ -18,7 +18,7 @@ class TestSettingsDefaults:
     def test_default_smart_model(self):
         with patch.dict(os.environ, {}, clear=True):
             s = Settings()
-            assert s.smart_model == "gpt-4o"
+            assert s.smart_model == "gpt-4.1"
 
     def test_default_redis_url(self):
         with patch.dict(os.environ, {}, clear=True):

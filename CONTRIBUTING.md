@@ -70,3 +70,28 @@ Open an issue with:
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+
+## Testing conventions
+
+**Name regression tests after the defect they pin**, not after the code path:
+
+```python
+# opaque — proves nothing to a reader
+def test_model_router_3(): ...
+
+# the test list becomes a changelog of real bugs found and fixed
+def test_openai_namespaced_model_routes_to_groq_not_openai(): ...
+def test_reactivate_requires_human_approval(): ...
+```
+
+Anyone skimming `tests/` should be able to see that development was iterative
+rather than a single scaffold.
+
+**Safety invariants live in `backend/tests/test_safety_invariants.py`.** It
+verifies the HITL approval gate and the table allowlist exhaustively across
+their whole input space, and asserts the combination counts. If you change an
+action type or an approval status, that assertion fails on purpose — update the
+count and the number quoted in `README.md` in the same commit.
+
+Backend coverage is gated at 100% (`--cov-fail-under=100`) and frontend
+coverage is gated via `vitest.config.ts` thresholds. Both must stay green.

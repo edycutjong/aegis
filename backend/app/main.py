@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aegis — Autonomous Enterprise Action Engine",
     description="Multi-agent AI system with Human-in-the-Loop approval",
-    version="1.0.0",
+    version="1.0.0",  # x-release-please-version
     lifespan=lifespan,
 )
 
@@ -121,7 +121,7 @@ async def root():
     return {
         "name": "Aegis",
         "description": "Autonomous Enterprise Action Engine",
-        "version": "1.0.0",
+        "version": "1.0.0",  # x-release-please-version
         "docs": "/docs",
     }
 

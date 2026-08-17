@@ -15,7 +15,7 @@
 | Feature | Description |
 |---|---|
 | **Human-in-the-Loop (HITL)** | Agent pauses execution and waits for human approval before any action that moves money or changes account state (refund, credit, tier change, suspend, reactivate). Only `resolve` is auto-approved. |
-| **Dynamic Model Routing** | Routes simple intents to Groq Llama-3 (~$0.00003), complex intents to GPT-4.1/Gemini (~$0.008) — with automatic fallback |
+| **Dynamic Model Routing** | Routes simple intents to Groq `gpt-oss` (~$0.0001), complex intents to GPT-4.1/Gemini (~$0.008) — with fallback |
 | **Smart Customer Validation** | Handles 8 edge cases: ID+name match, fuzzy name matching, typo correction, name-only search, disambiguation, suspended/cancelled accounts, not-found, and ID mismatch |
 | **Self-Healing SQL** | Generates SQL from natural language, executes against Supabase, and auto-retries up to 3× by feeding errors back to the LLM |
 | **Semantic Caching** | Identical queries served from Redis cache in <50ms at $0.00 cost — failures are never cached |
@@ -98,7 +98,7 @@ flowchart TD
 <p align="center">
   <img src="docs/screenshots/11-edge-typo.png" alt="Typo correction — fuzzy name matching auto-corrects misspellings" width="100%">
 </p>
-<p align="center"><em>Typo correction: "Davd Martines" fuzzy-matched to "David Martinez" (≥80% similarity)</em></p>
+<p align="center"><em>Typo correction: "Davd Martines" fuzzy-matched to "David Martinez" (≥75% similarity)</em></p>
 <br>
 <p align="center">
   <img src="docs/screenshots/09-edge-notfound.png" alt="Customer not found — graceful error handling for nonexistent customers" width="100%">
@@ -193,7 +193,7 @@ The Investigator Agent handles these scenarios robustly:
 | Scenario | Behavior |
 |---|---|
 | `Customer #8 David Martinez` | ✅ Direct ID+name match |
-| `Customer #8 Davd Martines` | ✅ Fuzzy match (typo auto-corrected, ≥80% similarity) |
+| `Customer #8 Davd Martines` | ✅ Fuzzy match (typo auto-corrected, ≥75% similarity) |
 | `Emily Davis` (no ID) | ✅ Name search → exact match found |
 | `Customer #8 Sarah Chen` (wrong name) | ⚠️ Name mismatch → stops with error |
 | `Customer #999` | ⚠️ Not found → stops with error |
@@ -205,7 +205,7 @@ The Investigator Agent handles these scenarios robustly:
 
 | Model | Used For | Cost per Request |
 |---|---|---|
-| Llama-3.1-8B (Groq) | Intent classification, search, response | ~$0.00003 |
+| `openai/gpt-oss-20b` (Groq) | Intent classification, search, response | ~$0.0001 |
 | Gemini 2.5 Flash | Fallback fast tasks | ~$0.0001 |
 | GPT-4.1 / Claude | SQL generation + reasoning | ~$0.008 |
 | **Total avg per ticket** | | **~$0.009** |
@@ -214,11 +214,11 @@ The Investigator Agent handles these scenarios robustly:
 ### Model Routing Strategy
 
 ```
-Simple intents (billing_inquiry, general)  →  Groq Llama-3.3-70B  (fast, free)
+Simple intents (billing_inquiry, general)  →  Groq openai/gpt-oss-120b  (fast, cheap)
 Complex intents (refund, account, technical)  →  Gemini 2.5 Flash  (accurate)
 SQL generation + action proposal  →  GPT-4.1 / Claude  (smart)
 
-Groq unavailable?  →  Automatic fallback to Gemini
+Groq unavailable?  →  Fallback to Gemini
 ```
 
 ## 🛠 Tech Stack
@@ -229,7 +229,7 @@ Groq unavailable?  →  Automatic fallback to Gemini
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
 | **Database** | Supabase (PostgreSQL) |
 | **Cache** | Redis (semantic deduplication) |
-| **LLMs** | Groq/Llama-3 (fast), GPT-4.1/Claude (complex), Gemini (fallback) |
+| **LLMs** | Groq `gpt-oss` (fast), GPT-4.1/Claude (complex), Gemini (fallback) |
 | **Observability** | LangSmith tracing + built-in token/cost tracking |
 | **Testing** | pytest + pytest-cov (backend), Vitest + React Testing Library (frontend) |
 | **CI/CD** | GitHub Actions — lint, test, coverage, Docker build |
@@ -240,7 +240,7 @@ Groq unavailable?  →  Automatic fallback to Gemini
 
 ```bash
 make test        # run backend + frontend tests
-make ci          # full pipeline: lint → test → build
+make ci          # full pipeline: lint → typecheck → test → audit → build
 ```
 
 ### Backend (pytest)
@@ -257,13 +257,13 @@ cd backend && python -m pytest tests/ --cov=app --cov-fail-under=100 -v
 | `investigator.py` (Investigator Agent) | 138 | 100% |
 | `researcher.py` (Knowledge Agent) | 14 | 100% |
 | `resolver.py` (Resolution Agent) | 150 | 100% |
-| `main.py` (API + SSE + HITL) | 270 | 100% |
+| `main.py` (API + SSE + HITL) | 315 | 100% |
 | `model_router.py` | 43 | 100% |
 | `semantic.py` (cache) | 73 | 100% |
 | `tracker.py` (observability) | 71 | 100% |
 | `supabase.py` | 45 | 100% |
 | All other modules | 123 | 100% |
-| **Total** | **956** | **100%** |
+| **Total** | **1001** | **100%** |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -351,13 +351,13 @@ aegis/
 │   │   ├── observability/tracker.py # Token/cost tracking
 │   │   ├── config.py            # Pydantic Settings
 │   │   └── main.py              # FastAPI app + SSE endpoints
-│   ├── tests/                   # 8 test files, 100% coverage
+│   ├── tests/                   # 9 test files, 100% coverage
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── app/page.tsx         # Main dashboard
-│   │   ├── components/          # 6 React components
+│   │   ├── components/          # 7 React components
 │   │   │   ├── AnimatedNumber.tsx    # Smooth animated value counter
 │   │   │   ├── ApprovalModal.tsx     # HITL approval UI
 │   │   │   ├── DatabaseStatus.tsx    # DB table explorer
@@ -394,7 +394,7 @@ All day-to-day workflows are managed via `make`. Run `make help` to see the full
 
 | Command | Description |
 |---|---|
-| `make ci` | 🔁 Full CI pipeline: lint → test → build |
+| `make ci` | 🔁 Full CI pipeline: lint → typecheck → test → audit → build |
 | `make test` | ✅ Run all tests (backend + frontend) |
 | `make test-backend` | 🐍 Backend pytest with 100% coverage enforcement |
 | `make test-frontend` | ⚛️ Frontend Vitest with coverage |
@@ -472,12 +472,34 @@ Copy `backend/.env.example` to `backend/.env` and configure:
 | `REDIS_URL` | ➖ | Redis connection URL (default: `redis://localhost:6379`) |
 | `CACHE_TTL_SECONDS` | ➖ | Cache TTL in seconds (default: `3600`) |
 | `FRONTEND_URL` | ➖ | CORS origin (default: `http://localhost:3000`) |
-| `LANGCHAIN_TRACING_V2` | ➖ | Enable LangSmith tracing (default: `true`) |
+| `LANGCHAIN_TRACING_V2` | ➖ | Enable LangSmith tracing (code default: `false`; `.env.example` sets `true`) |
 | `LANGCHAIN_API_KEY` | ➖ | LangSmith API key for tracing |
 | `LANGCHAIN_PROJECT` | ➖ | LangSmith project name (default: `aegis`) |
 | `DEBUG` | ➖ | Enable debug logging (default: `false`) |
 
 > ✅ = required, ⚡ = need at least one LLM key, ➖ = optional
+
+## 🚧 Production Gaps
+
+Aegis is a demonstration system. These are the things that would have to change
+before it ran against real customers, stated plainly rather than discovered by a
+reader:
+
+| Gap | Current | Would need |
+|---|---|---|
+| **Authentication** | None. Every endpoint is open. | JWT/session auth + per-tenant row-level scoping |
+| **Approval durability** | `thread_store` is an in-process dict and LangGraph uses `MemorySaver`; a restart loses pending approvals, and it cannot run more than one replica | Redis or Postgres checkpointer + shared thread store |
+| **LLM-generated SQL** | Validated by a keyword blocklist inside a `SECURITY DEFINER` function — it stops DDL/DML but not `UNION SELECT` | `sqlglot` parse, single-`SELECT` assertion, table allowlist, low-privilege role under RLS |
+| **Action execution** | Recommendation-only — `execute_action` returns text and writes nothing | An `actions` table with an idempotency key and a compensating revert path |
+| **Provider resilience** | No timeout or retry on `ainvoke`; a hung provider hangs the workflow | `asyncio.wait_for`, bounded backoff, real cross-provider failover |
+| **Response cache** | Exact-match SHA-256 on the normalized query — not semantic despite the name | Embedding + vector similarity with a tuned threshold |
+| **Metrics storage** | In-memory; resets on restart | Postgres/TimescaleDB, with the same aggregate API |
+
+**Agent quality is not yet measured.** The 100% coverage figure above is line
+coverage over deterministic logic with every LLM mocked — it verifies the code
+is exercised, not that the agent is *correct*. An evaluation suite with a golden
+ticket set is the next piece of work, and until it exists no claim is made about
+accuracy.
 
 ## 📄 License
 

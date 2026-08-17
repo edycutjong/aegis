@@ -30,7 +30,7 @@ class Settings:
 
     # Model routing defaults
     fast_model: str = "openai/gpt-oss-20b"
-    smart_model: str = "gpt-4o"
+    smart_model: str = "gpt-4.1"
 
     # CORS
     frontend_url: str = "http://localhost:3000"
