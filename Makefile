@@ -32,7 +32,7 @@ db-reset: ## 🗄️  Reset & reseed the Supabase database (requires SUPABASE_MA
 
 # ── Testing ────────────────────────────────────────────────
 
-.PHONY: test test-backend test-frontend lint
+.PHONY: test test-backend test-frontend test-safety lint lint-fix typecheck e2e e2e-ui audit security-scan
 
 test: test-backend test-frontend ## ✅ Run all tests
 
@@ -45,9 +45,41 @@ test-backend: ## 🐍 Run backend tests with coverage (100% required)
 test-frontend: ## ⚛️  Run frontend tests with Vitest
 	cd frontend && npm test -- --coverage
 
+test-safety: ## 🛡️  Run exhaustive safety-invariant tests (HITL gate + table allowlist)
+	cd backend && python -m pytest tests/test_safety_invariants.py -v
+
 lint: ## 🔍 Lint backend (ruff) + frontend (eslint)
 	ruff check backend/
 	cd frontend && npm run lint
+
+lint-fix: ## 🩹 Auto-fix lint issues (ruff + eslint)
+	ruff check --fix backend/
+	cd frontend && npm run lint:fix
+
+typecheck: ## 🔎 Type check backend (mypy) + frontend (tsc)
+	cd backend && python -m mypy app --ignore-missing-imports || true
+	cd frontend && npm run typecheck
+
+e2e: ## 🎭 Run Playwright E2E tests (no backend or API keys needed)
+	cd frontend && npm run e2e
+
+e2e-ui: ## 🎭 Run Playwright E2E tests in interactive UI mode
+	cd frontend && npm run e2e:ui
+
+audit: ## 🔐 Dependency CVE audit (pip-audit + npm audit)
+	@echo "=== pip-audit (backend CVEs) ==="
+	@python -m pip_audit -r backend/requirements.txt || true
+	@echo ""
+	@echo "=== npm audit (frontend) ==="
+	@cd frontend && npm audit --audit-level=high || true
+
+security-scan: audit ## 🔐 Full security sweep (deps + secrets in git history)
+	@echo ""
+	@echo "=== gitleaks (secrets in full history) ==="
+	@gitleaks detect --no-banner --redact || true
+	@echo ""
+	@echo "=== license compliance (frontend) ==="
+	@cd frontend && npx license-checker --production --failOn "GPL-3.0;AGPL-3.0" --summary || true
 
 # ── Screenshots & Videos ──────────────────────────────────
 
@@ -98,7 +130,7 @@ clips: ## 🎞️  Record individual feature clips (requires stack running)
 build: ## 🏗️  Build Docker images (no cache)
 	docker compose build --no-cache
 
-ci: lint test build ## 🔁 Run full CI pipeline locally (lint → test → build)
+ci: lint typecheck test audit build ## 🔁 Full CI pipeline locally (lint → typecheck → test → audit → build)
 
 # ── Help ──────────────────────────────────────────────────
 
