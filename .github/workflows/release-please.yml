@@ -1,0 +1,82 @@
+name: Release Please
+
+# Automated semantic versioning.
+#
+# On every push to main, release-please reads the conventional-commit messages
+# since the last release and maintains an open "release PR" containing the next
+# version bump + generated CHANGELOG entry. Merging that PR cuts the release:
+# it tags `vX.Y.Z`, publishes a GitHub Release, and writes the new version into
+# every file listed in release-please-config.json.
+#
+#   fix:      → patch  (1.5.3 → 1.5.4)
+#   feat:     → minor  (1.5.3 → 1.6.0)
+#   feat!: / BREAKING CHANGE: → major (1.5.3 → 2.0.0)
+#   docs:/chore:/ci:/refactor:/test:/perf: → changelog only, no bump
+#
+# Nothing is ever released without a human merging the release PR.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Maintain release PR
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Runs only on the push that merges a release PR — confirms the version
+  # actually landed consistently in every file that carries it.
+  verify-release:
+    name: Verify released version
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert version is consistent across the repo
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          set -e
+          echo "Released version: $VERSION"
+          fail=0
+
+          check() {
+            if grep -q "$VERSION" "$1"; then
+              echo "  ✅ $1"
+            else
+              echo "::error file=$1::$1 does not contain version $VERSION"
+              fail=1
+            fi
+          }
+
+          check version.txt
+          check frontend/package.json
+          check backend/app/main.py
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Version drift detected — the release is inconsistent."
+            exit 1
+          fi
+          echo "🏷️  All version strings agree on $VERSION"

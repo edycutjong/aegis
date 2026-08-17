@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "02ff252",
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": false,
+  "bump-patch-for-minor-pre-major": false,
+  "separate-pull-requests": false,
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "aegis",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "frontend/package.json",
+          "jsonpath": "$.version"
+        },
+        "backend/app/main.py"
+      ]
+    }
+  },
+  "changelog-sections": [
+    { "type": "feat", "section": "✨ Features" },
+    { "type": "fix", "section": "🐛 Bug Fixes" },
+    { "type": "perf", "section": "⚡ Performance" },
+    { "type": "refactor", "section": "♻️ Refactoring" },
+    { "type": "test", "section": "🧪 Tests" },
+    { "type": "docs", "section": "📚 Documentation" },
+    { "type": "build", "section": "📦 Build System" },
+    { "type": "ci", "section": "🔁 CI/CD" },
+    { "type": "chore", "section": "🧹 Chores", "hidden": true },
+    { "type": "style", "section": "💅 Styling", "hidden": true }
+  ]
+}
