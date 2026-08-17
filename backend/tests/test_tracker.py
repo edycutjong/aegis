@@ -59,6 +59,21 @@ class TestRequestMetrics:
         assert m.completed_at is not None
         assert m.completed_at >= m.started_at
 
+    def test_to_dict_hitl_wait_seconds_when_both_timestamps_set(self):
+        """to_dict should compute hitl_wait_seconds when both HITL timestamps are present."""
+        m = RequestMetrics(thread_id="t1")
+        m.hitl_requested_at = 1000.0
+        m.hitl_resolved_at = 1004.25
+        d = m.to_dict()
+        assert d["hitl_wait_seconds"] == 4.25
+
+    def test_to_dict_hitl_wait_seconds_none_when_only_requested(self):
+        """hitl_wait_seconds should be None if only requested_at is set."""
+        m = RequestMetrics(thread_id="t1")
+        m.hitl_requested_at = 1000.0
+        d = m.to_dict()
+        assert d["hitl_wait_seconds"] is None
+
 
 class TestObservabilityTracker:
     """Verify the aggregate tracker lifecycle."""
@@ -135,6 +150,69 @@ class TestObservabilityTracker:
         dist = stats["model_distribution"]
         assert dist["llama-3.1-8b-instant"] == 3  # 1 + 2
         assert dist["gpt-4.1"] == 2  # 1 + 1
+
+    def test_hitl_approval_rate_computed_from_approved_requests(self):
+        """hitl_approval_rate should reflect the fraction of HITL requests approved."""
+        tracker = ObservabilityTracker()
+
+        m1 = tracker.start_request("t1")
+        m1.approved = True
+        tracker.complete_request("t1")
+
+        m2 = tracker.start_request("t2")
+        m2.approved = False
+        tracker.complete_request("t2")
+
+        m3 = tracker.start_request("t3")
+        m3.approved = True
+        tracker.complete_request("t3")
+
+        # A non-HITL request (approved stays None) should not count toward the rate
+        tracker.start_request("t4")
+        tracker.complete_request("t4")
+
+        stats = tracker.get_aggregate_stats()
+        assert stats["hitl_approval_rate"] == round(2 / 3 * 100, 1)
+
+    def test_hitl_approval_rate_none_when_no_hitl_requests(self):
+        """hitl_approval_rate should be None when no request ever went through HITL."""
+        tracker = ObservabilityTracker()
+        m = tracker.start_request("t1")
+        m.add_step("classify", "llama-3.1-8b-instant", 100, 50)
+        tracker.complete_request("t1")
+
+        stats = tracker.get_aggregate_stats()
+        assert stats["hitl_approval_rate"] is None
+
+    def test_avg_hitl_wait_seconds_computed(self):
+        """avg_hitl_wait_seconds should average hitl_wait_seconds across completed requests."""
+        tracker = ObservabilityTracker()
+
+        m1 = tracker.start_request("t1")
+        m1.hitl_requested_at = 1000.0
+        m1.hitl_resolved_at = 1002.0  # 2s wait
+        tracker.complete_request("t1")
+
+        m2 = tracker.start_request("t2")
+        m2.hitl_requested_at = 2000.0
+        m2.hitl_resolved_at = 2006.0  # 6s wait
+        tracker.complete_request("t2")
+
+        # Request without HITL timing should be excluded from the average
+        tracker.start_request("t3")
+        tracker.complete_request("t3")
+
+        stats = tracker.get_aggregate_stats()
+        assert stats["avg_hitl_wait_seconds"] == 4.0
+
+    def test_avg_hitl_wait_seconds_none_when_no_hitl_timing(self):
+        """avg_hitl_wait_seconds should be None when no request recorded HITL timing."""
+        tracker = ObservabilityTracker()
+        tracker.start_request("t1")
+        tracker.complete_request("t1")
+
+        stats = tracker.get_aggregate_stats()
+        assert stats["avg_hitl_wait_seconds"] is None
 
 
 class TestGetTracker:

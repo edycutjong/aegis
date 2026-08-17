@@ -176,6 +176,36 @@ describe("ThoughtStream", () => {
             );
             expect(screen.getByText("Some completely unknown message")).toBeInTheDocument();
         });
+
+        // ── Remaining USER_MODE_PATTERNS not covered above ──
+        // These lock in the exact text mapping shown to non-technical users;
+        // a broken regex here silently downgrades the UX without failing any
+        // line-coverage check, since the containing loop always executes.
+        it.each([
+            ["✓ [Investigator] Customer found by name: #5 Emily Davis (enterprise, suspended)", "Found customer: Emily Davis"],
+            ["⚠ [Investigator] Customer #5 Emily Davis is currently SUSPENDED", "Note: This account is currently suspended"],
+            ["⚠ [Investigator] Customer #3 Test User account is CANCELLED", "Note: This account has been cancelled"],
+            ["✓ [Investigator] Generated SQL query for investigation", "Searching account records..."],
+            ["✗ [Investigator] SQL retry (attempt 2/3): timeout", "Refining search (attempt 2)..."],
+            ["✓ [Knowledge] Found 2 relevant internal documents", "Checking company policies..."],
+            ["✓ [Knowledge] No specific internal docs found — using general knowledge", "Reviewing with general guidelines..."],
+            ["✓ [Resolution] Auto-approved: resolve is non-destructive", "Processing resolution..."],
+            ["✓ [Resolution] Human decision: approved", "✓ Manager approved"],
+            ["✗ [Resolution] Human decision: denied — Too expensive", "✗ Manager declined"],
+            ["✓ [Resolution] Action executed: Refund processed", "Refund processed"],
+            ["✓ [Resolution] Generated resolution summary", "Preparing your summary..."],
+            ["✓ [Resolution] Response already set by validation — skipping llm generation", "Ready."],
+            ["⚠ [Resolution] No records found in database — no action required", "No matching records found"],
+            ["✓ [Investigator] No specific customer ID or name in message — proceeding with investigation", "Searching broadly..."],
+            ["✗ [Investigator] Name mismatch: ticket says X but #8 is Y — stopping", "Customer identity could not be verified"],
+            ["✗ [Investigator] No customer found matching \"Nobody\" — stopping", "No matching customer found"],
+            ["✗ [Investigator] Ambiguous name \"Emily\" — 2 matches found, need disambiguation", "Multiple customers match — clarification needed"],
+            ["✗ [Investigator] No SQL query to execute", "No data search needed"],
+            ["✓ [Investigator] Proceeding with investigation", "Starting investigation..."],
+        ])("simplifies '%s' correctly", (raw, expected) => {
+            render(<ThoughtStream thoughts={[raw]} status="idle" />);
+            expect(screen.getByText(expected)).toBeInTheDocument();
+        });
     });
 
     // ── Agent Badge (Dev Mode) ──

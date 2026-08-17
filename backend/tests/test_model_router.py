@@ -231,3 +231,13 @@ class TestGetModelForIntent:
         # Should use smart model for write_sql, not groq
         mock_create.assert_called_once_with("gpt-4.1")
 
+    @patch("app.routing.model_router._create_model")
+    def test_unrecognized_provider_falls_back_to_default(self, mock_create, mock_settings):
+        """A truthy but unmapped model_provider (INTENT_MODEL_MAP miss) should
+        skip the intent-routing branch entirely and fall back to get_model(task),
+        NOT to the Groq-failure Gemini fallback."""
+        mock_create.return_value = MagicMock()
+        get_model_for_intent("generate_response", "some-unknown-provider")
+        # generate_response is a "fast" task -> default fast model, not gemini
+        mock_create.assert_called_once_with("llama-3.1-8b-instant")
+

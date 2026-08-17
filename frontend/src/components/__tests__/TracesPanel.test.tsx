@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import TracesPanel from "../TracesPanel";
 import type { TracesResponse } from "@/lib/api";
 
@@ -234,6 +234,63 @@ describe("TracesPanel", () => {
         fireEvent.click(screen.getByText("UnknownNode"));
         await waitFor(() => {
             expect(screen.queryByText("search_docs_variant")).not.toBeInTheDocument();
+        });
+    });
+
+    it("renders the trace list (not the error message) when error is set but traces already exist", async () => {
+        // Cover the branch where `error && traces.length === 0` is false because
+        // traces.length > 0 — stale-but-valid data should win over a transient error.
+        mockGetTraces.mockResolvedValue({
+            traces: MOCK_TRACES.traces,
+            error: "Rate limit exceeded",
+        });
+        render(<TracesPanel open onClose={noop} />);
+
+        await waitFor(() => {
+            expect(screen.getByText("aegis-support-workflow")).toBeInTheDocument();
+        });
+        expect(screen.queryByText(/Rate limit exceeded/)).not.toBeInTheDocument();
+    });
+
+    describe("auto-refresh interval", () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it("re-fetches traces every 120s while open", async () => {
+            mockGetTraces.mockResolvedValue(MOCK_TRACES);
+            render(<TracesPanel open onClose={noop} />);
+
+            await act(async () => {
+                await vi.waitFor(() => {
+                    expect(mockGetTraces).toHaveBeenCalledTimes(1);
+                });
+            });
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(120000); });
+            expect(mockGetTraces).toHaveBeenCalledTimes(2);
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(120000); });
+            expect(mockGetTraces).toHaveBeenCalledTimes(3);
+        });
+
+        it("stops refreshing once unmounted (clears the interval)", async () => {
+            mockGetTraces.mockResolvedValue(MOCK_TRACES);
+            const { unmount } = render(<TracesPanel open onClose={noop} />);
+
+            await act(async () => {
+                await vi.waitFor(() => {
+                    expect(mockGetTraces).toHaveBeenCalledTimes(1);
+                });
+            });
+
+            unmount();
+            await act(async () => { await vi.advanceTimersByTimeAsync(120000); });
+            expect(mockGetTraces).toHaveBeenCalledTimes(1);
         });
     });
 });

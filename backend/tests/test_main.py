@@ -386,6 +386,46 @@ class TestApproveEndpoint:
         assert response.status_code == 500
         del thread_store["error-approval"]
 
+    def test_approve_no_metrics_skips_approved_assignment(self, client):
+        """Cover L347-348: when tracker.get_request returns None (metrics were
+        never started, e.g. server restarted mid-flow), approve_action must
+        not crash trying to set `.approved` on None — it should just skip it."""
+        from app.main import thread_store
+
+        thread_store["no-metrics-approval"] = {
+            "message": "refund request",
+            "status": "awaiting_approval",
+            "thought_log": ["✓ Proposed refund"],
+            "proposed_action": {"type": "refund", "amount": 10.0},
+            "final_response": None,
+        }
+
+        async def mock_astream(*args, **kwargs):
+            yield {"execute_action": {"thought_log": ["✓ Executed"], "final_response": "Refund done"}}
+
+        mock_graph = MagicMock()
+        mock_graph.astream = mock_astream
+
+        mock_cache = AsyncMock()
+        mock_cache.set = AsyncMock()
+
+        mock_tracker = MagicMock()
+        mock_tracker.get_request.return_value = None  # No metrics found
+        mock_tracker.complete_request = MagicMock()
+
+        with patch("app.main.agent_graph", mock_graph), \
+             patch("app.main.get_cache", new_callable=AsyncMock, return_value=mock_cache), \
+             patch("app.main.get_tracker", return_value=mock_tracker):
+            response = client.post(
+                "/api/approve/no-metrics-approval",
+                json={"approved": True, "reason": ""},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "completed"
+        mock_tracker.complete_request.assert_called_once_with("no-metrics-approval")
+        del thread_store["no-metrics-approval"]
+
 
 # ─────────────────────────────────────────────────────────────
 # _run_agent tests (L166-212)
@@ -533,6 +573,88 @@ class TestRunAgent:
 
         assert thread_store["candidates-test"]["customer_candidates"] == [{"id": 1}, {"id": 2}]
         del thread_store["candidates-test"]
+
+    @pytest.mark.asyncio
+    async def test_run_agent_skips_cache_when_thought_log_has_failure(self):
+        """Cover L213-214: has_failure=True should skip caching even though
+        final_response is set — a 'not found'/'✗' entry means the result
+        shouldn't be served to future identical queries."""
+        from app.main import _run_agent, thread_store
+
+        thread_store["failure-cache-test"] = {
+            "message": "test",
+            "status": "processing",
+            "thought_log": [],
+            "proposed_action": None,
+            "final_response": None,
+        }
+
+        async def mock_astream(*args, **kwargs):
+            yield {"validate_customer": {
+                "thought_log": ["✗ Customer #999 not found in database — stopping"],
+                "final_response": "Customer #999 was not found in our database.",
+            }}
+
+        mock_state = MagicMock()
+        mock_state.next = None
+
+        mock_graph = MagicMock()
+        mock_graph.astream = mock_astream
+        mock_graph.get_state = MagicMock(return_value=mock_state)
+
+        mock_cache = AsyncMock()
+        mock_cache.set = AsyncMock()
+        mock_tracker = MagicMock()
+        mock_tracker.complete_request = MagicMock()
+
+        with patch("app.main.agent_graph", mock_graph), \
+             patch("app.main.get_cache", new_callable=AsyncMock, return_value=mock_cache), \
+             patch("app.main.get_tracker", return_value=mock_tracker):
+            await _run_agent("failure-cache-test", "test")
+
+        assert thread_store["failure-cache-test"]["status"] == "completed"
+        mock_cache.set.assert_not_called()
+        mock_tracker.complete_request.assert_called_once_with("failure-cache-test")
+        del thread_store["failure-cache-test"]
+
+    @pytest.mark.asyncio
+    async def test_run_agent_skips_cache_when_no_final_response(self):
+        """Cover L214: final_resp falsy should skip caching, but observability
+        tracking must still complete regardless."""
+        from app.main import _run_agent, thread_store
+
+        thread_store["no-response-test"] = {
+            "message": "test",
+            "status": "processing",
+            "thought_log": [],
+            "proposed_action": None,
+            "final_response": None,
+        }
+
+        async def mock_astream(*args, **kwargs):
+            yield {"classify_intent": {"thought_log": ["✓ Classified"]}}
+
+        mock_state = MagicMock()
+        mock_state.next = None
+
+        mock_graph = MagicMock()
+        mock_graph.astream = mock_astream
+        mock_graph.get_state = MagicMock(return_value=mock_state)
+
+        mock_cache = AsyncMock()
+        mock_cache.set = AsyncMock()
+        mock_tracker = MagicMock()
+        mock_tracker.complete_request = MagicMock()
+
+        with patch("app.main.agent_graph", mock_graph), \
+             patch("app.main.get_cache", new_callable=AsyncMock, return_value=mock_cache), \
+             patch("app.main.get_tracker", return_value=mock_tracker):
+            await _run_agent("no-response-test", "test")
+
+        assert thread_store["no-response-test"]["status"] == "completed"
+        mock_cache.set.assert_not_called()
+        mock_tracker.complete_request.assert_called_once_with("no-response-test")
+        del thread_store["no-response-test"]
 
 
 # ─────────────────────────────────────────────────────────────

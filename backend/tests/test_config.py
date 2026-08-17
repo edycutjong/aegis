@@ -59,6 +59,70 @@ class TestSettingsFromEnv:
             assert s.debug is True
 
 
+class TestSettingsAllEnvFields:
+    """Every remaining Settings field should map from its env var (L48-63)."""
+
+    def test_supabase_url_from_env(self):
+        with patch.dict(os.environ, {"SUPABASE_URL": "https://proj.supabase.co"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.supabase_url == "https://proj.supabase.co"
+
+    def test_supabase_key_from_env(self):
+        with patch.dict(os.environ, {"SUPABASE_KEY": "anon-key-123"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.supabase_key == "anon-key-123"
+
+    def test_supabase_db_url_from_env(self):
+        with patch.dict(os.environ, {"SUPABASE_DB_URL": "postgresql://u:p@host/db"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.supabase_db_url == "postgresql://u:p@host/db"
+
+    def test_openai_api_key_from_env(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-openai-test"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.openai_api_key == "sk-openai-test"
+
+    def test_anthropic_api_key_from_env(self):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.anthropic_api_key == "sk-ant-test"
+
+    def test_google_api_key_from_env(self):
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "AIza-test"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.google_api_key == "AIza-test"
+
+    def test_redis_url_from_env(self):
+        with patch.dict(os.environ, {"REDIS_URL": "redis://cache-host:6380"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.redis_url == "redis://cache-host:6380"
+
+    def test_cache_ttl_seconds_from_env(self):
+        with patch.dict(os.environ, {"CACHE_TTL_SECONDS": "7200"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.cache_ttl_seconds == 7200
+
+    def test_smart_model_from_env(self):
+        with patch.dict(os.environ, {"SMART_MODEL": "claude-sonnet-4-20250514"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.smart_model == "claude-sonnet-4-20250514"
+
+    def test_frontend_url_from_env(self):
+        with patch.dict(os.environ, {"FRONTEND_URL": "https://app.example.com"}, clear=False):
+            get_settings.cache_clear()
+            s = Settings()
+            assert s.frontend_url == "https://app.example.com"
+
+
 class TestGetSettingsCaching:
     """get_settings() should be a cached singleton."""
 

@@ -215,6 +215,26 @@ class TestSemanticCacheClear:
         assert cache.stats == {"hits": 0, "misses": 0}
         cache.redis.delete.assert_called_once()
 
+    async def test_clear_multi_page_scan(self):
+        """Cursor iterates through multiple non-'0' pages before terminating (L94-101 loop)."""
+        cache = SemanticCache.__new__(SemanticCache)
+        cache.stats = {"hits": 4, "misses": 2}
+        cache.redis = AsyncMock()
+        # Page 1: cursor "17" with 2 keys, Page 2: cursor "0" (done) with 1 key
+        cache.redis.scan = AsyncMock(
+            side_effect=[
+                ("17", ["aegis:cache:a", "aegis:cache:b"]),
+                ("0", ["aegis:cache:c"]),
+            ]
+        )
+        cache.redis.delete = AsyncMock(side_effect=[2, 1])
+
+        deleted = await cache.clear()
+        assert deleted == 3
+        assert cache.stats == {"hits": 0, "misses": 0}
+        assert cache.redis.scan.call_count == 2
+        assert cache.redis.delete.call_count == 2
+
     async def test_clear_no_keys(self):
         cache = SemanticCache.__new__(SemanticCache)
         cache.stats = {"hits": 2, "misses": 1}

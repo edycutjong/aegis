@@ -745,6 +745,49 @@ describe("Dashboard (page.tsx)", () => {
         vi.useFakeTimers({ shouldAdvanceTime: true }); // Restore for other tests
     });
 
+    // ── Ticket History Recording (completed path) ──
+    it("records a completed ticket into Recent Tickets with a response preview", async () => {
+        vi.useRealTimers(); // SSE callbacks use Promise.resolve — need real timers
+        const user = userEvent.setup();
+        vi.mocked(startChat).mockResolvedValue({
+            thread_id: "history-complete-thread",
+            status: "processing",
+            cache_hit: false,
+        });
+        vi.mocked(connectSSE).mockImplementation(
+            (_threadId, _onThought, _onApproval, onCompleted) => {
+                Promise.resolve().then(() =>
+                    onCompleted("Refund of $49 has been processed successfully.", ["✓ Done"])
+                );
+                return {} as unknown as EventSource;
+            }
+        );
+
+        render(<Dashboard />);
+        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
+        await user.type(textarea, "Customer #8 double charge complaint");
+        await user.click(screen.getByText("Submit Ticket").closest("button")!);
+
+        await waitFor(() => {
+            expect(screen.getAllByText("Refund of $49 has been processed successfully.").length).toBeGreaterThanOrEqual(1);
+        });
+
+        // Expand the Recent Tickets history panel and verify the entry was recorded
+        await waitFor(() => {
+            expect(screen.getByText("Recent Tickets")).toBeInTheDocument();
+        });
+        await user.click(screen.getByText("Recent Tickets"));
+
+        await waitFor(() => {
+            // Appears in the textarea (still holds the typed text) and in the history entry
+            expect(screen.getAllByText("Customer #8 double charge complaint").length).toBeGreaterThanOrEqual(1);
+        });
+        // Now appears twice: once in the "Resolution Complete" card, once as the history preview
+        expect(screen.getAllByText("Refund of $49 has been processed successfully.").length).toBe(2);
+
+        vi.useFakeTimers({ shouldAdvanceTime: true }); // Restore for other tests
+    });
+
     // ── Traces Panel Toggling ──
     it("opens and closes the Traces panel", async () => {
         const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

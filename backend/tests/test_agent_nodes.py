@@ -93,6 +93,12 @@ class TestExtractCustomerInfo:
         # name might be None since "Emily Davis" follows no keyword like "Customer"
         # but should work with "for Emily Davis"
 
+    def test_name_at_start_with_no_keyword_returns_none(self):
+        """A name with no preceding keyword ('Customer'/'for'/'client') is NOT extracted."""
+        cid, name = _extract_customer_info("Emily Davis reports a billing issue")
+        assert cid is None
+        assert name is None
+
     def test_name_only_for_keyword(self):
         cid, name = _extract_customer_info("Refund requested for Emily Davis")
         assert cid is None
@@ -1195,4 +1201,182 @@ class TestAwaitApprovalAsync:
             result = await await_approval(state)
         mock_interrupt.assert_called_once()
         assert result["approval_status"] == "approved"
+
+    @pytest.mark.asyncio
+    async def test_hitl_requested_at_not_overwritten_if_already_set(self):
+        """If hitl_requested_at was already set (e.g. by a prior interrupt cycle on
+        resume), await_approval must NOT clobber it with a new timestamp (L263)."""
+        state = _make_full_state("refund")
+        state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
+
+        mock_metrics = MagicMock()
+        original_requested_at = 12345.0
+        mock_metrics.hitl_requested_at = original_requested_at
+
+        with patch("app.agent.agents.resolver.interrupt", return_value={"approved": True, "reason": ""}), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            result = await await_approval(state)
+
+        assert result["approval_status"] == "approved"
+        # Unchanged — the "not metrics.hitl_requested_at" guard should have skipped reassignment
+        assert mock_metrics.hitl_requested_at == original_requested_at
+
+
+# ─────────────────────────────────────────────────────────────
+# model_name fallback branch (hasattr(llm, "model_name") is False)
+# ─────────────────────────────────────────────────────────────
+
+
+class _LLMWithoutModelNameAttr:
+    """A minimal LLM stand-in that deliberately lacks a `model_name` attribute,
+    forcing callers to fall back to `str(llm.model)`."""
+
+    def __init__(self, response):
+        self._response = response
+        self.model = "raw-model-object"
+
+    async def ainvoke(self, messages):
+        return self._response
+
+
+class TestClassifyIntentModelNameFallback:
+    """Cover the `else str(llm.model)` branch in classify_intent (L55)."""
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_str_model_when_no_model_name_attr(self):
+        mock_response = _mock_llm_response('{"intent": "billing", "confidence": 0.9}')
+        llm = _LLMWithoutModelNameAttr(mock_response)
+        mock_metrics = MagicMock()
+
+        with patch("app.agent.agents.classifier.get_model", return_value=llm), \
+             patch("app.agent.agents.classifier.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await classify_intent(_make_full_state("billing question"))
+
+        mock_metrics.add_step.assert_called_once_with(
+            "classify_intent", "raw-model-object", 100, 50
+        )
+
+
+class TestWriteSqlModelNameFallback:
+    """Cover the `else str(llm.model)` branch in write_sql (L335)."""
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_str_model_when_no_model_name_attr(self):
+        mock_response = _mock_llm_response("SELECT * FROM customers LIMIT 20")
+        llm = _LLMWithoutModelNameAttr(mock_response)
+        mock_metrics = MagicMock()
+
+        state = _make_full_state("Customer #8 billing")
+        state["intent"] = "billing"
+
+        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=llm), \
+             patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await write_sql(state)
+
+        mock_metrics.add_step.assert_called_once_with(
+            "write_sql", "raw-model-object", 100, 50
+        )
+
+
+class TestProposeActionModelNameFallback:
+    """Cover the `else str(llm.model)` branch in propose_action (L165)."""
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_str_model_when_no_model_name_attr(self):
+        action_json = json.dumps({
+            "type": "refund", "amount": 29.99, "customer_id": 8,
+            "customer_name": "David Martinez",
+            "description": "Refund", "reason": "Double charge",
+        })
+        mock_response = _mock_llm_response(action_json)
+        llm = _LLMWithoutModelNameAttr(mock_response)
+        mock_metrics = MagicMock()
+
+        state = _make_full_state("I was double charged")
+        state["intent"] = "billing"
+        state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["docs_context"] = "Refund policy"
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await propose_action(state)
+
+        mock_metrics.add_step.assert_called_once_with(
+            "propose_action", "raw-model-object", 100, 50
+        )
+
+
+class TestGenerateResponseModelNameFallback:
+    """Cover the `else str(llm.model)` branch in generate_response (L423)."""
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_str_model_when_no_model_name_attr(self):
+        mock_response = _mock_llm_response("Resolved.")
+        llm = _LLMWithoutModelNameAttr(mock_response)
+        mock_metrics = MagicMock()
+
+        state = _make_full_state("billing issue")
+        state["intent"] = "billing"
+        state["proposed_action"] = {"description": "Refund $29.99"}
+        state["approval_status"] = "approved"
+        state["execution_result"] = "Refund processed"
+        state["sql_result"] = [{"id": 1}]
+        state["customer_found"] = True
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = mock_metrics
+            await generate_response(state)
+
+        mock_metrics.add_step.assert_called_once_with(
+            "generate_response", "raw-model-object", 100, 50
+        )
+
+
+# ─────────────────────────────────────────────────────────────
+# _detect_already_resolved edge cases
+# ─────────────────────────────────────────────────────────────
+
+
+class TestDetectAlreadyResolvedEdgeCases:
+    """Additional branch coverage for _detect_already_resolved."""
+
+    def test_credit_type_with_duplicate_keyword_detected(self):
+        """A 'credit' record (not just 'refund') mentioning 'duplicate' should
+        also short-circuit to a 'resolve' action (the type filter includes credit)."""
+        from app.agent.agents.resolver import _detect_already_resolved
+
+        sql_result = [
+            {"id": 8, "name": "David Martinez", "amount": "15.00", "type": "credit",
+             "description": "Courtesy credit for duplicate billing"},
+        ]
+        result = _detect_already_resolved(sql_result, "I was double charged")
+        assert result is not None
+        assert result["type"] == "resolve"
+        assert result["customer_id"] == 8
+        assert "15.00" in result["description"]
+
+    def test_missing_amount_key_defaults_to_zero(self):
+        """When the refund record has no 'amount' key at all, default to 0.00 in the summary."""
+        from app.agent.agents.resolver import _detect_already_resolved
+
+        sql_result = [
+            {"id": 8, "name": "David Martinez", "type": "refund",
+             "description": "Duplicate charge refund"},
+        ]
+        result = _detect_already_resolved(sql_result, "I was double charged")
+        assert result is not None
+        assert "$0.00" in result["description"]
+
+    def test_empty_sql_results_returns_none(self):
+        from app.agent.agents.resolver import _detect_already_resolved
+        assert _detect_already_resolved([], "double charge") is None
+
+    def test_non_list_sql_results_returns_none(self):
+        from app.agent.agents.resolver import _detect_already_resolved
+        assert _detect_already_resolved(None, "double charge") is None
 
