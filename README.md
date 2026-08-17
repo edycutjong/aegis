@@ -14,7 +14,7 @@
 
 | Feature | Description |
 |---|---|
-| **Human-in-the-Loop (HITL)** | Agent pauses execution and waits for human approval before taking destructive actions (refunds, suspensions). Non-destructive actions are auto-approved. |
+| **Human-in-the-Loop (HITL)** | Agent pauses execution and waits for human approval before any action that moves money or changes account state (refund, credit, tier change, suspend, reactivate). Only `resolve` is auto-approved. |
 | **Dynamic Model Routing** | Routes simple intents to Groq Llama-3 (~$0.00003), complex intents to GPT-4.1/Gemini (~$0.008) — with automatic fallback |
 | **Smart Customer Validation** | Handles 8 edge cases: ID+name match, fuzzy name matching, typo correction, name-only search, disambiguation, suspended/cancelled accounts, not-found, and ID mismatch |
 | **Self-Healing SQL** | Generates SQL from natural language, executes against Supabase, and auto-retries up to 3× by feeding errors back to the LLM |

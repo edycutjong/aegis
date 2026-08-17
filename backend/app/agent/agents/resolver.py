@@ -245,8 +245,11 @@ async def await_approval(state: AgentState, config: dict | None = None) -> dict:
     """
     action = state.get("proposed_action", {})
 
-    # Non-destructive actions can auto-approve
-    auto_approve_types = {"resolve", "reactivate"}
+    # Non-destructive actions can auto-approve.
+    # `reactivate` is deliberately NOT here: restoring a suspended or cancelled
+    # account undoes a compliance action and resumes billing, so it is a real
+    # account-state change and goes through the human gate.
+    auto_approve_types = {"resolve"}
     if action.get("type") in auto_approve_types:
         return {
             "approval_status": "approved",

@@ -24,7 +24,7 @@ boundaries carry that risk, and both are covered by tests in
 `backend/tests/test_safety_invariants.py`:
 
 **1. The HITL approval gate.** Destructive actions (`refund`, `credit`,
-`tier_change`, `suspend`) never execute without an explicit human approval
+`tier_change`, `suspend`, `reactivate`) never execute without an explicit human approval
 resuming the LangGraph interrupt. The routing function `should_execute` is
 verified exhaustively — every combination of approval state and action type is
 enumerated, and the invariant *"no unapproved state ever reaches

@@ -1131,14 +1131,26 @@ class TestAwaitApprovalAsync:
         assert any("auto-approved" in t.lower() for t in result["thought_log"])
 
     @pytest.mark.asyncio
-    async def test_reactivate_auto_approves(self):
-        """Non-destructive 'reactivate' action auto-approves."""
+    async def test_reactivate_requires_human_approval(self):
+        """Regression: 'reactivate' must NOT auto-approve.
+
+        Pins the v2.0.0 breaking change. Reactivating a suspended or cancelled
+        account undoes a compliance action and resumes billing, so it goes
+        through the human gate rather than completing autonomously.
+        """
         state = _make_full_state("reactivate")
         state["proposed_action"] = {"type": "reactivate", "description": "Reactivate account"}
 
-        result = await await_approval(state)
+        with patch("app.agent.agents.resolver.interrupt") as mock_interrupt, \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_interrupt.return_value = {"approved": True, "reason": "ok"}
+            mock_tracker.return_value.get_request.return_value = None
+
+            result = await await_approval(state)
+
+        mock_interrupt.assert_called_once()
         assert result["approval_status"] == "approved"
-        assert any("auto-approved" in t.lower() for t in result["thought_log"])
+        assert not any("auto-approved" in t.lower() for t in result["thought_log"])
 
     @pytest.mark.asyncio
     async def test_dict_decision_approved(self):

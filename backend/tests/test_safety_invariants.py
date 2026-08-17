@@ -70,10 +70,10 @@ ALL_ACTION_TYPES = [
 
 # Action types that move money or change account state. These must never
 # execute without a human in the loop.
-DESTRUCTIVE_TYPES = {"refund", "credit", "tier_change", "suspend"}
+DESTRUCTIVE_TYPES = {"refund", "credit", "tier_change", "suspend", "reactivate"}
 
 # Types the Resolution Agent auto-approves as non-destructive.
-AUTO_APPROVE_TYPES = {"resolve", "reactivate"}
+AUTO_APPROVE_TYPES = {"resolve"}
 
 # Every approval_status value reachable via the graph, plus near-misses that a
 # bug, a casing slip, or a partially-written state could produce.
