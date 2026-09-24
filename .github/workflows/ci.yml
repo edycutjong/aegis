@@ -116,7 +116,7 @@ jobs:
           fetch-depth: 0 # full history
 
       - name: TruffleHog secret scan
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@4dd8831c5f12599465d4d45c3c447b4018a34c85 # v3.97.9
         with:
           extra_args: --only-verified
 
@@ -135,7 +135,6 @@ jobs:
         run: |
           pip install pip-audit
           pip-audit -r backend/requirements.txt
-        continue-on-error: true # advisory — don't block on unpatched upstream
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
@@ -147,12 +146,10 @@ jobs:
       - name: npm audit (high + critical)
         working-directory: frontend
         run: npm audit --audit-level=high
-        continue-on-error: true # transitive dev-dep noise
 
       - name: License compliance check
         working-directory: frontend
         run: npx license-checker --production --failOn "GPL-3.0;AGPL-3.0" --summary
-        continue-on-error: true
 
   # ── STAGE 3: Build Verification ───────────────────────────────
   build:
@@ -218,22 +215,3 @@ jobs:
             frontend/playwright-report/
             frontend/test-results/
           retention-days: 7
-
-  # ── STAGE 5: Deploy Gate (main only) ──────────────────────────
-  deploy-gate:
-    name: "Stage 5 · Deploy Gate"
-    needs: [build, e2e, secret-scan, dependency-audit]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: All gates passed
-        run: |
-          echo "🛡️  All CI/CD gates passed!"
-          echo ""
-          echo "Pipeline Summary:"
-          echo "  ✅ Stage 1 — Backend Quality (ruff, mypy, pytest @ 100%)"
-          echo "  ✅ Stage 1 — Frontend Quality (eslint, tsc, vitest + coverage)"
-          echo "  ✅ Stage 2 — Secret Scanning (TruffleHog, full history)"
-          echo "  ✅ Stage 2 — Dependency Audit (pip-audit, npm audit, licenses)"
-          echo "  ✅ Stage 3 — Build Verification (backend + frontend images)"
-          echo "  ✅ Stage 4 — E2E Tests (Playwright)"

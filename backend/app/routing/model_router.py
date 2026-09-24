@@ -1,7 +1,8 @@
 """Dynamic model routing for cost optimization.
 
 Routes simple tasks to fast/cheap models and complex tasks to powerful/expensive ones.
-This is Flex 2: Cost Engineering — proving you protect profit margins.
+Classification and formatting are cheap; SQL and action proposal are where
+being wrong is expensive, so they get the frontier model.
 """
 
 from langchain_openai import ChatOpenAI
@@ -37,11 +38,11 @@ MODEL_PRICING = {
 
 # Task → Model complexity mapping
 TASK_MODEL_MAP = {
-    "classify_intent": "fast",      # Simple classification → Llama-3 via Groq
-    "write_sql": "smart",           # Complex SQL generation → GPT-4o / Claude
-    "search_docs": "fast",          # Document retrieval → Llama-3 via Groq
-    "propose_action": "smart",      # Critical reasoning → GPT-4o / Claude
-    "generate_response": "fast",    # Response formatting → Llama-3 via Groq
+    "classify_intent": "fast",      # Classification → FAST_MODEL (Groq gpt-oss-20b)
+    "write_sql": "smart",           # SQL generation → SMART_MODEL (GPT-4.1)
+    "search_docs": "fast",          # (retrieval is deterministic; kept for completeness)
+    "propose_action": "smart",      # Default when no intent lane is set → SMART_MODEL
+    "generate_response": "fast",    # Default when no intent lane is set → FAST_MODEL
 }
 
 # Intent → Model provider routing (set by classifier)

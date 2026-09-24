@@ -1,6 +1,13 @@
 """Shared test fixtures for the Aegis backend."""
 
 import os
+
+# Tests must never send traces anywhere. app.config loads backend/.env, which
+# enables LangSmith for the running app; without this every test run would
+# upload spans to the real project (and burn its monthly trace quota).
+# Set before any app import so load_dotenv (override=False) cannot flip it.
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGSMITH_TRACING"] = "false"
 import pytest
 from unittest.mock import patch
 
