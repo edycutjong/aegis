@@ -168,3 +168,25 @@ class TestSearchCustomers:
         with patch("httpx.AsyncClient") as cls:
             cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=MagicMock(status_code=500))
             assert await client.search_customers(["David"]) == []
+
+
+class TestGetBilling:
+    @pytest.mark.asyncio
+    async def test_filters_by_integer_customer_id(self, mock_settings):
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        response = MagicMock(status_code=200)
+        response.json.return_value = [{"id": 1}]
+        with patch("httpx.AsyncClient") as cls:
+            get = AsyncMock(return_value=response)
+            cls.return_value.__aenter__.return_value.get = get
+            assert await client.get_billing(8) == [{"id": 1}]
+        assert get.call_args.kwargs["params"]["customer_id"] == "eq.8"
+
+    @pytest.mark.asyncio
+    async def test_error_returns_empty(self, mock_settings):
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        with patch("httpx.AsyncClient") as cls:
+            cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=MagicMock(status_code=500))
+            assert await client.get_billing(8) == []

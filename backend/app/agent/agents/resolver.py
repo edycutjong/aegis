@@ -96,7 +96,7 @@ def _escalate(action: dict, description: str, reason: str) -> dict:
     return {**action, "type": "escalate", "amount": None, "description": description, "reason": reason}
 
 
-def _enforce_invariants(action: dict, state: AgentState) -> dict:
+def _enforce_invariants(action: dict, state: AgentState, billing: list[dict] | None = None) -> dict:
     """Deterministic rules applied after the model speaks, on every path.
 
     Enforced in code rather than in the prompt, because the prompt is exactly
@@ -123,7 +123,10 @@ def _enforce_invariants(action: dict, state: AgentState) -> dict:
     # 2. Money moves only within what the billing evidence supports.
     if action.get("type") in ("refund", "credit"):
         amount = _to_amount(action.get("amount"))
-        ceiling = _max_charge(state.get("sql_result", []), customer.get("id"))
+        # Bounded by records fetched deterministically, not by the model's SQL:
+        # the model chooses column names (b.type AS billing_type), so its rows
+        # can't be relied on to expose a `type` or `amount` field.
+        ceiling = _max_charge(billing or [], customer.get("id"))
         if amount is None or amount <= 0:
             action = _escalate(action, "Proposed amount was missing or invalid — escalating.",
                                f"The model proposed a {action['type']} without a usable amount.")
@@ -186,14 +189,14 @@ async def propose_action(state: AgentState, config: RunnableConfig | None = None
     sql_data = json.dumps(state.get("sql_result", []), indent=2, default=str)
     docs = state.get("docs_context", "None")
 
-    # Check if we actually found a valid customer in the SQL results
-    sql_results = state.get("sql_result", [])
+    # ── Billing evidence for the validated customer (fetched at validation) ──
+    validated = state.get("customer") or {}
+    billing = state.get("billing") or []
 
     # ── Pre-check: already resolved? (still subject to the invariants) ──
-    validated = state.get("customer") or {}
-    already = _detect_already_resolved(sql_results, validated)
+    already = _detect_already_resolved(billing, validated)
     if already:
-        return _proposal(_enforce_invariants(already, state), state)
+        return _proposal(_enforce_invariants(already, state, billing), state)
 
     # The customer validated upstream is the only source of identity. Billing
     # rows carry `customer_id` but no `name`, and the LLM's query decides
@@ -287,7 +290,7 @@ Propose the best action:"""),
         "description": "Unable to determine action — escalating to human manager",
         "reason": "The AI could not confidently parse a resolution.",
     }
-    return _proposal(_enforce_invariants(action, state), state)
+    return _proposal(_enforce_invariants(action, state, billing), state)
 
 
 def _proposal(action: dict, state: AgentState) -> dict:

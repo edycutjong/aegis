@@ -62,6 +62,24 @@ class SupabaseClient:
                 return response.json()
             return []
 
+    async def get_billing(self, customer_id: int, limit: int = 100) -> list[dict]:
+        """The customer's billing records, fetched directly — the evidence that
+        bounds any refund or credit, independent of the SQL the model wrote."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{self.url}/rest/v1/billing",
+                headers={**self.headers, "Accept": "application/json"},
+                params={
+                    "customer_id": f"eq.{int(customer_id)}",
+                    "select": "id,customer_id,amount,type,status,description,created_at",
+                    "order": "created_at.desc",
+                    "limit": str(limit),
+                },
+            )
+            if response.status_code == 200:
+                return response.json()
+            return []
+
     async def list_docs(self, limit: int = 100) -> list[dict]:
         """Fetch the internal knowledge base for in-process ranking."""
         async with httpx.AsyncClient(timeout=10.0) as client:
