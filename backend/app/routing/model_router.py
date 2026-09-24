@@ -8,6 +8,8 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_anthropic import ChatAnthropic
 from langchain_groq import ChatGroq
+from pydantic import SecretStr
+
 from app.config import get_settings
 
 # Model pricing per 1M tokens (input/output)
@@ -23,7 +25,7 @@ MODEL_PRICING = {
     "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
     "llama-3.1-8b-instant": {"input": 0.05, "output": 0.08},
     # Google
-    "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
     "gemini-2.5-pro-preview-05-06": {"input": 1.25, "output": 10.00},
     # OpenAI
     "gpt-4.1": {"input": 2.00, "output": 8.00},
@@ -49,6 +51,56 @@ INTENT_MODEL_MAP = {
 }
 
 
+# Cross-provider failover. Evals showed both free-tier providers throttle under
+# modest concurrency (Gemini: 5 req/min; Groq gpt-oss-120b: 8K tokens/min), and
+# the old "fallback" pointed at the same provider that had just failed. Each
+# primary now fails fast (no retry sleep) and hands off to a different vendor.
+FALLBACK_MODEL = {
+    "groq": "gpt-4.1-mini",
+    "google": "gpt-4.1-mini",
+    "openai": "gemini-2.5-flash",
+    "anthropic": "gpt-4.1-mini",
+}
+
+
+def provider_of(model_name: str) -> str:
+    """Which vendor serves a model id (mirrors the dispatch in _create_model)."""
+    if "/" in model_name or model_name.startswith("llama"):
+        return "groq"
+    if model_name.startswith("gemini"):
+        return "google"
+    if model_name.startswith("gpt") or model_name.startswith("o"):
+        return "openai"
+    if model_name.startswith("claude"):
+        return "anthropic"
+    return "groq"
+
+
+def _with_fallback(model_name: str):
+    """Primary model that fails fast, wrapped with a different-provider fallback."""
+    primary = _create_model(model_name, max_retries=0)
+    fallback = _create_model(FALLBACK_MODEL[provider_of(model_name)])
+    return primary.with_fallbacks([fallback])
+
+
+def resolved_model_name(llm, response) -> str:
+    """Name of the model that actually answered — after any failover.
+
+    Prefer the provider's own response metadata; a fallback wrapper has no
+    `model_name`, and the configured name would misattribute failed-over cost.
+    """
+    meta = getattr(response, "response_metadata", None)
+    if isinstance(meta, dict):
+        name = meta.get("model_name") or meta.get("model")
+        if isinstance(name, str) and name:
+            return name.removeprefix("models/")
+    for attr in ("model_name", "model"):
+        value = getattr(llm, attr, None)
+        if isinstance(value, str) and value:
+            return value.removeprefix("models/")
+    return "unknown"
+
+
 def get_model(task: str, override_model: str | None = None):
     """Get the appropriate LLM for a given task.
 
@@ -67,7 +119,7 @@ def get_model(task: str, override_model: str | None = None):
         complexity = TASK_MODEL_MAP.get(task, "fast")
         model_name = settings.smart_model if complexity == "smart" else settings.fast_model
 
-    return _create_model(model_name)
+    return _with_fallback(model_name)
 
 
 def get_model_for_intent(task: str, model_provider: str | None = None):
@@ -87,17 +139,13 @@ def get_model_for_intent(task: str, model_provider: str | None = None):
     if model_provider and task in routable_tasks:
         model_name = INTENT_MODEL_MAP.get(model_provider)
         if model_name:
-            try:
-                return _create_model(model_name)
-            except Exception:
-                # Fallback to Gemini if Groq is unavailable
-                return _create_model("gemini-2.5-flash")
+            return _with_fallback(model_name)
 
     # Default: use standard task→model routing
     return get_model(task)
 
 
-def _create_model(model_name: str):
+def _create_model(model_name: str, max_retries: int = 2):
     """Create a LangChain model instance by name."""
     settings = get_settings()
 
@@ -108,39 +156,54 @@ def _create_model(model_name: str):
     if "/" in model_name or model_name.startswith("llama"):
         return ChatGroq(
             model=model_name,
-            api_key=settings.groq_api_key,
+            api_key=SecretStr(settings.groq_api_key),
             temperature=0.1,
+            max_retries=max_retries,
         )
     elif model_name.startswith("gemini"):
-        return ChatGoogleGenerativeAI(
+        return ChatGoogleGenerativeAI(  # type: ignore[call-arg]  # pydantic alias
             model=model_name,
-            google_api_key=settings.google_api_key,
+            google_api_key=SecretStr(settings.google_api_key),
             temperature=0.1,
+            max_retries=max_retries,
         )
     elif model_name.startswith("gpt") or model_name.startswith("o"):
         return ChatOpenAI(
             model=model_name,
-            api_key=settings.openai_api_key,
+            api_key=SecretStr(settings.openai_api_key),
             temperature=0.1,
+            max_retries=max_retries,
         )
     elif model_name.startswith("claude"):
-        return ChatAnthropic(
+        return ChatAnthropic(  # type: ignore[call-arg]  # `model` is a pydantic alias of model_name
             model=model_name,
-            api_key=settings.anthropic_api_key,
+            api_key=SecretStr(settings.anthropic_api_key),
             temperature=0.1,
+            max_retries=max_retries,
         )
     else:
         # Default to the cheapest Groq option
         return ChatGroq(
             model="openai/gpt-oss-20b",
-            api_key=settings.groq_api_key,
+            api_key=SecretStr(settings.groq_api_key),
             temperature=0.1,
+            max_retries=max_retries,
         )
 
 
 def get_cost_per_token(model_name: str) -> dict:
-    """Get pricing for a specific model."""
-    return MODEL_PRICING.get(model_name, {"input": 0.0, "output": 0.0})
+    """Get pricing for a specific model.
+
+    Providers report dated snapshots ("gpt-4.1-mini-2025-04-14"), so fall back
+    to the longest configured id that the reported name starts with.
+    """
+    name = model_name.removeprefix("models/")
+    if name in MODEL_PRICING:
+        return MODEL_PRICING[name]
+    for known in sorted(MODEL_PRICING, key=len, reverse=True):
+        if name.startswith(known):
+            return MODEL_PRICING[known]
+    return {"input": 0.0, "output": 0.0}
 
 
 def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
