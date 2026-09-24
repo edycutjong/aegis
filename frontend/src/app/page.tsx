@@ -132,7 +132,7 @@ export default function Dashboard() {
                     const cached = await getThread(res.thread_id);
                     adoptLog(cached.thought_log);
                     setSqlAttempts(cached.sql_attempts ?? []);
-                    setFinalResponse(cached.final_response ?? "Served from the semantic cache.");
+                    setFinalResponse(cached.final_response ?? "Served from the response cache.");
                 } catch {
                     setFinalResponse("This exact ticket was answered recently, so the cached reply was served instantly with no LLM calls.");
                 }

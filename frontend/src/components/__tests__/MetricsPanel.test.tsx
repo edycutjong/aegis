@@ -97,7 +97,7 @@ describe("MetricsPanel", () => {
         expect(screen.getAllByText("—")).toHaveLength(3);
         expect(screen.getByText(/Run a ticket to see which model/)).toBeInTheDocument();
         expect(screen.getByText("Redis off")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Clear semantic cache" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Clear response cache" })).toBeDisabled();
     });
 
     it("formats millions compactly", async () => {
@@ -109,7 +109,7 @@ describe("MetricsPanel", () => {
         vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 3 });
         const onCacheCleared = vi.fn();
         render(<MetricsPanel metrics={FULL} backend="up" onCacheCleared={onCacheCleared} />);
-        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        await userEvent.click(screen.getByRole("button", { name: "Clear response cache" }));
         expect(await screen.findByText("Cleared 3 keys")).toBeInTheDocument();
         expect(onCacheCleared).toHaveBeenCalled();
         await waitFor(() => expect(screen.queryByText("Cleared 3 keys")).not.toBeInTheDocument(), { timeout: 3000 });
@@ -118,14 +118,14 @@ describe("MetricsPanel", () => {
     it("reports a failed cache clear, even without a callback", async () => {
         vi.mocked(clearCache).mockRejectedValue(new Error("x"));
         render(<MetricsPanel metrics={FULL} backend="up" />);
-        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        await userEvent.click(screen.getByRole("button", { name: "Clear response cache" }));
         expect(await screen.findByText("Couldn't clear")).toBeInTheDocument();
     });
 
     it("clears without a callback", async () => {
         vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 0 });
         render(<MetricsPanel metrics={FULL} backend="up" />);
-        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        await userEvent.click(screen.getByRole("button", { name: "Clear response cache" }));
         expect(await screen.findByText("Cleared 0 keys")).toBeInTheDocument();
     });
 

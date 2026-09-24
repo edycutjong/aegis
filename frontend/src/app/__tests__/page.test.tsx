@@ -258,7 +258,7 @@ describe("Dashboard", () => {
         vi.mocked(getThread).mockResolvedValueOnce({ message: "m", status: "completed", thought_log: [], proposed_action: null, final_response: null });
         render(<Dashboard />);
         await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
-        expect(await screen.findByText("Served from the semantic cache.")).toBeInTheDocument();
+        expect(await screen.findByText("Served from the response cache.")).toBeInTheDocument();
 
         vi.mocked(getThread).mockRejectedValueOnce(new Error("evicted"));
         await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
@@ -344,7 +344,7 @@ describe("Dashboard", () => {
         render(<Dashboard />);
         await screen.findByText("Live");
         const before = vi.mocked(getMetrics).mock.calls.length;
-        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        await userEvent.click(screen.getByRole("button", { name: "Clear response cache" }));
         await waitFor(() => expect(vi.mocked(getMetrics).mock.calls.length).toBeGreaterThan(before));
     });
 

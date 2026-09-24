@@ -139,7 +139,7 @@ describe("RunPanel", () => {
 
     it("labels cached replies", () => {
         render(<RunPanel {...props({ status: "cached", ticket: "x", finalResponse: "From cache" })} />);
-        expect(screen.getByText("Served from semantic cache")).toBeInTheDocument();
+        expect(screen.getByText("Served from response cache")).toBeInTheDocument();
         expect(screen.getByText("Cache hit")).toBeInTheDocument();
     });
 
