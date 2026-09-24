@@ -4,6 +4,48 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+/**
+ * A failed API call, carrying what the UI needs to explain it:
+ * `status` is 0 when the backend could not be reached at all, and `detail`
+ * is the FastAPI `{"detail": "..."}` message when the server sent one.
+ */
+export class ApiError extends Error {
+    readonly status: number;
+    readonly detail: string | null;
+    readonly retryAfterSeconds: number | null;
+
+    constructor(message: string, status: number, detail: string | null = null, retryAfterSeconds: number | null = null) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status;
+        this.detail = detail;
+        this.retryAfterSeconds = retryAfterSeconds;
+    }
+}
+
+/** Build an ApiError from a non-ok response, reading `detail` and `Retry-After` when present. */
+async function toApiError(res: Response, label: string): Promise<ApiError> {
+    let detail: string | null = null;
+    try {
+        const body = await res.json();
+        if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+        // Non-JSON error body — fall back to the status text.
+    }
+    const retryHeader = res.headers?.get?.("Retry-After");
+    const retry = retryHeader ? Number.parseInt(retryHeader, 10) : NaN;
+    return new ApiError(`${label}: ${res.statusText}`, res.status, detail, Number.isFinite(retry) ? retry : null);
+}
+
+/** fetch() that turns network failures into ApiError(status 0). */
+async function send(url: string, init: RequestInit | undefined, label: string): Promise<Response> {
+    try {
+        return init ? await fetch(url, init) : await fetch(url);
+    } catch {
+        throw new ApiError(`${label}: backend unreachable`, 0);
+    }
+}
+
 export interface ChatResponse {
     thread_id: string;
     status: "processing" | "awaiting_approval" | "completed" | "cached" | "error";
@@ -39,6 +81,16 @@ export interface ThreadState {
     thought_log: string[];
     proposed_action: ActionProposal | null;
     final_response: string | null;
+    customer_candidates?: CustomerCandidate[] | null;
+    sql_attempts?: SqlAttempt[];
+}
+
+/** One SQL query the Investigator wrote, and what happened when it ran. */
+export interface SqlAttempt {
+    query: string;
+    /** Database error, or "Blocked by SQL guard: …" when the guard refused it. */
+    error: string | null;
+    rows: number | null;
 }
 
 export interface AgentMetrics {
@@ -51,14 +103,30 @@ export interface AgentMetrics {
     hitl_approval_rate: number | null;
     avg_hitl_wait_seconds: number | null;
     cost_saved_by_cache: number;
-    recent_requests: Array<{
-        thread_id: string;
-        total_cost_usd: number;
-        total_tokens: number;
-        duration_seconds: number;
-        models_used: Record<string, number>;
-        cache_hit: boolean;
-    }>;
+    recent_requests: RecentRequest[];
+}
+
+/** One LLM call inside a run, as recorded by the backend tracker. */
+export interface RequestStep {
+    step: string;
+    model: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost_usd: number;
+    timestamp: number;
+}
+
+/** A completed run's receipt from /api/metrics. */
+export interface RecentRequest {
+    thread_id: string;
+    total_cost_usd: number;
+    total_tokens: number;
+    duration_seconds: number;
+    models_used: Record<string, number>;
+    cache_hit: boolean;
+    steps?: RequestStep[];
+    approved?: boolean | null;
+    hitl_wait_seconds?: number | null;
 }
 
 export interface CacheMetrics {
@@ -76,19 +144,19 @@ export interface Metrics {
 
 /** Start a new agent workflow */
 export async function startChat(message: string): Promise<ChatResponse> {
-    const res = await fetch(`${API_URL}/api/chat`, {
+    const res = await send(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
-    });
-    if (!res.ok) throw new Error(`Chat failed: ${res.statusText}`);
+    }, "Chat failed");
+    if (!res.ok) throw await toApiError(res, "Chat failed");
     return res.json();
 }
 
 /** Get current thread state */
 export async function getThread(threadId: string): Promise<ThreadState> {
-    const res = await fetch(`${API_URL}/api/thread/${threadId}`);
-    if (!res.ok) throw new Error(`Thread fetch failed: ${res.statusText}`);
+    const res = await send(`${API_URL}/api/thread/${threadId}`, undefined, "Thread fetch failed");
+    if (!res.ok) throw await toApiError(res, "Thread fetch failed");
     return res.json();
 }
 
@@ -98,12 +166,12 @@ export async function approveAction(
     approved: boolean,
     reason: string = ""
 ): Promise<ApprovalResponse> {
-    const res = await fetch(`${API_URL}/api/approve/${threadId}`, {
+    const res = await send(`${API_URL}/api/approve/${threadId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved, reason }),
-    });
-    if (!res.ok) throw new Error(`Approval failed: ${res.statusText}`);
+    }, "Approval failed");
+    if (!res.ok) throw await toApiError(res, "Approval failed");
     return res.json();
 }
 
@@ -150,7 +218,8 @@ export function connectSSE(
     onApprovalRequired: (action: ActionProposal) => void,
     onCompleted: (response: string, thoughtLog: string[]) => void,
     onError: (error: string) => void,
-    onDisambiguation?: (candidates: CustomerCandidate[], response: string) => void
+    onDisambiguation?: (candidates: CustomerCandidate[], response: string) => void,
+    onSql?: (attempts: SqlAttempt[]) => void
 ): EventSource {
     const es = new EventSource(`${API_URL}/api/stream/${threadId}`);
 
@@ -159,14 +228,24 @@ export function connectSSE(
         onThought(data.step);
     });
 
+    const emitSql = (attempts: SqlAttempt[] | undefined) => {
+        if (attempts && onSql) onSql(attempts);
+    };
+
+    es.addEventListener("sql", (e) => {
+        emitSql(JSON.parse(e.data).attempts);
+    });
+
     es.addEventListener("approval_required", (e) => {
         const data = JSON.parse(e.data);
+        emitSql(data.sql_attempts);
         onApprovalRequired(data.action);
         es.close();
     });
 
     es.addEventListener("completed", (e) => {
         const data = JSON.parse(e.data);
+        emitSql(data.sql_attempts);
         if (data.customer_candidates && data.customer_candidates.length > 0 && onDisambiguation) {
             onDisambiguation(data.customer_candidates, data.response);
         } else {

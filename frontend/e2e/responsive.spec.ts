@@ -43,15 +43,19 @@ for (const viewport of VIEWPORTS) {
             ).toBeVisible();
         });
 
-        test("submit control meets the minimum touch target", async ({ page }) => {
+        test("primary controls meet the minimum touch target", async ({ page }) => {
             await page.goto("/");
 
-            const quickTest = page.getByRole("button", { name: /Quick Test/i });
-            await expect(quickTest).toBeVisible();
-
-            const box = await quickTest.boundingBox();
-            expect(box).not.toBeNull();
-            expect(box!.height).toBeGreaterThanOrEqual(28);
+            for (const control of [
+                page.getByRole("tab", { name: /Scenarios/i }),
+                page.getByRole("button", { name: /Run agents/i }),
+                page.getByRole("button", { name: /Double charge/i }).first(),
+            ]) {
+                await expect(control).toBeVisible();
+                const box = await control.boundingBox();
+                expect(box).not.toBeNull();
+                expect(box!.height).toBeGreaterThanOrEqual(28);
+            }
         });
     });
 }

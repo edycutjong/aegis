@@ -1,894 +1,358 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { act } from "react";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Dashboard from "../page";
-import type { ActionProposal, ChatResponse } from "@/lib/api";
+import type { ActionProposal, CustomerCandidate, Metrics, SqlAttempt } from "@/lib/api";
 
-// jsdom doesn't implement scrollTo
 Element.prototype.scrollTo = vi.fn();
 
-// ── Mock API module ──
-vi.mock("@/lib/api", () => ({
-    startChat: vi.fn(),
-    connectSSE: vi.fn(),
-    approveAction: vi.fn(),
-    getMetrics: vi.fn().mockResolvedValue({
-        agent_metrics: {
-            total_requests: 0,
-            avg_cost_usd: 0,
-            avg_duration_seconds: 0,
-            total_cost_usd: 0,
-            total_tokens: 0,
-            hitl_approval_rate: 100,
-            avg_hitl_wait_seconds: 0,
-            cost_saved_by_cache: 0,
-            model_distribution: {},
-            recent_requests: [],
-        },
-        cache_metrics: {
-            hits: 0,
-            misses: 0,
-            total_requests: 0,
-            hit_rate_percent: 0,
-            connected: false,
-        },
-    }),
-    getDbStatus: vi.fn().mockResolvedValue({}),
-    clearCache: vi.fn().mockResolvedValue({ status: "ok", keys_deleted: 0 }),
-    getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
-    getTraces: vi.fn().mockResolvedValue({ traces: [], error: null }),
-    getTracingStatus: vi.fn().mockResolvedValue({ enabled: true, project: "aegis", connected: true }),
-}));
+const METRICS: Metrics = {
+    agent_metrics: {
+        total_requests: 1,
+        avg_cost_usd: 0.002,
+        avg_duration_seconds: 5,
+        total_cost_usd: 0.002,
+        total_tokens: 100,
+        hitl_approval_rate: 100,
+        avg_hitl_wait_seconds: 3,
+        cost_saved_by_cache: 0,
+        model_distribution: { "gpt-4.1": 1 },
+        recent_requests: [
+            { thread_id: "t1", total_cost_usd: 0.0021, total_tokens: 1234, duration_seconds: 4.2, models_used: {}, cache_hit: false },
+        ],
+    },
+    cache_metrics: { hits: 0, misses: 0, total_requests: 0, hit_rate_percent: 0, connected: false },
+};
 
-import { startChat, connectSSE, approveAction, getMetrics, clearCache, getTraces } from "@/lib/api";
+vi.mock("@/lib/api", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/lib/api")>();
+    return {
+        ...actual,
+        startChat: vi.fn(),
+        connectSSE: vi.fn(),
+        approveAction: vi.fn(),
+        getThread: vi.fn(),
+        getMetrics: vi.fn(),
+        getDbStatus: vi.fn().mockResolvedValue({}),
+        clearCache: vi.fn().mockResolvedValue({ status: "ok", keys_deleted: 0 }),
+        getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
+        getTraces: vi.fn().mockResolvedValue({ traces: [], error: null }),
+        getTracingStatus: vi.fn().mockResolvedValue({ enabled: true, project: "aegis", connected: true }),
+    };
+});
 
-describe("Dashboard (page.tsx)", () => {
+import { ApiError, startChat, connectSSE, approveAction, getMetrics, getThread } from "@/lib/api";
+
+type Callbacks = {
+    onThought: (s: string) => void;
+    onApproval: (a: ActionProposal) => void;
+    onCompleted: (r: string, log: string[]) => void;
+    onError: (e: string) => void;
+    onDisambiguation: (c: CustomerCandidate[], r: string) => void;
+    onSql: (a: SqlAttempt[]) => void;
+};
+
+let cb: Callbacks;
+const close = vi.fn();
+
+const ACTION: ActionProposal = {
+    type: "refund",
+    amount: 49,
+    customer_id: 8,
+    customer_name: "David Martinez",
+    description: "Refund the duplicate charge",
+    reason: "Two identical charges",
+};
+
+async function startRun(label = /Double charge/) {
+    await userEvent.click(screen.getAllByRole("button", { name: label })[0]);
+    await waitFor(() => expect(connectSSE).toHaveBeenCalled());
+}
+
+describe("Dashboard", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.useFakeTimers({ shouldAdvanceTime: true });
+        vi.mocked(getMetrics).mockResolvedValue(METRICS);
+        vi.mocked(startChat).mockResolvedValue({ thread_id: "t1", status: "processing", cache_hit: false });
+        vi.mocked(connectSSE).mockImplementation((_id, onThought, onApproval, onCompleted, onError, onDisambiguation, onSql) => {
+            cb = { onThought, onApproval, onCompleted, onError, onDisambiguation: onDisambiguation!, onSql: onSql! };
+            return { close } as unknown as EventSource;
+        });
+        localStorage.clear();
     });
 
-    afterEach(() => {
-        vi.useRealTimers();
-    });
+    afterEach(() => vi.useRealTimers());
 
-    // ── Page Structure ──
-    it("renders the Aegis title and support ticket section", () => {
+    it("explains itself on first paint and reports the backend as live", async () => {
         render(<Dashboard />);
-        expect(screen.getByText("Aegis")).toBeInTheDocument();
-        expect(screen.getByText("Support Ticket")).toBeInTheDocument();
-        // First paint: the backend probe is still in flight
+        expect(screen.getByRole("heading", { level: 1, name: "Aegis" })).toBeInTheDocument();
+        expect(screen.getByText(/You release the action/)).toBeInTheDocument();
         expect(screen.getByText("Connecting")).toBeInTheDocument();
+        expect(await screen.findByText("Live")).toBeInTheDocument();
     });
 
-    // ── Backend status pill ──
-    it("shows Operational once the metrics probe succeeds", async () => {
+    it("reports the backend offline when the metrics probe fails", async () => {
+        vi.mocked(getMetrics).mockRejectedValue(new Error("down"));
         render(<Dashboard />);
-        expect(await screen.findByText("Operational")).toBeInTheDocument();
-    });
-
-    it("shows Backend Offline when the metrics probe fails", async () => {
-        vi.mocked(getMetrics).mockRejectedValueOnce(new Error("down"));
-        render(<Dashboard />);
-        expect(await screen.findByText("Backend Offline")).toBeInTheDocument();
-        // No fabricated telemetry while offline
+        expect(await screen.findByText("Offline")).toBeInTheDocument();
         expect(screen.getByText("Telemetry offline")).toBeInTheDocument();
+        expect(screen.getByText(/offline right now/)).toBeInTheDocument();
     });
 
-    it("renders textarea and submit button", () => {
+    it("polls metrics on an interval", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
         render(<Dashboard />);
-        expect(screen.getByPlaceholderText(/describe the support issue/i)).toBeInTheDocument();
-        expect(screen.getByText("Submit Ticket")).toBeInTheDocument();
+        await waitFor(() => expect(getMetrics).toHaveBeenCalledTimes(1));
+        await act(async () => {
+            vi.advanceTimersByTime(8000);
+        });
+        expect(getMetrics).toHaveBeenCalledTimes(2);
     });
 
-    // ── Submit Disabled When Empty ──
-    it("disables submit button when textarea is empty", () => {
+    it("runs a preset, streams steps, holds at the gate and releases on approval", async () => {
+        vi.mocked(approveAction).mockResolvedValue({ thread_id: "t1", status: "completed", result: "Refund recommended." });
+        vi.mocked(getThread).mockResolvedValue({
+            message: "m",
+            status: "completed",
+            thought_log: [
+                "✓ [Triage] Classified intent: billing (confidence: 99%)",
+                "✓ [Resolution] Human decision: approved — ok",
+                "✓ [Resolution] Action executed: Refund recommended",
+            ],
+            proposed_action: null,
+            final_response: "Refund recommended.",
+            sql_attempts: [{ query: "SELECT * FROM billing", error: null, rows: 3 }],
+        });
         render(<Dashboard />);
-        const submitBtn = screen.getByText("Submit Ticket").closest("button")!;
-        expect(submitBtn).toBeDisabled();
+        await startRun();
+        expect(startChat).toHaveBeenCalledWith(expect.stringContaining("Customer #10 Chris Johnson"));
+        expect((screen.getByLabelText("Support ticket") as HTMLTextAreaElement).value).toContain("charged $49 twice");
+
+        act(() => cb.onThought("✓ [Triage] Classified intent: billing (confidence: 99%)"));
+        expect(screen.getByText("billing")).toBeInTheDocument();
+        act(() => cb.onSql([{ query: "SELECT * FROM billing", error: null, rows: 2 }]));
+        expect(screen.getByText("2 rows")).toBeInTheDocument();
+
+        act(() => cb.onApproval(ACTION));
+        expect(screen.getByText("Awaiting you")).toBeInTheDocument();
+        expect(document.querySelector(".app")).toHaveAttribute("data-held", "true");
+
+        await userEvent.type(screen.getByLabelText(/Note for the audit log/), "ok");
+        await userEvent.click(screen.getByRole("button", { name: "Approve & execute" }));
+        expect(approveAction).toHaveBeenCalledWith("t1", true, "ok");
+        expect((await screen.findAllByText("Refund recommended.")).length).toBeGreaterThan(0);
+        expect(screen.getByText(/Released: Refund recommended/)).toBeInTheDocument();
+        expect(screen.getByText("Resolved")).toBeInTheDocument();
+        expect(screen.getByText("3 rows")).toBeInTheDocument();
+        // The receipt comes from the tracker's record of this thread.
+        expect(await screen.findByRole("region", { name: "Run receipt" })).toBeInTheDocument();
     });
 
-    // ── Tab Switching ──
-    it("switches between Quick Test and Edge Cases tabs", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    it("falls back to a local log line and default copy when the thread can't be re-read", async () => {
+        vi.mocked(approveAction).mockResolvedValue({ thread_id: "t1", status: "completed", result: null });
+        vi.mocked(getThread).mockRejectedValue(new Error("gone"));
         render(<Dashboard />);
-
-        // Quick Test tab is active by default — should show "Refund" button
-        expect(screen.getByText("Refund")).toBeInTheDocument();
-        expect(screen.getByText("Technical")).toBeInTheDocument();
-
-        // Switch to Edge Cases
-        await user.click(screen.getByText("Edge Cases"));
-        expect(screen.getByText("Not Found")).toBeInTheDocument();
-        expect(screen.getByText("Mismatch")).toBeInTheDocument();
-        expect(screen.getByText("Typo")).toBeInTheDocument();
-
-        // Switch back to Quick Test
-        await user.click(screen.getByText("Quick Test"));
-        expect(screen.getByText("Refund")).toBeInTheDocument();
+        await startRun();
+        act(() => cb.onApproval(ACTION));
+        await userEvent.click(screen.getByRole("button", { name: "Deny" }));
+        expect(approveAction).toHaveBeenCalledWith("t1", false, "Manager denied the proposed action");
+        expect((await screen.findAllByText("Action denied. No changes were made.")).length).toBeGreaterThan(0);
+        expect(screen.getByText(/You denied/)).toBeInTheDocument();
     });
 
-    // ── Form Submission ──
-    it("calls startChat + connectSSE on form submission", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockResponse: ChatResponse = {
-            thread_id: "test-thread-123",
-            status: "processing",
-            cache_hit: false,
-        };
-        vi.mocked(startChat).mockResolvedValue(mockResponse);
-        vi.mocked(connectSSE).mockImplementation(() => ({}) as unknown as EventSource);
-
+    it("uses default approve copy and logs approval without a note", async () => {
+        vi.mocked(approveAction).mockResolvedValue({ thread_id: "t1", status: "completed", result: null });
+        vi.mocked(getThread).mockRejectedValue(new Error("gone"));
         render(<Dashboard />);
-
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "Test ticket message");
-        await user.click(screen.getByText("Submit Ticket").closest("button")!);
-
-        await waitFor(() => {
-            expect(startChat).toHaveBeenCalledWith("Test ticket message");
-        });
-        await waitFor(() => {
-            expect(connectSSE).toHaveBeenCalledWith(
-                "test-thread-123",
-                expect.any(Function), // onThought
-                expect.any(Function), // onApprovalRequired
-                expect.any(Function), // onCompleted
-                expect.any(Function), // onError
-                expect.any(Function), // onDisambiguation
-            );
-        });
+        await startRun();
+        act(() => cb.onApproval(ACTION));
+        await userEvent.click(screen.getByRole("button", { name: "Approve & execute" }));
+        expect((await screen.findAllByText("Action released.")).length).toBeGreaterThan(0);
+        expect(screen.getAllByRole("listitem").some((li) => /You approved the action(\+[0-9.]+s)?$/.test(li.textContent ?? ""))).toBe(true);
     });
 
-    // ── Demo Button Click ──
-    it("submits preset message when demo button is clicked", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "demo-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(() => ({}) as unknown as EventSource);
-
+    it("keeps the streamed SQL when the re-read thread has none", async () => {
+        vi.mocked(approveAction).mockResolvedValue({ thread_id: "t1", status: "completed", result: "ok" });
+        vi.mocked(getThread).mockResolvedValue({ message: "m", status: "completed", thought_log: ["✓ [Investigator] Generated SQL query for investigation"], proposed_action: null, final_response: "ok" });
         render(<Dashboard />);
-
-        await user.click(screen.getByText("Refund"));
-
-        await waitFor(() => {
-            expect(startChat).toHaveBeenCalledWith(
-                expect.stringContaining("David Martinez")
-            );
-        });
+        await startRun();
+        act(() => cb.onSql([{ query: "SELECT 1", error: null, rows: 9 }]));
+        act(() => cb.onApproval(ACTION));
+        await userEvent.click(screen.getByRole("button", { name: "Approve & execute" }));
+        expect((await screen.findAllByText("ok")).length).toBeGreaterThan(0);
+        expect(screen.getByText("9 rows")).toBeInTheDocument();
     });
 
-    // ── Cache Hit Path ──
-    it("shows cached status when cache hit occurs", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "cached-thread",
-            status: "cached",
-            cache_hit: true,
-        });
-
+    it("keeps the gate open and explains when the decision fails", async () => {
+        vi.mocked(approveAction).mockRejectedValue(new ApiError("x", 500, "resume failed"));
         render(<Dashboard />);
+        await startRun();
+        act(() => cb.onApproval(ACTION));
+        await userEvent.click(screen.getByRole("button", { name: "Approve & execute" }));
+        expect(await screen.findByText("resume failed")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Approve & execute" })).toBeEnabled();
+    });
 
-        await user.click(screen.getByText("Refund"));
+    it("shows the reply when the run completes without a gate, and records it in history", async () => {
+        render(<Dashboard />);
+        await startRun();
+        act(() => cb.onCompleted("Here is your answer", ["✓ [Triage] Classified intent: general (confidence: 90%)"]));
+        expect(screen.getAllByText("Here is your answer").length).toBeGreaterThan(0);
+        expect(await screen.findByText("Recent Tickets")).toBeInTheDocument();
+    });
 
-        await waitFor(() => {
-            expect(
-                screen.getByText(/response served from semantic cache/i)
-            ).toBeInTheDocument();
-        });
-        // connectSSE should NOT be called for cache hits
+    it("reports a lost stream and lets the visitor retry", async () => {
+        render(<Dashboard />);
+        await startRun();
+        act(() => cb.onError("Connection lost"));
+        expect(screen.getByText(/Lost the live connection/)).toBeInTheDocument();
+        await userEvent.click(screen.getByRole("button", { name: /Try again/ }));
+        expect(startChat).toHaveBeenCalledTimes(2);
+        expect(close).toHaveBeenCalled();
+    });
+
+    it("records a completed run even when the backend sent no reply text", async () => {
+        render(<Dashboard />);
+        await startRun();
+        act(() => cb.onCompleted(null as unknown as string, []));
+        expect(await screen.findByText("Recent Tickets")).toBeInTheDocument();
+    });
+
+    it("shows other stream errors verbatim", async () => {
+        render(<Dashboard />);
+        await startRun();
+        act(() => cb.onError("Agent workflow failed"));
+        expect(screen.getByText("Agent workflow failed")).toBeInTheDocument();
+    });
+
+    it("explains a rate limit without faking a run", async () => {
+        vi.mocked(startChat).mockRejectedValue(new ApiError("x", 429, "Easy there.", null));
+        render(<Dashboard />);
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        expect(await screen.findByText("Easy there.")).toBeInTheDocument();
+        expect(screen.getByText("Rate limited")).toBeInTheDocument();
         expect(connectSSE).not.toHaveBeenCalled();
     });
 
-    // ── Approval Modal Flow ──
-    it("shows approval modal when SSE sends approval_required", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockAction: ActionProposal = {
-            type: "refund",
-            amount: 49.0,
-            customer_id: 8,
-            customer_name: "David Martinez",
-            description: "Refund $49 for duplicate charge",
-            reason: "Duplicate billing confirmed",
-        };
-
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "approval-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, onApprovalRequired) => {
-                // Trigger the approval callback synchronously
-                Promise.resolve().then(() => onApprovalRequired(mockAction));
-                return {} as unknown as EventSource;
-            }
-        );
-
+    it("marks the backend offline when the ticket can't be sent", async () => {
+        vi.mocked(startChat).mockRejectedValue(new ApiError("x", 0));
         render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-
-        // Wait for modal to appear
-        await waitFor(() => {
-            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
-        });
-        expect(screen.getByText("David Martinez")).toBeInTheDocument();
-        expect(screen.getByText("Refund $49 for duplicate charge")).toBeInTheDocument();
+        await screen.findByText("Live");
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        expect((await screen.findAllByText(/Can't reach the Aegis backend/)).length).toBeGreaterThan(0);
+        expect(screen.getAllByText("Offline").length).toBeGreaterThan(0);
     });
 
-    it("calls approveAction with true when Approve is clicked", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockAction: ActionProposal = {
-            type: "refund",
-            amount: 49.0,
-            customer_id: 8,
-            customer_name: "David Martinez",
-            description: "Refund $49",
-            reason: "Confirmed",
-        };
-
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "approve-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, onApprovalRequired) => {
-                setTimeout(() => onApprovalRequired(mockAction), 0);
-                return {} as unknown as EventSource;
-            }
-        );
-        vi.mocked(approveAction).mockResolvedValue({
-            thread_id: "approve-thread",
-            status: "completed",
-            result: "Refund processed",
-        });
-
+    it("serves cache hits from the stored thread", async () => {
+        vi.mocked(startChat).mockResolvedValue({ thread_id: "c1", status: "cached", cache_hit: true });
+        vi.mocked(getThread).mockResolvedValueOnce({ message: "m", status: "completed", thought_log: ["✓ [Triage] Classified intent: billing (confidence: 99%)"], proposed_action: null, final_response: "Cached reply", sql_attempts: [{ query: "SELECT 1", error: null, rows: 7 }] });
         render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-        await user.click(screen.getByRole("button", { name: /Submit/i }));
-
-        await waitFor(() => {
-            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
-        });
-
-        // Click Approve — the ApprovalModal uses animateOut with 200ms timeout
-        const approveBtn = screen.getByRole("button", { name: /approve/i });
-        await user.click(approveBtn);
-
-        // Advance past the 200ms animation delay
-        await act(async () => { vi.advanceTimersByTime(300); });
-
-        await waitFor(() => {
-            expect(approveAction).toHaveBeenCalledWith("approve-thread", true);
-            expect(screen.getByText(/Action approved/i)).toBeInTheDocument();
-        });
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        expect(await screen.findByText("Cached reply")).toBeInTheDocument();
+        expect(screen.getByText("7 rows")).toBeInTheDocument();
+        expect(screen.getByText("Cache hit")).toBeInTheDocument();
     });
 
-    it("calls approveAction with true and falls back to default success message when result is falsy", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockAction: ActionProposal = {
-            type: "refund", amount: 49.0, customer_id: 8,
-            customer_name: "Fallback Test", description: "Fallback", reason: "Fallback",
-        };
-
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "approve-fallback", status: "processing", cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, onApprovalRequired) => {
-                setTimeout(() => onApprovalRequired(mockAction), 0);
-                return {} as unknown as EventSource;
-            }
-        );
-        vi.mocked(approveAction).mockResolvedValue({
-            thread_id: "approve-fallback", status: "completed", result: undefined as any,
-        });
-
+    it("uses fallback copy for cache hits with no stored reply or no stored thread", async () => {
+        vi.mocked(startChat).mockResolvedValue({ thread_id: "c1", status: "cached", cache_hit: true });
+        vi.mocked(getThread).mockResolvedValueOnce({ message: "m", status: "completed", thought_log: [], proposed_action: null, final_response: null });
         render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-        await user.click(screen.getByRole("button", { name: /Submit/i }));
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        expect(await screen.findByText("Served from the semantic cache.")).toBeInTheDocument();
 
-        await waitFor(() => {
-            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByRole("button", { name: /approve/i }));
-        await act(async () => { vi.advanceTimersByTime(300); });
-
-        await waitFor(() => {
-            expect(screen.getAllByText(/Action executed successfully/i)[0]).toBeInTheDocument();
-        });
+        vi.mocked(getThread).mockRejectedValueOnce(new Error("evicted"));
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        expect(await screen.findByText(/answered recently/)).toBeInTheDocument();
     });
 
-    it("calls approveAction with false when Deny is clicked", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockAction: ActionProposal = {
-            type: "suspend",
-            amount: null,
-            customer_id: 20,
-            customer_name: "William Allen",
-            description: "Suspend account",
-            reason: "TOS violation",
-        };
-
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "deny-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, onApprovalRequired) => {
-                setTimeout(() => onApprovalRequired(mockAction), 0);
-                return {} as unknown as EventSource;
-            }
-        );
-        vi.mocked(approveAction).mockResolvedValue({
-            thread_id: "deny-thread",
-            status: "completed",
-            result: "Action denied",
-        });
-
+    it("lets the human pick the right customer and re-runs with the correction", async () => {
         render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-        await user.click(screen.getByRole("button", { name: /Submit/i }));
-
-        await waitFor(() => {
-            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
-        });
-
-        const denyBtn = screen.getByRole("button", { name: /deny/i });
-        await user.click(denyBtn);
-
-        await act(async () => { vi.advanceTimersByTime(300); });
-
-        await waitFor(() => {
-            expect(approveAction).toHaveBeenCalledWith(
-                "deny-thread",
-                false,
-                "Manager denied the proposed action"
-            );
-            expect(screen.getByText(/Manager denied/i)).toBeInTheDocument();
-        });
+        await userEvent.click(screen.getByRole("tab", { name: /Edge cases/ }));
+        await startRun(/Ambiguous name/);
+        act(() => cb.onDisambiguation([{ id: 4, name: "Robert Kim" }], "Multiple customers match"));
+        await userEvent.click(screen.getByRole("button", { name: /Robert Kim/ }));
+        expect(startChat).toHaveBeenLastCalledWith(expect.stringMatching(/^Customer #4 Robert Kim emailed/));
     });
 
-    it("calls approveAction with false and falls back to default deny message when result is falsy", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockAction: ActionProposal = {
-            type: "refund", amount: 49.0, customer_id: 8,
-            customer_name: "Fallback Test", description: "Fallback", reason: "Fallback",
-        };
-
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "deny-fallback", status: "processing", cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, onApprovalRequired) => {
-                setTimeout(() => onApprovalRequired(mockAction), 0);
-                return {} as unknown as EventSource;
-            }
-        );
-        vi.mocked(approveAction).mockResolvedValue({
-            thread_id: "deny-fallback", status: "completed", result: undefined as any,
-        });
-
+    it("prefixes the chosen customer when the ticket didn't name one in the usual form", async () => {
         render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-        await user.click(screen.getByRole("button", { name: /Submit/i }));
-
-        await waitFor(() => {
-            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByRole("button", { name: /deny/i }));
-        await act(async () => { vi.advanceTimersByTime(300); });
-
-        await waitFor(() => {
-            expect(screen.getAllByText(/Action denied. No changes were made/i)[0]).toBeInTheDocument();
-        });
+        await userEvent.type(screen.getByLabelText("Support ticket"), "someone was double charged");
+        fireEvent.keyDown(screen.getByLabelText("Support ticket"), { key: "Enter" });
+        await waitFor(() => expect(connectSSE).toHaveBeenCalled());
+        act(() => cb.onDisambiguation([{ id: 29, name: "Kayla Roberts" }], "Pick one"));
+        await userEvent.click(screen.getByRole("button", { name: /Kayla Roberts/ }));
+        expect(startChat).toHaveBeenLastCalledWith("Customer #29 Kayla Roberts: someone was double charged");
     });
 
-    // ── Enter Key Submission ──
-    it("submits on Enter key (without Shift)", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "enter-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(() => ({}) as unknown as EventSource);
-
+    it("ignores empty submissions and records failed runs in history", async () => {
+        vi.mocked(startChat).mockRejectedValue(new Error("boom"));
         render(<Dashboard />);
-
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "Enter test");
-        await user.keyboard("{Enter}");
-
-        await waitFor(() => {
-            expect(startChat).toHaveBeenCalledWith("Enter test");
-        });
-    });
-
-    // ── Error Path ──
-    it("shows error status when startChat throws", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockRejectedValue(new Error("Connection refused"));
-
-        render(<Dashboard />);
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "error test");
-        await user.click(screen.getByText("Submit Ticket").closest("button")!);
-
-        await waitFor(() => {
-            const matches = screen.getAllByText(/failed to connect/i);
-            expect(matches.length).toBeGreaterThanOrEqual(1);
-        });
-    });
-
-    // ── SSE Error Event ──
-    it("shows error thought when SSE emits error", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "sse-err-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, _onApproval, _onCompleted, onError) => {
-                Promise.resolve().then(() => onError("Agent crashed"));
-                return {} as unknown as EventSource;
-            }
-        );
-
-        render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-
-        await waitFor(() => {
-            expect(screen.getByText(/Error: Agent crashed/)).toBeInTheDocument();
-        });
-    });
-
-    // ── SSE Completed Event ──
-    it("shows final response when SSE completes", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "complete-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, _onApproval, onCompleted) => {
-                Promise.resolve().then(() =>
-                    onCompleted("Refund of $49 processed.", ["Step 1", "Step 2"])
-                );
-                return {} as unknown as EventSource;
-            }
-        );
-
-        render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-
-        await waitFor(() => {
-            expect(screen.getByText("Refund of $49 processed.")).toBeInTheDocument();
-        });
-        expect(screen.getByText("Resolution Complete")).toBeInTheDocument();
-    });
-
-    // ── Disambiguation Flow ──
-    it("shows customer selection when SSE sends disambiguation", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "disambig-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        const candidates = [
-            { id: 101, name: "Alice Tanaka", email: "alice@test.com", plan: "Pro", status: "active" },
-            { id: 102, name: "Bob Nakamura", email: "bob@test.com", plan: "Basic", status: "suspended" },
-        ];
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, _onApproval, _onCompleted, _onError, onDisambiguation) => {
-                Promise.resolve().then(() =>
-                    onDisambiguation!(candidates, "Multiple customers found")
-                );
-                return {} as unknown as EventSource;
-            }
-        );
-
-        render(<Dashboard />);
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "Alice needs help");
-        await user.click(screen.getByText("Submit Ticket").closest("button")!);
-
-        await waitFor(() => {
-            expect(screen.getByText("Select Customer")).toBeInTheDocument();
-        });
-        expect(screen.getByText("Multiple customers found")).toBeInTheDocument();
-        expect(screen.getByText(/#101 Alice Tanaka/)).toBeInTheDocument();
-        expect(screen.getByText(/#102 Bob Nakamura/)).toBeInTheDocument();
-        // Should show plan badges
-        expect(screen.getByText("Pro")).toBeInTheDocument();
-        expect(screen.getByText("Basic")).toBeInTheDocument();
-        // Should show non-active status
-        expect(screen.getByText("suspended")).toBeInTheDocument();
-    });
-
-    it("re-submits with corrected customer when disambiguation candidate is selected", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-
-        let callCount = 0;
-        vi.mocked(startChat).mockImplementation(async () => {
-            callCount++;
-            return { thread_id: `thread-${callCount}`, status: "processing", cache_hit: false };
-        });
-
-        const candidates = [
-            { id: 1, name: "David Martinez", email: "d@t.com", plan: "Pro", status: "active" },
-        ];
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, _onApproval, _onCompleted, _onError, onDisambiguation) => {
-                if (callCount === 1 && onDisambiguation) {
-                    Promise.resolve().then(() =>
-                        onDisambiguation(candidates, "Pick one")
-                    );
-                }
-                return {} as unknown as EventSource;
-            }
-        );
-
-        render(<Dashboard />);
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "Customer #8 David needs help");
-        await user.click(screen.getByText("Submit Ticket").closest("button")!);
-
-        await waitFor(() => {
-            expect(screen.getByText("Select Customer")).toBeInTheDocument();
-        });
-
-        // Select the candidate
-        await user.click(screen.getByText(/#1 David Martinez/));
-
-        await waitFor(() => {
-            expect(startChat).toHaveBeenCalledWith(
-                expect.stringContaining("Customer #1 David Martinez")
-            );
-        });
-    });
-
-    // ── Approve Failure ──
-    it("shows failure thought when approveAction throws", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockAction: ActionProposal = {
-            type: "refund",
-            amount: 49.0,
-            customer_id: 8,
-            customer_name: "David",
-            description: "Refund",
-            reason: "ok",
-        };
-
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "fail-approve-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, onApprovalRequired) => {
-                Promise.resolve().then(() => onApprovalRequired(mockAction));
-                return {} as unknown as EventSource;
-            }
-        );
-        vi.mocked(approveAction).mockRejectedValue(new Error("Network error"));
-
-        render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-        await user.click(screen.getByRole("button", { name: /Submit/i }));
-
-        await waitFor(() => {
-            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByRole("button", { name: /approve/i }));
-        await act(async () => { vi.advanceTimersByTime(300); });
-
-        await waitFor(() => {
-            expect(screen.getByText(/Approval failed/i)).toBeInTheDocument();
-        });
-    });
-
-    // ── Deny Failure ──
-    it("shows failure thought when deny approveAction throws", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        const mockAction: ActionProposal = {
-            type: "suspend",
-            amount: null,
-            customer_id: 20,
-            customer_name: "Test",
-            description: "Suspend",
-            reason: "TOS",
-        };
-
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "fail-deny-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, onApprovalRequired) => {
-                Promise.resolve().then(() => onApprovalRequired(mockAction));
-                return {} as unknown as EventSource;
-            }
-        );
-        vi.mocked(approveAction).mockRejectedValue(new Error("Server error"));
-
-        render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-        await user.click(screen.getByRole("button", { name: /Submit/i }));
-
-        await waitFor(() => {
-            expect(screen.getByText("Human Approval Required")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByRole("button", { name: /deny/i }));
-        await act(async () => { vi.advanceTimersByTime(300); });
-
-        await waitFor(() => {
-            expect(screen.getByText(/Denial submission failed/i)).toBeInTheDocument();
-        });
-    });
-
-    // ── Empty Submit Guard ──
-    it("does not call startChat when message is empty on submit", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        render(<Dashboard />);
-
-        // Try keyboard Enter on empty textarea
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.click(textarea);
-        await user.keyboard("{Enter}");
-
+        fireEvent.keyDown(screen.getByLabelText("Support ticket"), { key: "Enter" });
         expect(startChat).not.toHaveBeenCalled();
+        await userEvent.type(screen.getByLabelText("Support ticket"), "hello");
+        await userEvent.click(screen.getByRole("button", { name: /Run agents/ }));
+        expect((await screen.findAllByText("Something went wrong")).length).toBeGreaterThan(0);
+        expect(await screen.findByText("Recent Tickets")).toBeInTheDocument();
     });
 
-    // ── SSE Thought Streaming ──
-    it("displays streamed thoughts from SSE onThought callback", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "thought-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, onThought) => {
-                Promise.resolve().then(() => {
-                    onThought("🔍 Identifying customer...");
-                    onThought("📋 Checking billing records...");
-                });
-                return {} as unknown as EventSource;
-            }
-        );
-
+    it("scrolls the run into view on narrow screens", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        const scrollTo = vi.fn();
+        window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+        window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
         render(<Dashboard />);
-        await user.click(screen.getByText("Refund"));
-
-        await waitFor(() => {
-            expect(screen.getByText(/Identifying customer/)).toBeInTheDocument();
+        await startRun();
+        await act(async () => {
+            vi.advanceTimersByTime(100);
         });
-        expect(screen.getByText(/Checking billing records/)).toBeInTheDocument();
+        expect(scrollTo).toHaveBeenCalled();
+        window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia;
+        scrollTo.mockClear();
+        await userEvent.click(screen.getByRole("button", { name: /Try again|Double charge/ }));
+        await act(async () => {
+            vi.advanceTimersByTime(100);
+        });
+        expect(scrollTo).not.toHaveBeenCalled();
     });
 
-    // ── onCacheCleared error catch ──
-    it("handles getMetrics error in onCacheCleared callback silently", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-
-        // First call ok (initial render), second call rejects (after cache clear)
-        vi.mocked(getMetrics)
-            .mockResolvedValueOnce({
-                agent_metrics: {
-                    total_requests: 0,
-                    avg_cost_usd: 0,
-                    avg_duration_seconds: 0,
-                    total_cost_usd: 0,
-                    total_tokens: 0,
-                    hitl_approval_rate: 100,
-                    avg_hitl_wait_seconds: 0,
-                    cost_saved_by_cache: 0,
-                    model_distribution: {},
-                    recent_requests: [],
-                },
-                cache_metrics: {
-                    hits: 0,
-                    misses: 0,
-                    total_requests: 0,
-                    hit_rate_percent: 0,
-                    connected: true,
-                },
-            })
-            .mockRejectedValueOnce(new Error("Metrics unavailable"));
-
-        vi.mocked(clearCache).mockResolvedValue({ status: "cleared", keys_deleted: 3 });
-
+    it("tolerates the run panel vanishing before the deferred scroll", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
+        const getById = vi.spyOn(document, "getElementById").mockReturnValue(null);
         render(<Dashboard />);
-
-        // Wait for metrics to load, then click the clear cache button
-        await waitFor(() => {
-            expect(screen.getByTitle("Clear cache")).toBeInTheDocument();
+        await startRun();
+        await act(async () => {
+            vi.advanceTimersByTime(100);
         });
-
-        await user.click(screen.getByTitle("Clear cache"));
-
-        // The cache clear should succeed even though getMetrics rejects
-        await waitFor(() => {
-            expect(screen.getByText(/Cleared/)).toBeInTheDocument();
-        });
+        getById.mockRestore();
+        window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia;
     });
 
-    // ── Error History with Thoughts Preview ──
-    it("records error ticket with preview from last thought", async () => {
-        vi.useRealTimers(); // SSE callbacks use Promise.resolve — need real timers
-        const user = userEvent.setup();
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "error-hist-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, onThought, _onApproval, _onCompleted, onError) => {
-                Promise.resolve().then(() => {
-                    onThought("→ [Triage] Classified intent: refund");
-                    onThought("✗ [Investigator] not found in database — stopping");
-                    onError("Agent failed");
-                });
-                return {} as unknown as EventSource;
-            }
-        );
-
-        render(<Dashboard />);
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "Customer #999 needs help");
-        await user.click(screen.getByText("Submit Ticket").closest("button")!);
-
-        await waitFor(() => {
-            // Error should have been recorded — verify error thoughts visible
-            // (appears in both ThoughtStream and ticket history preview)
-            expect(screen.getAllByText(/Error: Agent failed/).length).toBeGreaterThanOrEqual(1);
-        });
-        vi.useFakeTimers({ shouldAdvanceTime: true }); // Restore for other tests
+    it("opens and closes the traces drawer, and closes the stream on unmount", async () => {
+        const { unmount } = render(<Dashboard />);
+        await userEvent.click(await screen.findByRole("button", { name: /LangSmith traces/ }));
+        expect(screen.getByRole("dialog", { name: "LangSmith traces" })).toHaveAttribute("aria-hidden", "false");
+        await userEvent.click(screen.getByTitle("Close (Esc)"));
+        expect(document.querySelector(".traces-overlay")).toHaveAttribute("aria-hidden", "true");
+        await startRun();
+        unmount();
+        expect(close).toHaveBeenCalled();
     });
 
-    // ── Ticket History Recording (completed path) ──
-    it("records a completed ticket into Recent Tickets with a response preview", async () => {
-        vi.useRealTimers(); // SSE callbacks use Promise.resolve — need real timers
-        const user = userEvent.setup();
-        vi.mocked(startChat).mockResolvedValue({
-            thread_id: "history-complete-thread",
-            status: "processing",
-            cache_hit: false,
-        });
-        vi.mocked(connectSSE).mockImplementation(
-            (_threadId, _onThought, _onApproval, onCompleted) => {
-                Promise.resolve().then(() =>
-                    onCompleted("Refund of $49 has been processed successfully.", ["✓ Done"])
-                );
-                return {} as unknown as EventSource;
-            }
-        );
-
+    it("refreshes metrics after the cache is cleared", async () => {
+        vi.mocked(getMetrics).mockResolvedValue({ ...METRICS, cache_metrics: { ...METRICS.cache_metrics, connected: true } });
         render(<Dashboard />);
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "Customer #8 double charge complaint");
-        await user.click(screen.getByText("Submit Ticket").closest("button")!);
-
-        await waitFor(() => {
-            expect(screen.getAllByText("Refund of $49 has been processed successfully.").length).toBeGreaterThanOrEqual(1);
-        });
-
-        // Expand the Recent Tickets history panel and verify the entry was recorded
-        await waitFor(() => {
-            expect(screen.getByText("Recent Tickets")).toBeInTheDocument();
-        });
-        await user.click(screen.getByText("Recent Tickets"));
-
-        await waitFor(() => {
-            // Appears in the textarea (still holds the typed text) and in the history entry
-            expect(screen.getAllByText("Customer #8 double charge complaint").length).toBeGreaterThanOrEqual(1);
-        });
-        // Now appears twice: once in the "Resolution Complete" card, once as the history preview
-        expect(screen.getAllByText("Refund of $49 has been processed successfully.").length).toBe(2);
-
-        vi.useFakeTimers({ shouldAdvanceTime: true }); // Restore for other tests
+        await screen.findByText("Live");
+        const before = vi.mocked(getMetrics).mock.calls.length;
+        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        await waitFor(() => expect(vi.mocked(getMetrics).mock.calls.length).toBeGreaterThan(before));
     });
 
-    // ── Traces Panel Toggling ──
-    it("opens and closes the Traces panel", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    it("fills the input from ticket history", async () => {
+        localStorage.setItem("aegis-ticket-history", JSON.stringify([{ message: "old ticket", timestamp: Date.now(), status: "completed", responsePreview: "ok" }]));
         render(<Dashboard />);
-
-        // Wait for the LangSmith Traces button (async — depends on getTracingStatus resolving)
-        const openTracesBtn = await screen.findByRole("button", { name: /LangSmith Traces/i });
-        await user.click(openTracesBtn);
-
-        // Wait for Traces panel to appear (checking for text inside it like 'No traces yet')
-        await waitFor(() => {
-            expect(screen.getByText(/No traces yet/i)).toBeInTheDocument();
-        });
-
-        // Close the panel using the Close button
-        const closeBtn = screen.getByTitle("Close (Esc)");
-        await user.click(closeBtn);
-
-        // Ensure state change was handled
-        await waitFor(() => {
-            expect(screen.queryByText("System Traces")).not.toBeInTheDocument();
-        });
-    });
-
-    // ── Shift+Enter should NOT submit ──
-    it("does not submit on Shift+Enter", async () => {
-        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-        render(<Dashboard />);
-
-        const textarea = screen.getByPlaceholderText(/describe the support issue/i);
-        await user.type(textarea, "test message");
-        await user.keyboard("{Shift>}{Enter}{/Shift}");
-
-        expect(startChat).not.toHaveBeenCalled();
-    });
-
-    // ── Cache Clearing from Metrics ──
-    it("refreshes metrics when cache is cleared", async () => {
-        const user = userEvent.setup();
-        const connectedMetrics = {
-            ...await vi.mocked(getMetrics)(),
-            cache_metrics: { connected: true, hits: 10, misses: 5, total_requests: 15, hit_rate_percent: 66 }
-        };
-        vi.mocked(getMetrics).mockClear(); // Reset call count from the line above
-        vi.mocked(getMetrics).mockResolvedValueOnce(connectedMetrics).mockResolvedValueOnce(connectedMetrics);
-        render(<Dashboard />);
-
-        await waitFor(() => {
-            expect(getMetrics).toHaveBeenCalled();
-        });
-
-        // Click Clear Cache button which is inside MetricsPanel
-        const clearBtn = await screen.findByTitle("Clear cache");
-        await user.click(clearBtn);
-
-        // It should call clearCache and then getMetrics again
-        await waitFor(() => {
-            expect(clearCache).toHaveBeenCalled();
-            expect(getMetrics).toHaveBeenCalledTimes(2); // Initial mount + after clear
-        });
-    });
-
-    it("handles error silently when getMetrics fails after cache clear", async () => {
-        const user = userEvent.setup();
-        const connectedMetrics = {
-            ...await vi.mocked(getMetrics)(),
-            cache_metrics: { connected: true, hits: 10, misses: 5, total_requests: 15, hit_rate_percent: 66 }
-        };
-        vi.mocked(getMetrics).mockResolvedValueOnce(connectedMetrics);
-        render(<Dashboard />);
-
-        await waitFor(() => {
-            expect(getMetrics).toHaveBeenCalled();
-        });
-
-        // Mock getMetrics to fail next time
-        vi.mocked(getMetrics).mockRejectedValueOnce(new Error("Silence me"));
-
-        const clearBtn = await screen.findByTitle("Clear cache");
-        await user.click(clearBtn);
-
-        // Should not crash, just catch the error silently
-        await waitFor(() => {
-            expect(clearCache).toHaveBeenCalled();
-        });
+        await userEvent.click(await screen.findByText("Recent Tickets"));
+        await userEvent.click(screen.getByRole("button", { name: /old ticket/ }));
+        expect(screen.getByLabelText("Support ticket")).toHaveValue("old ticket");
     });
 });
-
-

@@ -1,569 +1,192 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import MetricsPanel from "../MetricsPanel";
 import type { Metrics } from "@/lib/api";
 
-// Mock the API module
 vi.mock("@/lib/api", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/lib/api")>();
     return {
         ...actual,
         clearCache: vi.fn(),
-        getDbStatus: vi.fn().mockResolvedValue({}),
-        getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
-        getTracingStatus: vi.fn().mockResolvedValue({ enabled: false, project: "aegis", connected: false }),
+        getDbStatus: vi.fn(),
+        getTableData: vi.fn(),
+        getTracingStatus: vi.fn(),
     };
 });
 
 import { clearCache, getDbStatus, getTableData, getTracingStatus } from "@/lib/api";
 
-const FULL_METRICS: Metrics = {
+const FULL: Metrics = {
     agent_metrics: {
         total_requests: 42,
-        avg_cost_usd: 0.0312,
+        avg_cost_usd: 0.03,
         avg_duration_seconds: 8.5,
         total_cost_usd: 1.3104,
         total_tokens: 125000,
         model_distribution: {
-            "gpt-4.1-mini": 35,
-            "gpt-4.1": 7,
+            "openai/gpt-oss-20b": 5,
+            "gpt-4.1": 3,
+            "models/gemini-2.5-flash": 1,
+            "claude-sonnet-4": 1,
+            "mystery-model": 1,
+            o3: 1,
         },
-        hitl_approval_rate: 85.0,
-        avg_hitl_wait_seconds: 120.5,
-        cost_saved_by_cache: 4.5,
+        hitl_approval_rate: 85,
+        avg_hitl_wait_seconds: 12.5,
+        cost_saved_by_cache: 0,
         recent_requests: [],
     },
-    cache_metrics: {
-        hits: 12,
-        misses: 30,
-        total_requests: 42,
-        hit_rate_percent: 28.6,
-        connected: true,
+    cache_metrics: { hits: 12, misses: 30, total_requests: 42, hit_rate_percent: 28.6, connected: true },
+};
+
+const EMPTY: Metrics = {
+    agent_metrics: {
+        total_requests: 0,
+        avg_cost_usd: 0,
+        avg_duration_seconds: 0,
+        total_cost_usd: 0,
+        total_tokens: 0,
+        model_distribution: {},
+        hitl_approval_rate: null,
+        avg_hitl_wait_seconds: null,
+        cost_saved_by_cache: 0,
+        recent_requests: [],
     },
+    cache_metrics: { hits: 0, misses: 0, total_requests: 0, hit_rate_percent: 0, connected: false },
 };
 
 describe("MetricsPanel", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(getDbStatus).mockResolvedValue({});
-    });
-
-    // ── Null Metrics ──
-    it("renders a deliberate offline state instead of fake zeros when metrics is null", () => {
-        render(<MetricsPanel metrics={null} />);
-        expect(screen.getByText("Telemetry offline")).toBeInTheDocument();
-        // No fabricated values while the backend is unreachable
-        expect(screen.queryByText("$0.0000")).not.toBeInTheDocument();
-        expect(screen.queryByText("0.0%")).not.toBeInTheDocument();
-        expect(screen.queryByTitle("Clear cache")).not.toBeInTheDocument();
-    });
-
-    it("renders em-dash placeholders for HITL metrics that are not yet measured", () => {
-        const sparseMetrics: Metrics = {
-            ...FULL_METRICS,
-            agent_metrics: {
-                ...FULL_METRICS.agent_metrics,
-                hitl_approval_rate: null,
-                avg_duration_seconds: 0,
-                avg_hitl_wait_seconds: null,
-            },
-        };
-        render(<MetricsPanel metrics={sparseMetrics} />);
-        // HITL approval, avg resolution, and HITL wait all show "—", never a fake 0
-        expect(screen.getAllByText("—").length).toBe(3);
-    });
-
-    // ── Observability Header ──
-    it("renders Observability header", () => {
-        render(<MetricsPanel metrics={null} />);
-        expect(screen.getByText("Observability")).toBeInTheDocument();
-    });
-
-    // ── Formatted Metric Values ──
-    it("displays formatted metric values from full metrics", () => {
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        expect(screen.getByText(/\$0\.0312/)).toBeInTheDocument(); // avg cost
-        expect(screen.getAllByText(/42/).length).toBeGreaterThan(0); // total requests
-        expect(screen.getByText(/\$1\.3104/)).toBeInTheDocument(); // total cost
-        expect(screen.getByText(/125\.0K/i)).toBeInTheDocument(); // tokens
-        expect(screen.getByText(/\$4\.50/)).toBeInTheDocument(); // cost saved
-    });
-
-    // ── Cache Hit Rate ──
-    it("displays cache hit rate percentage", () => {
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        expect(screen.getByText("28.6%")).toBeInTheDocument();
-        expect(screen.getByText("12 hits")).toBeInTheDocument();
-        expect(screen.getByText("30 misses")).toBeInTheDocument();
-    });
-
-    // ── Redis Connected ──
-    it("shows Redis connected status", () => {
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        expect(screen.getByText("Redis Connected")).toBeInTheDocument();
-    });
-
-    // ── Redis Disconnected ──
-    it("shows Redis disconnected when cache not connected", () => {
-        const disconnectedMetrics: Metrics = {
-            ...FULL_METRICS,
-            cache_metrics: { ...FULL_METRICS.cache_metrics, connected: false },
-        };
-        render(<MetricsPanel metrics={disconnectedMetrics} />);
-        expect(screen.getByText("Redis Disconnected")).toBeInTheDocument();
-    });
-
-    // ── Model Distribution ──
-    it("shows model distribution bars with percentages", () => {
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        expect(screen.getByText("Model Usage")).toBeInTheDocument();
-        // Since gpt-4.1-mini and gpt-4.1 are both from OpenAI
-        expect(screen.getByText(/OpenAI/)).toBeInTheDocument();
-        expect(screen.getAllByText(/100%/)[0]).toBeInTheDocument();
-    });
-
-    // ── Avg Duration ──
-    it("displays average duration", () => {
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        expect(screen.getByText(/8\.5\s*s/)).toBeInTheDocument();
-    });
-
-    // ── Clear Cache ──
-    it("calls clearCache when button is clicked", async () => {
-        const user = userEvent.setup();
-        const onCacheCleared = vi.fn();
-        vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 5 });
-
-        render(<MetricsPanel metrics={FULL_METRICS} onCacheCleared={onCacheCleared} />);
-
-        const clearBtn = screen.getByTitle("Clear cache");
-        await user.click(clearBtn);
-
-        await waitFor(() => {
-            expect(clearCache).toHaveBeenCalledOnce();
-        });
-        await waitFor(() => {
-            expect(screen.getByText("Cleared! (5 keys)")).toBeInTheDocument();
-        });
-        expect(onCacheCleared).toHaveBeenCalledOnce();
-    });
-
-    // ── Database Section ──
-    it("renders database table cards when db status loads", async () => {
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 20, latest: new Date().toISOString() },
-            billing: { count: 15, latest: new Date().toISOString() },
-            support_tickets: { count: 8, latest: new Date().toISOString() },
-            internal_docs: { count: 5, latest: null },
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Database")).toBeInTheDocument();
-        });
-        await waitFor(() => {
-            expect(screen.getByText("20")).toBeInTheDocument(); // customers count
-        });
-        expect(screen.getByText("Customers")).toBeInTheDocument();
-        expect(screen.getByText("Billing")).toBeInTheDocument();
-    });
-
-    // ── Handle Card Click: expand table ──
-    it("expands table card and shows data rows on click", async () => {
-        const user = userEvent.setup();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 3, latest: new Date().toISOString() },
-        });
-        vi.mocked(getTableData).mockResolvedValue({
-            table: "customers",
-            rows: [
-                { id: 1, name: "Alice", email: "alice@a.com", plan: "Pro" },
-                { id: 2, name: "Bob", email: "bob@b.com", plan: "Basic" },
-            ],
-        });
-
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-
-        // Click to expand
-        await user.click(screen.getByText("Customers"));
-
-        await waitFor(() => {
-            expect(getTableData).toHaveBeenCalledWith("customers");
-        });
-        await waitFor(() => {
-            expect(screen.getByText("Alice")).toBeInTheDocument();
-        });
-        expect(screen.getByText("Bob")).toBeInTheDocument();
-    });
-
-    it("handles parsing edge cases for missing model fields and colors", () => {
-        const edgeMetrics: Metrics = {
-            ...FULL_METRICS,
-            agent_metrics: {
-                ...FULL_METRICS.agent_metrics,
-                total_requests: 1_500_000_000,
-                total_tokens: 2_500_000,
-                hitl_approval_rate: 75.0, // red color branch < 80
-                model_distribution: {
-                    "unknown-model": 10 // other mapping
-                }
-            }
-        };
-        render(<MetricsPanel metrics={edgeMetrics} />);
-        expect(screen.getByText(/1\.5B/)).toBeInTheDocument();
-        expect(screen.getByText(/2\.5M/)).toBeInTheDocument();
-        expect(screen.getByText(/Other/)).toBeInTheDocument();
-    });
-
-    // ── Handle Card Click: collapse table ──
-    it("collapses expanded table on second click", async () => {
-        const user = userEvent.setup();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 3, latest: new Date().toISOString() },
-        });
-        vi.mocked(getTableData).mockResolvedValue({
-            table: "customers",
-            rows: [{ id: 1, name: "Alice", email: "a@a.com", plan: "Pro" }],
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-
-        // Expand
-        await user.click(screen.getByText("Customers"));
-        await waitFor(() => {
-            expect(screen.getByText("Alice")).toBeInTheDocument();
-        });
-
-        // Collapse
-        await user.click(screen.getByText("Customers"));
-        await waitFor(() => {
-            expect(screen.queryByText("Alice")).not.toBeInTheDocument();
-        });
-    });
-
-    // ── Handle Card Click: getTableData error ──
-    it("shows 'No records' when getTableData fails", async () => {
-        const user = userEvent.setup();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 3, latest: new Date().toISOString() },
-        });
-        vi.mocked(getTableData).mockRejectedValue(new Error("DB error"));
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByText("Customers"));
-
-        await waitFor(() => {
-            expect(screen.getByText("No records")).toBeInTheDocument();
-        });
-    });
-
-    // ── Clear Cache Failure ──
-    it("shows 'Failed to clear' when clearCache throws", async () => {
-        const user = userEvent.setup();
-        vi.mocked(clearCache).mockRejectedValue(new Error("Network error"));
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await user.click(screen.getByTitle("Clear cache"));
-
-        await waitFor(() => {
-            expect(screen.getByText("Failed to clear")).toBeInTheDocument();
-        });
-    });
-
-    // ── DB Freshness ──
-    it("shows freshness timestamp for database", async () => {
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 5, latest: new Date().toISOString() },
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-        // Freshness should show "just now" or similar time ago text
-        expect(screen.getByText(/just now|0m ago|ago/i)).toBeInTheDocument();
-    });
-
-    // ── timeAgo: hours branch ──
-    it("shows hours-old freshness when db data is hours old", async () => {
-        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 5, latest: twoHoursAgo },
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-        expect(screen.getByText(/2h ago/)).toBeInTheDocument();
-    });
-
-    // ── timeAgo: days branch ──
-    it("shows days-old freshness when db data is days old", async () => {
-        const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 5, latest: threeDaysAgo },
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-        expect(screen.getByText(/3d ago/)).toBeInTheDocument();
-    });
-
-    // ── Amount Formatting in Table ──
-    it("formats amount column with dollar sign in billing table", async () => {
-        const user = userEvent.setup();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            billing: { count: 2, latest: new Date().toISOString() },
-        });
-        vi.mocked(getTableData).mockResolvedValue({
-            table: "billing",
-            rows: [
-                { id: 1, customer_id: 8, amount: 49.0, type: "charge" },
-                { id: 2, customer_id: 3, amount: 199.99, type: "refund" },
-            ],
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        await waitFor(() => {
-            expect(screen.getByText("Billing")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByText("Billing"));
-        await waitFor(() => {
-            expect(screen.getByText("$49.00")).toBeInTheDocument();
-        });
-        expect(screen.getByText("$199.99")).toBeInTheDocument();
-        expect(screen.getByText("charge")).toBeInTheDocument();
-    });
-
-    // ── Truncate long values ──
-    it("truncates long cell values in table data", async () => {
-        const user = userEvent.setup();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 1, latest: new Date().toISOString() },
-        });
-        const longName = "A".repeat(50); // > 32 chars
-        vi.mocked(getTableData).mockResolvedValue({
-            table: "customers",
-            rows: [{ id: 1, name: longName, email: "a@b.com" }],
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByText("Customers"));
-        await waitFor(() => {
-            // Truncated to 32 chars + "…"
-            const truncated = "A".repeat(32) + "\u2026";
-            expect(screen.getByText(truncated)).toBeInTheDocument();
-        });
-    });
-
-    // ── Expensive model color ──
-    it("renders aggregated providers for models correctly", () => {
-        const metricsWithExpensiveModels: Metrics = {
-            ...FULL_METRICS,
-            agent_metrics: {
-                ...FULL_METRICS.agent_metrics!,
-                model_distribution: {
-                    "gemini-2.5-flash": 80,
-                    "claude-sonnet-4-20250514": 15,
-                    "gpt-4.1": 5,
-                },
-            },
-        };
-        render(<MetricsPanel metrics={metricsWithExpensiveModels} />);
-
-        // Should aggregate by Gemini, Anthropic, OpenAI
-        expect(screen.getByText(/Gemini/)).toBeInTheDocument();
-        expect(screen.getByText(/Anthropic/)).toBeInTheDocument();
-        expect(screen.getByText(/OpenAI/)).toBeInTheDocument();
-        // Check percentages (80 + 15 + 5 = 100 total)
-        expect(screen.getAllByText(/80%/)[0]).toBeInTheDocument();
-        expect(screen.getAllByText(/15%/)[0]).toBeInTheDocument();
-        expect(screen.getAllByText(/5%/)[0]).toBeInTheDocument();
-    });
-
-    // ── High Cache Hit Rate Color ──
-    it("shows green color when cache hit rate exceeds 50%", () => {
-        const highHitMetrics: Metrics = {
-            ...FULL_METRICS,
-            cache_metrics: {
-                ...FULL_METRICS.cache_metrics,
-                hit_rate_percent: 75.0,
-            },
-        };
-        render(<MetricsPanel metrics={highHitMetrics} />);
-        const hitRateEl = screen.getByText("75.0%");
-        expect(hitRateEl).toHaveStyle({ color: "#4ade80" });
-    });
-
-    // ── timeAgo: stale hours (> 3 hours) ──
-    it("shows stale warning for db data older than 3 hours", async () => {
-        const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 5, latest: fiveHoursAgo },
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-        expect(screen.getByText(/5h ago/)).toBeInTheDocument();
-        // Stale should show ⚠ icon
-        expect(screen.getByText(/⚠/)).toBeInTheDocument();
-    });
-
-    // ── timeAgo: minutes branch ──
-    it("shows minutes-old freshness when db data is minutes old", async () => {
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 5, latest: tenMinutesAgo },
-        });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-        expect(screen.getByText(/10m ago/)).toBeInTheDocument();
-    });
-
-    // ── getTableData returning undefined rows ──
-    it("handles getTableData returning no rows property", async () => {
-        const user = userEvent.setup();
-        vi.mocked(getDbStatus).mockResolvedValue({
-            customers: { count: 3, latest: new Date().toISOString() },
-        });
-        vi.mocked(getTableData).mockResolvedValue({
-            table: "customers",
-            // rows is undefined — tests the `data.rows || []` fallback
-        } as any);
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-        await waitFor(() => {
-            expect(screen.getByText("Customers")).toBeInTheDocument();
-        });
-
-        await user.click(screen.getByText("Customers"));
-
-        await waitFor(() => {
-            expect(screen.getByText("No records")).toBeInTheDocument();
-        });
-    });
-
-    // ── getDbStatus error ──
-    it("handles getDbStatus error silently", async () => {
-        vi.mocked(getDbStatus).mockRejectedValue(new Error("Network Error"));
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(getDbStatus).toHaveBeenCalled();
-        });
-        expect(screen.getByText("Observability")).toBeInTheDocument();
-    });
-
-    it("clears cache successfully and hides message after timeout", async () => {
-        vi.useFakeTimers();
-        vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 2 });
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        act(() => {
-            fireEvent.click(screen.getByTitle("Clear cache"));
-        });
-
-        await act(async () => {
-            await Promise.resolve();
-        });
-
-        expect(screen.getByText("Cleared! (2 keys)")).toBeInTheDocument();
-
-        act(() => {
-            vi.advanceTimersByTime(2500);
-        });
-
-        expect(screen.queryByText("Cleared! (2 keys)")).not.toBeInTheDocument();
-        vi.useRealTimers();
-    });
-
-    it("shows error when clearing cache fails and hides after timeout", async () => {
-        vi.useFakeTimers();
-        vi.mocked(clearCache).mockRejectedValue(new Error("Network Error"));
-
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        act(() => {
-            fireEvent.click(screen.getByTitle("Clear cache"));
-        });
-
-        await act(async () => {
-            await Promise.resolve();
-        });
-
-        expect(screen.getByText("Failed to clear")).toBeInTheDocument();
-
-        act(() => {
-            vi.advanceTimersByTime(2500);
-        });
-
-        expect(screen.queryByText("Failed to clear")).not.toBeInTheDocument();
-        vi.useRealTimers();
-    });
-
-    // ── LangSmith Traces Button ──
-    it("hides LangSmith Traces button when tracing is disabled", async () => {
         vi.mocked(getTracingStatus).mockResolvedValue({ enabled: false, project: "aegis", connected: false });
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(getTracingStatus).toHaveBeenCalled();
-        });
-
-        expect(screen.queryByText("LangSmith Traces")).not.toBeInTheDocument();
+        vi.mocked(getTableData).mockResolvedValue({ table: "customers", rows: [] });
     });
 
-    it("shows LangSmith Traces button when tracing is enabled", async () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("shows a skeleton while connecting and an honest offline state when down", () => {
+        const { rerender } = render(<MetricsPanel metrics={null} backend="connecting" />);
+        expect(screen.getByLabelText("Loading metrics")).toBeInTheDocument();
+        rerender(<MetricsPanel metrics={null} backend="down" />);
+        expect(screen.getByText("Telemetry offline")).toBeInTheDocument();
+        expect(screen.queryByText("Runs")).not.toBeInTheDocument();
+    });
+
+    it("renders live stats and the model routing split", async () => {
+        render(<MetricsPanel metrics={FULL} backend="up" />);
+        expect(screen.getByText("Runs")).toBeInTheDocument();
+        expect(await screen.findByText("42")).toBeInTheDocument();
+        expect(await screen.findByText("125.0K")).toBeInTheDocument();
+        expect(await screen.findByText("$1.310")).toBeInTheDocument();
+        expect(await screen.findByText("85%")).toBeInTheDocument();
+        expect(await screen.findByText("12.5s")).toBeInTheDocument();
+        expect(screen.getByText("gpt-oss-20b")).toBeInTheDocument();
+        expect(screen.getByText("Groq")).toBeInTheDocument();
+        expect(screen.getAllByText("OpenAI")).toHaveLength(2);
+        expect(screen.getByText("Google")).toBeInTheDocument();
+        expect(screen.getByText("Anthropic")).toBeInTheDocument();
+        expect(screen.getByText("Other")).toBeInTheDocument();
+        expect(screen.getByRole("img", { name: /gpt-oss-20b 42%/ })).toBeInTheDocument();
+        expect(screen.getByText("Redis connected")).toBeInTheDocument();
+    });
+
+    it("uses dashes rather than fake numbers when nothing has run", () => {
+        render(<MetricsPanel metrics={EMPTY} backend="up" />);
+        expect(screen.getAllByText("—")).toHaveLength(3);
+        expect(screen.getByText(/Run a ticket to see which model/)).toBeInTheDocument();
+        expect(screen.getByText("Redis off")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Clear semantic cache" })).toBeDisabled();
+    });
+
+    it("formats millions compactly", async () => {
+        render(<MetricsPanel metrics={{ ...FULL, agent_metrics: { ...FULL.agent_metrics, total_tokens: 2_500_000 } }} backend="up" />);
+        expect(await screen.findByText("2.5M")).toBeInTheDocument();
+    });
+
+    it("clears the cache and reports the result", async () => {
+        vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 3 });
+        const onCacheCleared = vi.fn();
+        render(<MetricsPanel metrics={FULL} backend="up" onCacheCleared={onCacheCleared} />);
+        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        expect(await screen.findByText("Cleared 3 keys")).toBeInTheDocument();
+        expect(onCacheCleared).toHaveBeenCalled();
+        await waitFor(() => expect(screen.queryByText("Cleared 3 keys")).not.toBeInTheDocument(), { timeout: 3000 });
+    });
+
+    it("reports a failed cache clear, even without a callback", async () => {
+        vi.mocked(clearCache).mockRejectedValue(new Error("x"));
+        render(<MetricsPanel metrics={FULL} backend="up" />);
+        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        expect(await screen.findByText("Couldn't clear")).toBeInTheDocument();
+    });
+
+    it("clears without a callback", async () => {
+        vi.mocked(clearCache).mockResolvedValue({ status: "ok", keys_deleted: 0 });
+        render(<MetricsPanel metrics={FULL} backend="up" />);
+        await userEvent.click(screen.getByRole("button", { name: "Clear semantic cache" }));
+        expect(await screen.findByText("Cleared 0 keys")).toBeInTheDocument();
+    });
+
+    it("previews live database tables and collapses them again", async () => {
+        vi.mocked(getDbStatus).mockResolvedValue({
+            customers: { count: 51 },
+            billing: { count: 34 },
+            support_tickets: { count: 30 },
+        });
+        vi.mocked(getTableData).mockResolvedValueOnce({
+            table: "billing",
+            rows: [{ id: 1, customer_id: 8, amount: 49, type: "charge", status: "paid", description: "A very long description that needs truncating here" }],
+        });
+        render(<MetricsPanel metrics={null} backend="down" />);
+        const billing = await screen.findByRole("button", { name: /Billing/ });
+        expect(screen.queryByRole("button", { name: /Policy docs/ })).not.toBeInTheDocument();
+        await userEvent.click(billing);
+        expect(billing).toHaveAttribute("aria-expanded", "true");
+        expect(await screen.findByText("$49.00")).toBeInTheDocument();
+        expect(screen.getByText(/A very long description that/)).toHaveTextContent("…");
+        await userEvent.click(billing);
+        expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    });
+
+    it("shows loading, empty and failed table previews", async () => {
+        vi.mocked(getDbStatus).mockResolvedValue({ customers: { count: 1 }, internal_docs: { count: 2 } });
+        let resolve!: (v: { table: string; rows: Record<string, unknown>[] }) => void;
+        vi.mocked(getTableData).mockReturnValueOnce(new Promise((r) => (resolve = r)));
+        render(<MetricsPanel metrics={null} backend="down" />);
+        await userEvent.click(await screen.findByRole("button", { name: /Customers/ }));
+        expect(screen.getByText("Loading…")).toBeInTheDocument();
+        await act(async () => resolve({ table: "customers", rows: undefined as unknown as [] }));
+        expect(screen.getByText("No records")).toBeInTheDocument();
+
+        vi.mocked(getTableData).mockRejectedValueOnce(new Error("x"));
+        await userEvent.click(screen.getByRole("button", { name: /Policy docs/ }));
+        expect(await screen.findByText("No records")).toBeInTheDocument();
+    });
+
+    it("renders null cells as dashes", async () => {
+        vi.mocked(getDbStatus).mockResolvedValue({ internal_docs: { count: 1 } });
+        vi.mocked(getTableData).mockResolvedValueOnce({ table: "internal_docs", rows: [{ id: 1, title: null }] });
+        render(<MetricsPanel metrics={null} backend="down" />);
+        await userEvent.click(await screen.findByRole("button", { name: /Policy docs/ }));
+        expect(await screen.findAllByText("—")).not.toHaveLength(0);
+    });
+
+    it("links to LangSmith traces when tracing is on", async () => {
         vi.mocked(getTracingStatus).mockResolvedValue({ enabled: true, project: "aegis", connected: true });
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("LangSmith Traces")).toBeInTheDocument();
-        });
+        const onOpenTraces = vi.fn();
+        render(<MetricsPanel metrics={FULL} backend="up" onOpenTraces={onOpenTraces} />);
+        await userEvent.click(await screen.findByRole("button", { name: /LangSmith traces/ }));
+        expect(onOpenTraces).toHaveBeenCalled();
     });
 
-    it("hides LangSmith Traces button when getTracingStatus fails", async () => {
-        vi.mocked(getTracingStatus).mockRejectedValue(new Error("Network Error"));
-        render(<MetricsPanel metrics={FULL_METRICS} />);
-
-        await waitFor(() => {
-            expect(getTracingStatus).toHaveBeenCalled();
-        });
-
-        expect(screen.queryByText("LangSmith Traces")).not.toBeInTheDocument();
+    it("hides traces when the tracing probe fails, and survives a db probe failure", async () => {
+        vi.mocked(getTracingStatus).mockRejectedValue(new Error("x"));
+        vi.mocked(getDbStatus).mockRejectedValue(new Error("x"));
+        render(<MetricsPanel metrics={FULL} backend="up" />);
+        await waitFor(() => expect(getTracingStatus).toHaveBeenCalled());
+        expect(screen.queryByRole("button", { name: /LangSmith traces/ })).not.toBeInTheDocument();
+        expect(screen.queryByText("Live database")).not.toBeInTheDocument();
     });
 });

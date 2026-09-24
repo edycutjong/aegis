@@ -9,6 +9,10 @@ import { defineConfig, devices } from "@playwright/test";
  * need live LLM + Supabase keys and are exercised by
  * `scripts/capture-screenshots.mjs` against a running stack.
  */
+// E2E_PORT lets the suite run beside another app already bound to :3000 —
+// otherwise reuseExistingServer would silently test whatever owns that port.
+const PORT = process.env.E2E_PORT ?? "3000";
+
 export default defineConfig({
     testDir: "./e2e",
     fullyParallel: true,
@@ -17,7 +21,7 @@ export default defineConfig({
     workers: process.env.CI ? 1 : undefined,
     reporter: process.env.CI ? "html" : "list",
     use: {
-        baseURL: "http://localhost:3000",
+        baseURL: `http://localhost:${PORT}`,
         trace: "on-first-retry",
         screenshot: "only-on-failure",
     },
@@ -26,8 +30,8 @@ export default defineConfig({
         { name: "mobile-chrome", use: { ...devices["Pixel 7"] } },
     ],
     webServer: {
-        command: "npm run start",
-        url: "http://localhost:3000",
+        command: `npm run start -- -p ${PORT}`,
+        url: `http://localhost:${PORT}`,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
     },
