@@ -31,6 +31,10 @@ class AgentState(TypedDict, total=False):
     user_message: str
     thread_id: str
 
+    # Input screening (prompt-injection defense, see app/agent/screen.py)
+    risk_flags: list[str]
+    prompt_guard_score: float | None
+
     # Intent classification
     intent: Literal["billing", "technical", "account", "general"]
     intent_confidence: float
@@ -41,6 +45,7 @@ class AgentState(TypedDict, total=False):
     sql_error: str
     sql_retry_count: int
     customer_found: bool
+    customer: dict  # Validated customer row (id, name, email, plan, status) — source of truth for actions
     customer_candidates: list[dict]
 
     # Documentation search

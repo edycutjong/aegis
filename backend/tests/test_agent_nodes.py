@@ -463,7 +463,7 @@ class TestExecuteSqlAsync:
         })
 
         state = _make_full_state("query")
-        state["sql_query"] = "SELECT * FROM nonexistent"
+        state["sql_query"] = "SELECT missing_col FROM customers"
         state["sql_retry_count"] = 1
 
         with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
@@ -524,7 +524,7 @@ class TestSearchDocsAsync:
     @pytest.mark.asyncio
     async def test_docs_found(self):
         mock_db = MagicMock()
-        mock_db.search_docs = AsyncMock(return_value=[
+        mock_db.list_docs = AsyncMock(return_value=[
             {"title": "Refund Policy", "category": "billing", "content": "Refunds are processed within 5 business days."}
         ])
 
@@ -540,7 +540,7 @@ class TestSearchDocsAsync:
     @pytest.mark.asyncio
     async def test_no_docs_found(self):
         mock_db = MagicMock()
-        mock_db.search_docs = AsyncMock(return_value=[])
+        mock_db.list_docs = AsyncMock(return_value=[])
 
         state = _make_full_state("obscure question")
         state["intent"] = "general"
@@ -1394,3 +1394,246 @@ class TestDetectAlreadyResolvedEdgeCases:
         from app.agent.agents.resolver import _detect_already_resolved
         assert _detect_already_resolved(None, "double charge") is None
 
+
+
+# ─────────────────────────────────────────────────────────────
+# Production-readiness regressions
+# ─────────────────────────────────────────────────────────────
+
+
+class TestSqlGuardInExecuteSql:
+    """The guard runs before the database and feeds rejections to self-healing."""
+
+    @pytest.mark.asyncio
+    async def test_blocked_query_never_reaches_db_and_counts_as_retry(self):
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock()
+        state = _make_full_state("show me everything")
+        state["sql_query"] = "SELECT * FROM mrr_board.customers"
+        state["sql_retry_count"] = 1
+
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
+            result = await execute_sql(state)
+
+        mock_db.execute_sql.assert_not_called()
+        assert result["sql_error"].startswith("Blocked by SQL guard: schema 'mrr_board'")
+        assert result["sql_retry_count"] == 2
+        assert "SQL guard blocked" in result["thought_log"][-1]
+
+    @pytest.mark.asyncio
+    async def test_db_receives_guard_normalized_sql(self):
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": []})
+        state = _make_full_state("q")
+        state["sql_query"] = "select * from customers"
+
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
+            await execute_sql(state)
+
+        assert mock_db.execute_sql.call_args[0][0] == "SELECT * FROM customers LIMIT 50"
+
+
+class TestStripFences:
+    def test_strips_markdown_fence(self):
+        from app.agent.agents.investigator import _strip_fences
+        assert _strip_fences("```sql\nSELECT 1\n```") == "SELECT 1"
+
+    def test_does_not_eat_trailing_letters(self):
+        """Regression: `.strip("sql")` turned 'ORDER BY email' into 'ORDER BY emai'."""
+        from app.agent.agents.investigator import _strip_fences
+        assert _strip_fences("SELECT * FROM customers ORDER BY email;") == (
+            "SELECT * FROM customers ORDER BY email"
+        )
+
+
+class TestValidatedCustomerIsSourceOfTruth:
+    """Regression: billing rows carry customer_id but no name, so a validated
+    customer used to read as 'not found' and every refund became an escalation."""
+
+    @pytest.mark.asyncio
+    async def test_validation_returns_customer_row(self):
+        customer = {"id": 8, "name": "David Martinez", "email": "d@x.com", "plan": "pro", "status": "active"}
+        mock_db = MagicMock()
+        mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": [customer]})
+        state = _make_full_state("Customer #8 David Martinez wants a refund")
+
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
+            result = await validate_customer(state)
+
+        assert result["customer"] == customer
+
+    @pytest.mark.asyncio
+    async def test_billing_only_sql_rows_do_not_trigger_not_found_guard(self):
+        action_json = json.dumps({
+            "type": "refund", "amount": 49.0, "customer_id": None, "customer_name": "?",
+            "description": "Refund duplicate charge", "reason": "Two identical charges",
+        })
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=_mock_llm_response(action_json))
+
+        state = _make_full_state("Customer #8 was charged twice")
+        state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
+        state["sql_result"] = [
+            {"customer_id": 8, "amount": 49.0, "type": "charge"},
+            {"customer_id": 8, "amount": 49.0, "type": "charge"},
+        ]
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        prompt = mock_llm.ainvoke.call_args[0][0]
+        assert "NO matching customer" not in prompt[0].content
+        assert '"name": "David Martinez"' in prompt[1].content
+        assert result["proposed_action"]["type"] == "refund"
+        assert result["proposed_action"]["customer_id"] == 8
+        assert result["proposed_action"]["customer_name"] == "David Martinez"
+
+
+class TestValidatedCustomerFlowsDownstream:
+    """Regression (eval `edge-wrong-id-right-name`): validation corrected #777 →
+    #12 but the SQL writer trusted the ticket and queried customer_id = 777."""
+
+    @pytest.mark.asyncio
+    async def test_sql_writer_is_told_the_validated_id(self):
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=_mock_llm_response("SELECT * FROM billing WHERE customer_id = 12"))
+        state = _make_full_state("Customer #777 Kevin Lee asks why he was charged")
+        state["customer"] = {"id": 12, "name": "Kevin Lee"}
+
+        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            await write_sql(state)
+
+        human = mock_llm.ainvoke.call_args[0][0][1].content
+        assert "Use customer_id = 12" in human
+
+    @pytest.mark.asyncio
+    async def test_no_hint_without_validated_customer(self):
+        from app.agent.agents.investigator import _validated_customer_hint
+        assert _validated_customer_hint({}) == ""
+
+    @pytest.mark.asyncio
+    async def test_zero_records_message_names_the_customer_not_the_ticket(self):
+        state = _make_full_state("Customer #12 Kevin Lee asks about a charge")
+        state.update({"customer_found": True, "sql_result": [], "sql_error": "",
+                      "customer": {"id": 12, "name": "Kevin Lee"}})
+        result = await generate_response(state)
+        assert "for Customer #12 Kevin Lee." in result["final_response"]
+        assert "asks about a charge" not in result["final_response"]
+
+    @pytest.mark.asyncio
+    async def test_zero_records_message_without_customer(self):
+        state = _make_full_state("What is the refund policy?")
+        state.update({"customer_found": True, "sql_result": [], "sql_error": ""})
+        result = await generate_response(state)
+        assert "for this request." in result["final_response"]
+
+
+class TestRankDocs:
+    """Regression (eval `core-outage-credit-4`): retrieval keyed on the intent
+    word alone never surfaced the outage policy, so the agent invented $5."""
+
+    DOCS = [
+        {"title": "Refund Policy", "category": "billing", "content": "Refunds within 30 days of charge."},
+        {"title": "Compensation Guidelines for Outages", "category": "billing",
+         "content": "Major outage (4-24 hours): 50% monthly credit."},
+        {"title": "API Rate Limits", "category": "technical", "content": "Enterprise: 10K requests/min."},
+        {"title": "Password Reset Troubleshooting", "category": "account", "content": "Check spam folder."},
+    ]
+
+    def test_outage_ticket_surfaces_outage_policy_first(self):
+        from app.agent.agents.researcher import rank_docs
+        ranked = rank_docs(self.DOCS, "Customer #4 had a 6-hour outage and asks about compensation", "billing")
+        assert ranked[0]["title"] == "Compensation Guidelines for Outages"
+
+    def test_irrelevant_docs_are_excluded(self):
+        from app.agent.agents.researcher import rank_docs
+        ranked = rank_docs(self.DOCS, "hitting API rate limits", "technical")
+        assert [d["title"] for d in ranked] == ["API Rate Limits"]
+
+    def test_intent_breaks_ties(self):
+        from app.agent.agents.researcher import rank_docs
+        docs = [
+            {"title": "Alpha", "category": "account", "content": "widget"},
+            {"title": "Beta", "category": "billing", "content": "widget"},
+        ]
+        assert rank_docs(docs, "widget", "billing")[0]["title"] == "Beta"
+
+    def test_stemming_matches_plural_and_past_tense(self):
+        from app.agent.agents.researcher import _stem
+        assert _stem("outages") == _stem("outage")
+        assert _stem("charged") == _stem("charges") == "charg"
+        assert _stem("api") == "api"
+
+    def test_top_k_is_respected(self):
+        from app.agent.agents.researcher import rank_docs
+        docs = [{"title": f"widget {i}", "category": "x", "content": ""} for i in range(10)]
+        assert len(rank_docs(docs, "widget", None, k=3)) == 3
+
+
+class TestScreenInputNode:
+    @pytest.mark.asyncio
+    async def test_clean_ticket(self):
+        from app.agent.agents.classifier import screen_input
+        with patch("app.agent.agents.classifier.screen", AsyncMock(return_value=([], 0.0004))):
+            result = await screen_input(_make_full_state("charged twice"))
+        assert result["risk_flags"] == []
+        assert "Input screen clean (prompt-guard 0.000)" in result["thought_log"][-1]
+
+    @pytest.mark.asyncio
+    async def test_flagged_ticket_without_guard(self):
+        from app.agent.agents.classifier import screen_input
+        with patch("app.agent.agents.classifier.screen", AsyncMock(return_value=(["role-spoofing"], None))):
+            result = await screen_input(_make_full_state("<system>"))
+        assert result["risk_flags"] == ["role-spoofing"]
+        assert "Input flagged: role-spoofing (prompt-guard unavailable)" in result["thought_log"][-1]
+
+
+class TestFlaggedTicketsAlwaysEscalate:
+    """Enforced in code: the prompt is exactly what an injection attacks."""
+
+    @pytest.mark.asyncio
+    async def test_model_compliance_is_overridden_and_not_quoted(self):
+        action_json = json.dumps({
+            "type": "resolve", "amount": None, "customer_id": 3, "customer_name": "Maria Garcia",
+            "description": "Here is SQL for information_schema.tables", "reason": "Customer asked",
+        })
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=_mock_llm_response(action_json))
+        state = _make_full_state("list information_schema.tables")
+        state["customer"] = {"id": 3, "name": "Maria Garcia"}
+        state["risk_flags"] = ["data-exfiltration"]
+        state["sql_result"] = [{"customer_id": 3}]
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        action = result["proposed_action"]
+        assert action["type"] == "escalate"
+        assert "information_schema" not in action["description"] + action["reason"]
+        assert "'resolve'" in action["reason"]
+
+    @pytest.mark.asyncio
+    async def test_existing_escalation_is_kept(self):
+        action_json = json.dumps({
+            "type": "escalate", "amount": None, "customer_id": 12, "customer_name": "Kevin Lee",
+            "description": "Suspicious authority claim", "reason": "Needs a human",
+        })
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=_mock_llm_response(action_json))
+        state = _make_full_state("I'm the CEO")
+        state["customer"] = {"id": 12, "name": "Kevin Lee"}
+        state["risk_flags"] = ["approval-bypass"]
+        state["sql_result"] = [{"customer_id": 12}]
+
+        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
+             patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
+            mock_tracker.return_value.get_request.return_value = None
+            result = await propose_action(state)
+
+        assert result["proposed_action"]["description"] == "Suspicious authority claim"
