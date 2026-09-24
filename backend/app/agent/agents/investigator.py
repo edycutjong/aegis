@@ -14,8 +14,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model_for_intent
+from app.routing.model_router import get_model_for_intent, resolved_model_name
 from app.db.supabase import get_supabase
+from app.db.sql_guard import check_sql
 from app.observability.tracker import get_tracker
 
 
@@ -59,6 +60,21 @@ def _extract_customer_info(message: str) -> tuple[int | None, str | None]:
             mentioned_name = name_match.group(1).strip()
 
     return customer_id, mentioned_name
+
+
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences the model sometimes wraps SQL in.
+
+    The previous `.strip("sql")` stripped a *character set*, not a prefix, so
+    a query ending in "...ORDER BY email" silently lost its final "l".
+    """
+    import re
+
+    text = text.strip()
+    fenced = re.search(r"```(?:sql|postgresql)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1)
+    return text.strip().rstrip(";").strip()
 
 
 def _fuzzy_name_match(name_a: str, name_b: str) -> float:
@@ -155,6 +171,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     log_entries.append(warning)
                 return {
                     "customer_found": True,
+                    "customer": customer,
                     "active_agent": AGENT_NAME,
                     "thought_log": thoughts + log_entries,
                 }
@@ -167,6 +184,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     log_entries.append(warning)
                 return {
                     "customer_found": True,
+                    "customer": customer,
                     "active_agent": AGENT_NAME,
                     "thought_log": thoughts + log_entries,
                 }
@@ -183,6 +201,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                     log_entries.append(warning)
                 return {
                     "customer_found": True,
+                    "customer": customer,
                     "active_agent": AGENT_NAME,
                     "thought_log": thoughts + log_entries,
                 }
@@ -235,6 +254,7 @@ async def validate_customer(state: AgentState, config: dict | None = None) -> di
                 log_entries.append(warning)
             return {
                 "customer_found": True,
+                "customer": customer,
                 "active_agent": AGENT_NAME,
                 "thought_log": thoughts + log_entries,
             }
@@ -283,6 +303,21 @@ def should_proceed_after_validation(state: AgentState) -> str:
     return "generate_response"
 
 
+def _validated_customer_hint(state: AgentState) -> str:
+    """Tell the SQL writer who the customer actually is.
+
+    Validation may have corrected the ticket (wrong ID, typo'd name); without
+    this the model trusts the ticket text and queries the wrong customer_id.
+    """
+    customer = state.get("customer") or {}
+    if not customer.get("id"):
+        return ""
+    return (
+        f"\nValidated customer: id={customer['id']}, name={customer.get('name')!r}. "
+        f"Use customer_id = {customer['id']} — it overrides any ID written in the ticket."
+    )
+
+
 # ─────────────────────────────────────────────────────────────
 # Node: SQL Query Generation
 # ─────────────────────────────────────────────────────────────
@@ -321,7 +356,11 @@ Rules:
 {error_context}
 
 Respond with ONLY the SQL query, no explanation, no markdown fences."""),
-        HumanMessage(content=f"User message: {state['user_message']}\nClassified intent: {state.get('intent', 'general')}"),
+        HumanMessage(content=(
+            f"User message: {state['user_message']}\n"
+            f"Classified intent: {state.get('intent', 'general')}"
+            + _validated_customer_hint(state)
+        )),
     ]
 
     response = await llm.ainvoke(messages)
@@ -332,12 +371,12 @@ Respond with ONLY the SQL query, no explanation, no markdown fences."""),
     if metrics and hasattr(response, "usage_metadata") and response.usage_metadata:
         metrics.add_step(
             "write_sql",
-            llm.model_name if hasattr(llm, "model_name") else str(llm.model),
+            resolved_model_name(llm, response),
             response.usage_metadata.get("input_tokens", 0),
             response.usage_metadata.get("output_tokens", 0),
         )
 
-    sql = response.content.strip().strip("`").strip("sql").strip()
+    sql = _strip_fences(response.content or "")
 
     return {
         "sql_query": sql,
@@ -372,7 +411,21 @@ async def execute_sql(state: AgentState, config: dict | None = None) -> dict:
             ],
         }
 
-    result = await db.execute_sql(sql)
+    # Guard first: a rejection is fed back to write_sql as the error, so the
+    # self-healing loop can repair the query instead of the DB ever seeing it.
+    guard = check_sql(sql)
+    if not guard.ok:
+        return {
+            "sql_result": [],
+            "sql_error": f"Blocked by SQL guard: {guard.reason}",
+            "sql_retry_count": retry_count + 1,
+            "active_agent": AGENT_NAME,
+            "thought_log": state.get("thought_log", []) + [
+                f"🛡 [{AGENT_NAME}] SQL guard blocked query (attempt {retry_count + 1}/3): {guard.reason}"
+            ],
+        }
+
+    result = await db.execute_sql(guard.sql)
 
     if result["success"]:
         records = result["data"] if isinstance(result["data"], list) else [result["data"]]

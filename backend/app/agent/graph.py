@@ -4,7 +4,7 @@ This is the brain of the system — a stateful graph that orchestrates
 the multi-agent support workflow with HITL interrupts.
 
 Agents:
-  - Triage Agent       → classify_intent
+  - Triage Agent       → screen_input, classify_intent
   - Investigator Agent → validate_customer, write_sql, execute_sql
   - Knowledge Agent    → search_docs
   - Resolution Agent   → propose_action, await_approval, execute_action, generate_response
@@ -14,7 +14,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent.state import AgentState
-from app.agent.agents.classifier import classify_intent
+from app.agent.agents.classifier import classify_intent, screen_input
 from app.agent.agents.investigator import (
     validate_customer,
     should_proceed_after_validation,
@@ -36,6 +36,7 @@ def build_agent_graph():
     """Build and compile the Aegis agent graph.
 
     The workflow:
+    0. screen_input          → Prompt Guard 2 + deterministic injection rules
     1. classify_intent       → Determine ticket category (fast model)
     2. validate_customer     → Check customer exists in DB
        ↳ not found          → generate_response → END (short-circuit)
@@ -52,6 +53,7 @@ def build_agent_graph():
     builder = StateGraph(AgentState)
 
     # Add all nodes
+    builder.add_node("screen_input", screen_input)
     builder.add_node("classify_intent", classify_intent)
     builder.add_node("validate_customer", validate_customer)
     builder.add_node("write_sql", write_sql)
@@ -63,7 +65,8 @@ def build_agent_graph():
     builder.add_node("generate_response", generate_response)
 
     # Define edges
-    builder.add_edge(START, "classify_intent")
+    builder.add_edge(START, "screen_input")
+    builder.add_edge("screen_input", "classify_intent")
     builder.add_edge("classify_intent", "validate_customer")
 
     # Customer validation gate

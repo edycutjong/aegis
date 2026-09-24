@@ -104,6 +104,18 @@ class SupabaseClient:
                 return response.json()
             return []
 
+    async def list_docs(self, limit: int = 100) -> list[dict]:
+        """Fetch the internal knowledge base for in-process ranking."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{self.url}/rest/v1/internal_docs",
+                headers={**self.headers, "Accept": "application/json"},
+                params={"select": "id,title,content,category", "order": "id", "limit": str(limit)},
+            )
+            if response.status_code == 200:
+                return response.json()
+            return []
+
 
 # Singleton
 _client: SupabaseClient | None = None

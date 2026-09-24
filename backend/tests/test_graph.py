@@ -11,6 +11,7 @@ class TestGraphStructure:
         graph = build_agent_graph()
         node_names = set(graph.nodes.keys())
         expected = {
+            "screen_input",
             "classify_intent",
             "validate_customer",
             "write_sql",
@@ -39,6 +40,12 @@ class TestGraphStructure:
 
     def test_node_count(self):
         graph = build_agent_graph()
-        # 9 user nodes (excluding __start__)
+        # 10 user nodes (excluding __start__)
         user_nodes = {k for k in graph.nodes if not k.startswith("__")}
-        assert len(user_nodes) == 9
+        assert len(user_nodes) == 10
+
+    def test_screening_runs_before_any_llm(self):
+        """The first node after START must be the input screen."""
+        graph = build_agent_graph()
+        first = [dst for src, dst in graph.builder.edges if src == "__start__"]
+        assert first == ["screen_input"]

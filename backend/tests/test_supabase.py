@@ -1,6 +1,7 @@
 """Tests for app.db.supabase — SupabaseClient with mocked httpx."""
 
 import os
+import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 
@@ -332,3 +333,27 @@ class TestGetSupabaseSingleton:
         c2 = db_mod.get_supabase()
         assert c1 is c2
         db_mod._client = None
+
+
+class TestListDocs:
+    """list_docs fetches the knowledge base for in-process ranking."""
+
+    @pytest.mark.asyncio
+    async def test_returns_docs_on_200(self, mock_settings):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        response = MagicMock(status_code=200)
+        response.json.return_value = [{"id": 1, "title": "Refund Policy"}]
+        with patch("httpx.AsyncClient") as cls:
+            cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=response)
+            assert await client.list_docs() == [{"id": 1, "title": "Refund Policy"}]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_error(self, mock_settings):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        with patch("httpx.AsyncClient") as cls:
+            cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=MagicMock(status_code=500))
+            assert await client.list_docs() == []

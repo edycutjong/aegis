@@ -12,8 +12,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import INTENT_MODEL_MAP, get_model
+from app.routing.model_router import INTENT_MODEL_MAP, get_model, resolved_model_name
 from app.observability.tracker import get_tracker
+from app.agent.screen import screen
 
 
 AGENT_NAME = "Triage"
@@ -21,6 +22,24 @@ AGENT_DESCRIPTION = (
     "Classifies incoming support tickets into categories (billing, technical, "
     "account, general) to route them to the correct investigation path."
 )
+
+
+@traceable(name="screen_input")
+async def screen_input(state: AgentState, config: dict | None = None) -> dict:
+    """Screen the raw ticket for prompt-injection before any LLM reads it."""
+    flags, score = await screen(state["user_message"])
+    score_note = f"prompt-guard {score:.3f}" if score is not None else "prompt-guard unavailable"
+    entry = (
+        f"🛡 [{AGENT_NAME}] Input flagged: {', '.join(flags)} ({score_note}) — will require human review"
+        if flags
+        else f"✓ [{AGENT_NAME}] Input screen clean ({score_note})"
+    )
+    return {
+        "risk_flags": flags,
+        "prompt_guard_score": score,
+        "active_agent": AGENT_NAME,
+        "thought_log": state.get("thought_log", []) + [entry],
+    }
 
 
 @traceable(name="classify_intent")
@@ -52,7 +71,7 @@ Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0
     if metrics and hasattr(response, "usage_metadata") and response.usage_metadata:
         metrics.add_step(
             "classify_intent",
-            llm.model_name if hasattr(llm, "model_name") else str(llm.model),
+            resolved_model_name(llm, response),
             response.usage_metadata.get("input_tokens", 0),
             response.usage_metadata.get("output_tokens", 0),
         )
