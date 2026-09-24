@@ -76,6 +76,28 @@ BEGIN
 END;
 $$;
 
+-- Least privilege: the function runs as its OWNER (SECURITY DEFINER), so the
+-- owner decides what LLM-written SQL can ever see. `aegis_query` can read the
+-- four Aegis tables and nothing else — not other schemas in the project, not
+-- auth.*, not pg_catalog views of other data. The keyword checks above are a
+-- speed bump; this grant is the wall. See backend/app/db/sql_guard.py for the
+-- app-side layer in front of it.
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'aegis_query') THEN
+        CREATE ROLE aegis_query NOLOGIN NOINHERIT;
+    END IF;
+END $$;
+GRANT USAGE ON SCHEMA public TO aegis_query;
+GRANT SELECT ON customers, billing, support_tickets, internal_docs TO aegis_query;
+GRANT aegis_query TO postgres;
+GRANT CREATE ON SCHEMA public TO aegis_query;   -- required transiently to take ownership
+ALTER FUNCTION execute_readonly_query(TEXT) OWNER TO aegis_query;
+REVOKE CREATE ON SCHEMA public FROM aegis_query;
+ALTER FUNCTION execute_readonly_query(TEXT) SET search_path = public, pg_catalog;
+ALTER FUNCTION execute_readonly_query(TEXT) SET statement_timeout = '5s';
+REVOKE EXECUTE ON FUNCTION execute_readonly_query(TEXT) FROM PUBLIC, authenticated;
+GRANT EXECUTE ON FUNCTION execute_readonly_query(TEXT) TO anon, service_role;
+
 -- =============================================
 -- IDEMPOTENT RESET: Truncate all data & reset sequences
 -- =============================================
