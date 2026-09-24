@@ -103,226 +103,6 @@ class TestExecuteSQL:
             assert call_args[1]["json"]["query_text"] == "SELECT 1"
 
 
-class TestGetCustomer:
-    """get_customer should return a dict or None."""
-
-    async def test_found(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"id": 1, "name": "Alice", "plan": "pro"}]
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.get_customer(1)
-
-        assert result == {"id": 1, "name": "Alice", "plan": "pro"}
-
-    async def test_not_found(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = []
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.get_customer(999)
-
-        assert result is None
-
-    async def test_api_error(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.get_customer(1)
-
-        assert result is None
-
-
-class TestGetCustomerBilling:
-    """get_customer_billing should return a list."""
-
-    async def test_returns_records(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"id": 1, "amount": 99.99}]
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.get_customer_billing(1)
-
-        assert result == [{"id": 1, "amount": 99.99}]
-
-    async def test_api_error_returns_empty(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.get_customer_billing(1)
-
-        assert result == []
-
-
-class TestGetSupportTickets:
-    """get_support_tickets should return a list."""
-
-    async def test_returns_tickets(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"id": 1, "subject": "Help"}]
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.get_support_tickets(1)
-
-        assert result == [{"id": 1, "subject": "Help"}]
-
-    async def test_api_error_returns_empty(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.get_support_tickets(1)
-
-        assert result == []
-
-
-class TestSearchDocs:
-    """search_docs should return matching documents."""
-
-    async def test_returns_docs(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"id": 1, "title": "Refund Policy", "content": "..."}]
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.search_docs("billing")
-
-        assert len(result) == 1
-        assert result[0]["title"] == "Refund Policy"
-
-    async def test_api_error_returns_empty(self):
-        from app.db.supabase import SupabaseClient
-
-        client = SupabaseClient.__new__(SupabaseClient)
-        client.url = "https://test.supabase.co"
-        client.key = "test-key"
-        client.headers = {"apikey": "test-key", "Authorization": "Bearer test-key", "Content-Type": "application/json"}
-
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.get.return_value = mock_response
-            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client_instance
-
-            result = await client.search_docs("billing")
-
-        assert result == []
-
-
 class TestGetSupabaseSingleton:
     """get_supabase() should return the same instance."""
 
@@ -357,3 +137,34 @@ class TestListDocs:
         with patch("httpx.AsyncClient") as cls:
             cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=MagicMock(status_code=500))
             assert await client.list_docs() == []
+
+
+class TestSearchCustomers:
+    """Name search goes through PostgREST filters, never interpolated SQL."""
+
+    @pytest.mark.asyncio
+    async def test_builds_and_filter_from_sanitized_parts(self, mock_settings):
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        response = MagicMock(status_code=200)
+        response.json.return_value = [{"id": 8, "name": "David Martinez"}]
+        with patch("httpx.AsyncClient") as cls:
+            get = AsyncMock(return_value=response)
+            cls.return_value.__aenter__.return_value.get = get
+            rows = await client.search_customers(["David", "Mar*ti,n(ez)"])
+        assert rows == [{"id": 8, "name": "David Martinez"}]
+        params = get.call_args.kwargs["params"]
+        assert params["and"] == "(name.ilike.*David*,name.ilike.*Martinez*)"
+
+    @pytest.mark.asyncio
+    async def test_empty_terms_short_circuit(self, mock_settings):
+        from app.db.supabase import SupabaseClient
+        assert await SupabaseClient().search_customers(["*", ""]) == []
+
+    @pytest.mark.asyncio
+    async def test_error_returns_empty(self, mock_settings):
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        with patch("httpx.AsyncClient") as cls:
+            cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=MagicMock(status_code=500))
+            assert await client.search_customers(["David"]) == []
