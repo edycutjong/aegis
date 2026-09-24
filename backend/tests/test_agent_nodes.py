@@ -1637,3 +1637,13 @@ class TestFlaggedTicketsAlwaysEscalate:
             result = await propose_action(state)
 
         assert result["proposed_action"]["description"] == "Suspicious authority claim"
+
+
+def test_ticket_boilerplate_does_not_pull_unrelated_policies():
+    from app.agent.agents.researcher import rank_docs
+    docs = [
+        {"title": "Refund Policy", "category": "billing", "content": "Duplicate charges are refunded."},
+        {"title": "Account Deletion Process", "category": "account", "content": "GDPR deletion steps."},
+    ]
+    ranked = rank_docs(docs, "Charged twice. Please investigate and process a refund if confirmed.", "billing")
+    assert [d["title"] for d in ranked] == ["Refund Policy"]
