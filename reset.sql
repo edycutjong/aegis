@@ -8,6 +8,10 @@ DROP POLICY IF EXISTS "Service role can read customers"       ON customers;
 DROP POLICY IF EXISTS "Service role can read billing"         ON billing;
 DROP POLICY IF EXISTS "Service role can read support_tickets" ON support_tickets;
 DROP POLICY IF EXISTS "Service role can read internal_docs"   ON internal_docs;
+DROP POLICY IF EXISTS aegis_query_read ON customers;
+DROP POLICY IF EXISTS aegis_query_read ON billing;
+DROP POLICY IF EXISTS aegis_query_read ON support_tickets;
+DROP POLICY IF EXISTS aegis_query_read ON internal_docs;
 
 -- 2. Drop the read-only RPC function
 DROP FUNCTION IF EXISTS execute_readonly_query(TEXT);
