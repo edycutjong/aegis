@@ -49,3 +49,10 @@ def reset_singletons():
     # Reset tracker singleton
     import app.observability.tracker as tracker_mod
     tracker_mod._tracker = None
+
+    # Reset the demo rate limiter so request counts never leak between tests
+    import sys
+    main_mod = sys.modules.get("app.main")
+    if main_mod is not None:
+        main_mod.rate_limiter._hits.clear()
+        main_mod.rate_limiter._day_count = 0

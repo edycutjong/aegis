@@ -11,7 +11,7 @@ import uuid
 import warnings
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -21,6 +21,7 @@ from app.agent.graph import agent_graph
 from app.cache.semantic import get_cache
 from app.db.supabase import get_supabase
 from app.observability.tracker import get_tracker
+from app.ratelimit import RateLimiter, client_key
 from langgraph.types import Command
 
 # Suppress deprecated google.generativeai FutureWarning from langchain-google-genai
@@ -68,7 +69,7 @@ settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        settings.frontend_url,
+        *settings.cors_origins,
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://0.0.0.0:3000"
@@ -84,7 +85,7 @@ app.add_middleware(
 # ─────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=settings.max_message_chars)
     thread_id: str | None = None  # Optional: resume existing thread
 
 
@@ -110,6 +111,19 @@ class ApprovalResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────
 
 thread_store: dict[str, dict] = {}  # thread_id → metadata
+MAX_THREADS = 500  # bound memory on a long-running demo; oldest threads are evicted first
+
+rate_limiter = RateLimiter(
+    per_client=settings.rate_limit_per_client,
+    window_seconds=settings.rate_limit_window_seconds,
+    daily_cap=settings.daily_ticket_cap,
+)
+
+
+def _evict_old_threads() -> None:
+    """Drop the oldest threads once the store is full (dicts keep insertion order)."""
+    while len(thread_store) >= MAX_THREADS:
+        thread_store.pop(next(iter(thread_store)))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -127,13 +141,19 @@ async def root():
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def start_chat(request: ChatRequest):
+async def start_chat(request: ChatRequest, http_request: Request):
     """Start a new agent workflow for a support ticket.
 
     1. Check semantic cache for duplicate queries
     2. If miss, start the LangGraph workflow
     3. Return thread_id for SSE streaming
     """
+    allowed, reason, retry_after = rate_limiter.check(
+        client_key(http_request.headers, http_request.client.host if http_request.client else None)
+    )
+    if not allowed:
+        raise HTTPException(status_code=429, detail=reason, headers={"Retry-After": str(retry_after)})
+
     # Check cache first (Flex 3)
     cache = await get_cache()
     cached = await cache.get(request.message)
@@ -154,6 +174,7 @@ async def start_chat(request: ChatRequest):
     tracker.start_request(thread_id)
 
     # Store thread metadata
+    _evict_old_threads()
     thread_store[thread_id] = {
         "message": request.message,
         "status": "processing",

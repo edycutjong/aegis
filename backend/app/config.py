@@ -43,6 +43,12 @@ class Settings:
     # App
     debug: bool = False
 
+    # Public-demo spend protection (see app/ratelimit.py)
+    rate_limit_per_client: int = 8
+    rate_limit_window_seconds: int = 600
+    daily_ticket_cap: int = 300
+    max_message_chars: int = 1000
+
     def __post_init__(self):
         """Load from environment variables."""
         self.supabase_url = os.getenv("SUPABASE_URL", self.supabase_url)
@@ -67,6 +73,16 @@ class Settings:
         self.langchain_project = os.getenv("LANGCHAIN_PROJECT", self.langchain_project)
 
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
+
+        self.rate_limit_per_client = int(os.getenv("RATE_LIMIT_PER_CLIENT", self.rate_limit_per_client))
+        self.rate_limit_window_seconds = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", self.rate_limit_window_seconds))
+        self.daily_ticket_cap = int(os.getenv("DAILY_TICKET_CAP", self.daily_ticket_cap))
+        self.max_message_chars = int(os.getenv("MAX_MESSAGE_CHARS", self.max_message_chars))
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """FRONTEND_URL may be a comma-separated list (e.g. prod + custom domain)."""
+        return [o.strip().rstrip("/") for o in self.frontend_url.split(",") if o.strip()]
 
 
 @lru_cache()
