@@ -87,7 +87,7 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=settings.max_message_chars)
-    thread_id: str | None = None  # Optional: resume existing thread
+    # No client-supplied thread id: ids are server-generated capabilities.
 
 
 class ChatResponse(BaseModel):
@@ -113,6 +113,8 @@ class ApprovalResponse(BaseModel):
 
 thread_store: dict[str, dict] = {}  # thread_id → metadata
 MAX_THREADS = 500  # bound memory on a long-running demo; oldest threads are evicted first
+STREAM_DEADLINE_S = 300  # an SSE stream never outlives a stuck run
+_background_tasks: set[asyncio.Task] = set()
 
 rate_limiter = RateLimiter(
     per_client=settings.rate_limit_per_client,
@@ -124,7 +126,11 @@ rate_limiter = RateLimiter(
 def _evict_old_threads() -> None:
     """Drop the oldest threads once the store is full (dicts keep insertion order)."""
     while len(thread_store) >= MAX_THREADS:
-        thread_store.pop(next(iter(thread_store)))
+        evicted = next(iter(thread_store))
+        thread_store.pop(evicted)
+        # Also free the LangGraph checkpoints and in-flight metrics.
+        agent_graph.checkpointer.delete_thread(evicted)
+        get_tracker().forget(evicted)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -155,27 +161,25 @@ async def start_chat(request: ChatRequest, http_request: Request):
     if not allowed:
         raise HTTPException(status_code=429, detail=reason, headers={"Retry-After": str(retry_after)})
 
-    # Check cache first (Flex 3)
+    thread_id = str(uuid.uuid4())
+    _evict_old_threads()
+
+    # A repeat of an auto-resolved ticket is served from the cache on a fresh
+    # thread, so the reply renders even after the original thread is gone.
     cache = await get_cache()
     cached = await cache.get(request.message)
-
     if cached:
-        thread_id = cached.get("thread_id", str(uuid.uuid4()))
-        return ChatResponse(
-            thread_id=thread_id,
-            status="cached",
-            cache_hit=True,
-        )
+        thread_store[thread_id] = {
+            "message": request.message,
+            "status": "cached",
+            "thought_log": cached.get("thought_log", []),
+            "sql_attempts": cached.get("sql_attempts", []),
+            "proposed_action": cached.get("proposed_action"),
+            "final_response": cached.get("response"),
+        }
+        return ChatResponse(thread_id=thread_id, status="cached", cache_hit=True)
 
-    # Generate thread ID
-    thread_id = request.thread_id or str(uuid.uuid4())
-
-    # Start observability tracking (Flex 4)
-    tracker = get_tracker()
-    tracker.start_request(thread_id)
-
-    # Store thread metadata
-    _evict_old_threads()
+    get_tracker().start_request(thread_id)
     thread_store[thread_id] = {
         "message": request.message,
         "status": "processing",
@@ -184,8 +188,11 @@ async def start_chat(request: ChatRequest, http_request: Request):
         "final_response": None,
     }
 
-    # Start the agent workflow in background
-    asyncio.create_task(_run_agent(thread_id, request.message))
+    # Keep a reference: the event loop only holds weak references to tasks,
+    # so an unreferenced run can be garbage-collected mid-flight.
+    task = asyncio.create_task(_run_agent(thread_id, request.message))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return ChatResponse(
         thread_id=thread_id,
@@ -229,17 +236,22 @@ async def _run_agent(thread_id: str, message: str):
             thread_store[thread_id]["status"] = "awaiting_approval"
         else:
             thread_store[thread_id]["status"] = "completed"
-            # Cache the result — but only for successful resolutions (Flex 3)
             # Don't cache failures (customer not found, etc.) so retries hit fresh data
-            final_resp = thread_store[thread_id].get("final_response")
-            thought_log = thread_store[thread_id].get("thought_log", [])
+            # Only auto-resolved answers are cached. Anything that went through
+            # the approval gate is never replayed: a cached approved refund
+            # would hand the next identical ticket a decision no human made.
+            thread = thread_store[thread_id]
+            final_resp = thread.get("final_response")
+            thought_log = thread.get("thought_log", [])
+            action_type = (thread.get("proposed_action") or {}).get("type")
             has_failure = any("✗" in t or "not found" in t.lower() for t in thought_log)
-            if final_resp and not has_failure:
+            if final_resp and action_type == "resolve" and not has_failure:
                 cache = await get_cache()
                 await cache.set(message, {
-                    "thread_id": thread_id,
                     "response": final_resp,
                     "thought_log": thought_log,
+                    "sql_attempts": thread.get("sql_attempts", []),
+                    "proposed_action": thread.get("proposed_action"),
                 })
             # Complete observability tracking
             tracker = get_tracker()
@@ -286,9 +298,14 @@ async def stream_thoughts(thread_id: str):
     async def event_generator():
         last_log_count = 0
         last_sql = "[]"
+        deadline = time.monotonic() + STREAM_DEADLINE_S
 
         while True:
             thread = thread_store.get(thread_id)
+
+            if time.monotonic() > deadline:
+                yield {"event": "error", "data": json.dumps({"error": "The run took too long and was abandoned."})}
+                break
 
             if not thread:
                 yield {
@@ -354,7 +371,7 @@ async def stream_thoughts(thread_id: str):
 async def approve_action(thread_id: str, request: ApprovalRequest):
     """Resume the interrupted workflow with human approval/denial.
 
-    Flex 1: HITL — This resumes the LangGraph interrupt.
+    This resumes the LangGraph interrupt with the human's decision.
     """
     thread = thread_store.get(thread_id)
     if not thread:
@@ -383,18 +400,7 @@ async def approve_action(thread_id: str, request: ApprovalRequest):
 
         thread_store[thread_id]["status"] = "completed"
 
-        # Cache — only successful, approved resolutions
-        # Skip cache for denied actions so the same request can be retried fresh
-        final_resp = thread_store[thread_id].get("final_response")
-        thought_log = thread_store[thread_id].get("thought_log", [])
-        has_failure = any("✗" in t or "not found" in t.lower() for t in thought_log)
-        if final_resp and not has_failure and request.approved:
-            cache = await get_cache()
-            await cache.set(thread["message"], {
-                "thread_id": thread_id,
-                "response": final_resp,
-                "thought_log": thought_log,
-            })
+        # Approved decisions are never cached (see _run_agent).
 
         # Complete observability tracking
         tracker = get_tracker()
@@ -410,21 +416,30 @@ async def approve_action(thread_id: str, request: ApprovalRequest):
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        message = public_error(e)
+        thread_store[thread_id]["status"] = "error"
+        thread_store[thread_id]["error"] = message
+        print(f"[Approve Error] {thread_id}: {e}")
+        raise HTTPException(status_code=500, detail=message)
 
 
 @app.get("/api/thread/{thread_id}")
 async def get_thread(thread_id: str):
-    """Get the current state of a thread."""
+    """Get the current state of a thread, plus its cost receipt.
+
+    The id is an unguessable server-generated capability; only the visitor who
+    started the run has it, so the per-run receipt is served here rather than
+    in the public /api/metrics aggregate.
+    """
     thread = thread_store.get(thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
-    return thread
+    return {**thread, "receipt": get_tracker().receipt(thread_id)}
 
 
 @app.get("/api/metrics")
 async def get_metrics():
-    """Get observability metrics (Flex 4).
+    """Get aggregate observability metrics.
 
     Returns token usage, cost analysis, and cache statistics.
     """
@@ -439,11 +454,17 @@ async def get_metrics():
 
 
 @app.delete("/api/cache")
-async def clear_cache():
+async def clear_cache(http_request: Request):
     """Clear all cached responses from Redis.
 
-    Removes all aegis:cache:* keys and resets hit/miss counters.
+    Removes all aegis:cache:* keys and resets hit/miss counters. Shares the
+    chat rate limit: clearing forces fresh (paid) runs.
     """
+    allowed, reason, retry_after = rate_limiter.check(
+        client_key(http_request.headers, http_request.client.host if http_request.client else None)
+    )
+    if not allowed:
+        raise HTTPException(status_code=429, detail=reason, headers={"Retry-After": str(retry_after)})
     cache = await get_cache()
     deleted = await cache.clear()
     return {
@@ -476,9 +497,11 @@ async def db_status():
                     "latest": row.get("latest"),
                 }
             else:
-                result[table] = {"count": 0, "latest": None, "error": res.get("error")}
+                print(f"[db-status] {table}: {res.get('error')}")
+                result[table] = {"count": 0, "latest": None, "error": "Query failed"}
         except Exception as e:
-            result[table] = {"count": 0, "latest": None, "error": str(e)}
+            print(f"[db-status] {table}: {e}")
+            result[table] = {"count": 0, "latest": None, "error": "Database unreachable"}
 
     return result
 
@@ -502,11 +525,13 @@ async def get_table_data(name: str):
         if res["success"]:
             return {"table": name, "rows": res.get("data", []) or []}
         else:
-            raise HTTPException(status_code=500, detail=res.get("error", "Query failed"))
+            print(f"[tables] {name}: {res.get('error')}")
+            raise HTTPException(status_code=500, detail="Query failed")
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[tables] {name}: {e}")
+        raise HTTPException(status_code=500, detail="Database unreachable")
 
 
 # Simple in-memory TTL cache for traces (avoid hammering LangSmith)
@@ -687,7 +712,10 @@ async def get_traces():
                 print(f"⚠ LangSmith rate limit hit, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(wait)
                 continue
-            return {"traces": [], "error": "Rate limit exceeded for LangSmith API. Traces will load after the rate limit resets (~5 minutes)." if "429" in error_str else error_str}
+            if "429" in error_str:
+                return {"traces": [], "error": "Rate limit exceeded for LangSmith API. Traces will load after the rate limit resets (~5 minutes)."}
+            print(f"[traces] {error_str}")
+            return {"traces": [], "error": "Could not load traces from LangSmith."}
 
 
 @app.get("/api/tracing-status")

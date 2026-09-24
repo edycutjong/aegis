@@ -216,7 +216,10 @@ class TestChatEndpoint:
             assert "thread_id" in data
             assert data["status"] in ("processing", "cached")
 
-    def test_with_explicit_thread_id(self, client):
+    def test_client_cannot_choose_the_thread_id(self, client):
+        """Regression (audit P0): a client-chosen id could overwrite another
+        visitor's thread. Ids are server-generated capabilities."""
+        import uuid
         with patch("app.main._run_agent", new_callable=AsyncMock):
             response = client.post("/api/chat", json={
                 "message": "Help with billing",
@@ -224,7 +227,8 @@ class TestChatEndpoint:
             })
             assert response.status_code == 200
             data = response.json()
-            assert data["thread_id"] == "my-custom-id"
+            assert data["thread_id"] != "my-custom-id"
+            uuid.UUID(data["thread_id"])
 
     def test_empty_message_returns_422(self, client):
         """Empty string should be rejected by min_length=1 validation."""
@@ -240,17 +244,22 @@ class TestChatEndpoint:
         """Cover L130-136: cache hit returns early with cached thread_id."""
         mock_cache = AsyncMock()
         mock_cache.get = AsyncMock(return_value={
-            "thread_id": "cached-thread-id",
             "response": "Cached response",
+            "thought_log": ["✓ cached step"],
+            "proposed_action": {"type": "resolve"},
         })
 
         with patch("app.main.get_cache", new_callable=AsyncMock, return_value=mock_cache):
             response = client.post("/api/chat", json={"message": "cached query"})
             assert response.status_code == 200
             data = response.json()
-            assert data["thread_id"] == "cached-thread-id"
             assert data["status"] == "cached"
             assert data["cache_hit"] is True
+            # A fresh thread carries the cached reply, so it renders even when
+            # the original thread is long gone.
+            thread = client.get(f"/api/thread/{data['thread_id']}").json()
+            assert thread["final_response"] == "Cached response"
+            assert thread["thought_log"] == ["✓ cached step"]
 
 
 class TestApproveEndpoint:
@@ -316,8 +325,9 @@ class TestApproveEndpoint:
         data = response.json()
         assert data["status"] == "completed"
         assert data["result"] == "Refund done"
-        # Verify cache was called for approved action
-        mock_cache.set.assert_called_once()
+        # Regression (audit P1): an approved decision is never cached, or the
+        # next identical ticket would get a refund no human approved.
+        mock_cache.set.assert_not_called()
         del thread_store["approval-test"]
 
     def test_deny_skips_cache(self, client):
@@ -450,6 +460,7 @@ class TestRunAgent:
 
         async def mock_astream(*args, **kwargs):
             yield {"classify_intent": {"thought_log": ["✓ Classified"]}}
+            yield {"propose_action": {"proposed_action": {"type": "resolve"}}}
             yield {"generate_response": {"final_response": "Done!", "thought_log": ["✓ Complete"]}}
 
         mock_state = MagicMock()
@@ -777,7 +788,7 @@ class TestDbStatusEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert data["customers"]["count"] == 0
-            assert data["customers"]["error"] == "relation does not exist"
+            assert data["customers"]["error"] == "Query failed"  # raw DB text stays in logs
 
     def test_handles_exception(self, client):
         """Cover L418-419: execute_sql throws exception."""
@@ -789,7 +800,7 @@ class TestDbStatusEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert data["customers"]["count"] == 0
-            assert data["customers"]["error"] == "Connection refused"
+            assert data["customers"]["error"] == "Database unreachable"
 
     def test_handles_empty_data(self, client):
         """Cover L410: success=True but empty data."""
@@ -859,7 +870,7 @@ class TestGetTableDataEndpoint:
         with patch("app.main.get_supabase", return_value=mock_db):
             response = client.get("/api/tables/customers")
             assert response.status_code == 500
-            assert "permission denied" in response.json()["detail"]
+            assert response.json()["detail"] == "Query failed"
 
     def test_reraises_http_exception(self, client):
         """Cover L444-445: HTTPException is re-raised without wrapping."""
@@ -881,7 +892,7 @@ class TestGetTableDataEndpoint:
         with patch("app.main.get_supabase", return_value=mock_db):
             response = client.get("/api/tables/customers")
             assert response.status_code == 500
-            assert "Database crashed" in response.json()["detail"]
+            assert response.json()["detail"] == "Database unreachable"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1084,7 +1095,7 @@ class TestTracesEndpoint:
                     assert response.status_code == 200
                     data = response.json()
                     assert data["traces"] == []
-                    assert "API unreachable" in data["error"]
+                    assert data["error"] == "Could not load traces from LangSmith."
 
     def test_traces_returns_cached_data(self):
         """Cover L478: TTL cache hit returns cached data without calling LangSmith."""
@@ -1643,3 +1654,93 @@ class TestSqlVisibilityAndErrors:
         with patch.object(main_mod.rate_limiter, "check", return_value=(False, "slow", 9)):
             response = client.post("/api/chat", json={"message": "x"}, headers={"Origin": "http://localhost:3000"})
         assert "retry-after" in response.headers.get("access-control-expose-headers", "").lower()
+
+
+class TestAuditHardening:
+    def test_stream_gives_up_after_deadline(self, client):
+        import app.main as main_mod
+        main_mod.thread_store["stuck"] = {"message": "t", "status": "processing", "thought_log": []}
+        with patch.object(main_mod, "STREAM_DEADLINE_S", -1):
+            text = client.get("/api/stream/stuck").text
+        del main_mod.thread_store["stuck"]
+        assert "took too long" in text
+
+    def test_clearing_the_cache_is_rate_limited(self, client):
+        import app.main as main_mod
+        with patch.object(main_mod.rate_limiter, "check", return_value=(False, "slow", 5)):
+            response = client.delete("/api/cache")
+        assert response.status_code == 429
+
+    def test_public_metrics_never_list_thread_ids(self):
+        from app.observability.tracker import ObservabilityTracker
+        tracker = ObservabilityTracker()
+        tracker.start_request("secret-thread")
+        tracker.complete_request("secret-thread")
+        recent = tracker.get_aggregate_stats()["recent_requests"]
+        assert recent and all("thread_id" not in r for r in recent)
+        assert tracker.receipt("secret-thread")["thread_id"] == "secret-thread"
+
+    def test_receipt_for_in_flight_and_unknown_runs(self):
+        from app.observability.tracker import ObservabilityTracker
+        tracker = ObservabilityTracker()
+        tracker.start_request("live")
+        assert tracker.receipt("live")["thread_id"] == "live"
+        assert tracker.receipt("nope") is None
+        tracker.forget("live")
+        assert tracker.receipt("live") is None
+
+    def test_history_is_bounded(self):
+        from app.observability import tracker as tracker_mod
+        tracker = tracker_mod.ObservabilityTracker()
+        with patch.object(tracker_mod, "HISTORY_LIMIT", 3):
+            for i in range(5):
+                tracker.start_request(f"t{i}")
+                tracker.complete_request(f"t{i}")
+        assert [r["thread_id"] for r in tracker._history] == ["t2", "t3", "t4"]
+
+    def test_eviction_frees_checkpoints_and_metrics(self):
+        import app.main as main_mod
+        saved = dict(main_mod.thread_store)
+        try:
+            main_mod.thread_store.clear()
+            for i in range(main_mod.MAX_THREADS):
+                main_mod.thread_store[f"t{i}"] = {}
+            with patch.object(main_mod.agent_graph.checkpointer, "delete_thread") as delete, \
+                 patch("app.main.get_tracker") as tracker:
+                main_mod._evict_old_threads()
+            delete.assert_called_once_with("t0")
+            tracker.return_value.forget.assert_called_once_with("t0")
+        finally:
+            main_mod.thread_store.clear()
+            main_mod.thread_store.update(saved)
+
+    def test_thread_response_includes_receipt(self, client):
+        import app.main as main_mod
+        main_mod.thread_store["with-receipt"] = {"message": "t", "status": "completed", "thought_log": []}
+        with patch("app.main.get_tracker") as tracker:
+            tracker.return_value.receipt.return_value = {"total_cost_usd": 0.002}
+            data = client.get("/api/thread/with-receipt").json()
+        del main_mod.thread_store["with-receipt"]
+        assert data["receipt"] == {"total_cost_usd": 0.002}
+
+
+def test_traces_persistent_429_returns_friendly_message():
+    with patch.dict(os.environ, {
+        "LANGCHAIN_TRACING_V2": "true", "LANGCHAIN_API_KEY": "lsv2_pt_test", "LANGCHAIN_PROJECT": "aegis",
+        "SUPABASE_URL": "https://test.supabase.co", "SUPABASE_KEY": "test-key",
+        "REDIS_URL": "redis://localhost:6379", "FRONTEND_URL": "http://localhost:3000",
+    }, clear=False):
+        from app.config import get_settings
+        get_settings.cache_clear()
+        from app.main import _traces_cache
+        _traces_cache["data"] = None
+        _traces_cache["ts"] = 0.0
+        mock_client = MagicMock()
+        mock_client.list_runs = MagicMock(side_effect=Exception("429 Too Many Requests"))
+        with patch("langsmith.Client", return_value=mock_client), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            from app.main import app
+            with TestClient(app, raise_server_exceptions=False) as c:
+                data = c.get("/api/traces").json()
+        assert data["traces"] == []
+        assert "Rate limit exceeded" in data["error"]

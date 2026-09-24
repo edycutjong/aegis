@@ -1,7 +1,6 @@
 """Observability and cost tracking.
 
-Flex 4: Track exactly how many tokens agents burn.
-"The average cost to resolve a complex ticket is exactly $0.012."
+Per-run token, cost and latency tracking for every LLM call.
 
 Architecture Note:
     Current: In-memory storage (resets on restart) — sufficient for demos.
@@ -90,12 +89,15 @@ class RequestMetrics:
         }
 
 
+HISTORY_LIMIT = 1000
+
+
 class ObservabilityTracker:
     """Aggregates metrics across all requests."""
 
     def __init__(self):
         self.requests: dict[str, RequestMetrics] = {}
-        self._history: list[dict] = []  # Completed requests
+        self._history: list[dict] = []  # Completed requests (bounded, see complete_request)
 
     def start_request(self, thread_id: str) -> RequestMetrics:
         """Start tracking a new request."""
@@ -113,6 +115,17 @@ class ObservabilityTracker:
             metrics = self.requests.pop(thread_id)
             metrics.complete()
             self._history.append(metrics.to_dict())
+            del self._history[:-HISTORY_LIMIT]
+
+    def receipt(self, thread_id: str) -> dict | None:
+        """Per-run cost breakdown, for the caller who owns the thread id."""
+        if thread_id in self.requests:
+            return self.requests[thread_id].to_dict()
+        return next((r for r in reversed(self._history) if r["thread_id"] == thread_id), None)
+
+    def forget(self, thread_id: str) -> None:
+        """Drop an in-flight request (thread evicted before completing)."""
+        self.requests.pop(thread_id, None)
 
     def get_aggregate_stats(self, total_cache_hits: int = 0) -> dict:
         """Get aggregate statistics across all completed requests."""
@@ -158,7 +171,11 @@ class ObservabilityTracker:
             "total_cost_usd": round(total_cost, 6),
             "total_tokens": total_tokens,
             "model_distribution": model_dist,
-            "recent_requests": self._history[-10:],
+            # Thread ids are capabilities (they unlock /api/thread and
+            # /api/approve), so the public aggregate never lists them.
+            "recent_requests": [
+                {k: v for k, v in r.items() if k != "thread_id"} for r in self._history[-10:]
+            ],
             "hitl_approval_rate": hitl_rate,
             "avg_hitl_wait_seconds": avg_hitl_wait,
             "cost_saved_by_cache": cost_saved,
