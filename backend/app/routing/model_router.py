@@ -51,6 +51,10 @@ INTENT_MODEL_MAP = {
 }
 
 
+# A hung provider must not hang the workflow: each call gives up after this,
+# which also triggers the cross-provider fallback below.
+REQUEST_TIMEOUT_S = 30.0
+
 # Cross-provider failover. Evals showed both free-tier providers throttle under
 # modest concurrency (Gemini: 5 req/min; Groq gpt-oss-120b: 8K tokens/min), and
 # the old "fallback" pointed at the same provider that had just failed. Each
@@ -159,6 +163,7 @@ def _create_model(model_name: str, max_retries: int = 2):
             api_key=SecretStr(settings.groq_api_key),
             temperature=0.1,
             max_retries=max_retries,
+            timeout=REQUEST_TIMEOUT_S,
         )
     elif model_name.startswith("gemini"):
         return ChatGoogleGenerativeAI(  # type: ignore[call-arg]  # pydantic alias
@@ -166,6 +171,7 @@ def _create_model(model_name: str, max_retries: int = 2):
             google_api_key=SecretStr(settings.google_api_key),
             temperature=0.1,
             max_retries=max_retries,
+            timeout=REQUEST_TIMEOUT_S,
         )
     elif model_name.startswith("gpt") or model_name.startswith("o"):
         return ChatOpenAI(
@@ -173,6 +179,7 @@ def _create_model(model_name: str, max_retries: int = 2):
             api_key=SecretStr(settings.openai_api_key),
             temperature=0.1,
             max_retries=max_retries,
+            timeout=REQUEST_TIMEOUT_S,
         )
     elif model_name.startswith("claude"):
         return ChatAnthropic(  # type: ignore[call-arg]  # `model` is a pydantic alias of model_name
@@ -180,6 +187,7 @@ def _create_model(model_name: str, max_retries: int = 2):
             api_key=SecretStr(settings.anthropic_api_key),
             temperature=0.1,
             max_retries=max_retries,
+            timeout=REQUEST_TIMEOUT_S,
         )
     else:
         # Default to the cheapest Groq option
@@ -188,6 +196,7 @@ def _create_model(model_name: str, max_retries: int = 2):
             api_key=SecretStr(settings.groq_api_key),
             temperature=0.1,
             max_retries=max_retries,
+            timeout=REQUEST_TIMEOUT_S,
         )
 
 

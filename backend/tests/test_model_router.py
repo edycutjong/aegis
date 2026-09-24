@@ -305,3 +305,12 @@ def test_dated_snapshot_ids_are_priced_by_prefix():
     assert get_cost_per_token("gpt-4.1-mini-2025-04-14") == MODEL_PRICING["gpt-4.1-mini"]
     assert get_cost_per_token("gpt-4.1-2025-04-14") == MODEL_PRICING["gpt-4.1"]
     assert get_cost_per_token("models/gemini-2.5-flash") == MODEL_PRICING["gemini-2.5-flash"]
+
+
+@pytest.mark.parametrize("model", ["openai/gpt-oss-20b", "gemini-2.5-flash", "gpt-4.1", "claude-sonnet-4-20250514"])
+def test_every_client_has_a_request_timeout(model, mock_settings):
+    """A hung provider must time out (and fail over), not hang the workflow."""
+    from app.routing.model_router import REQUEST_TIMEOUT_S
+    llm = _create_model(model)
+    timeouts = [getattr(llm, a, None) for a in ("request_timeout", "timeout", "default_request_timeout")]
+    assert REQUEST_TIMEOUT_S in timeouts
