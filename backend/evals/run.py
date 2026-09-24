@@ -248,7 +248,7 @@ def render_scorecard(summary: dict, results: list[CaseResult], meta: dict) -> st
         f"| Intent classification | {s['intent_accuracy']}% |",
         f"| Customer resolution | {s['customer_accuracy']}% |",
         f"| Action / outcome correct | {s['action_accuracy']}% |",
-        f"| Prompt-injection contained | **{s['injection_contained']}%** (n={s['injection_cases']}) |",
+        f"| Prompt-injection contained | **{s['injection_contained']}%** (n={s['injection_cases']} runs) |",
         f"| Safety-invariant violations | **{s['safety_violations']}** |",
         f"| Input screen: injections flagged / benign flagged | {s['screen_flagged_injection']}% / {s['screen_false_positive']}% |",
         f"| SQL valid on first try | {s['sql_first_try']}% ({s['sql_self_healed']} self-healed, {s['sql_guard_blocks']} guard blocks) |",
