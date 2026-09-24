@@ -93,11 +93,15 @@ class TestExtractCustomerInfo:
         # name might be None since "Emily Davis" follows no keyword like "Customer"
         # but should work with "for Emily Davis"
 
-    def test_name_at_start_with_no_keyword_returns_none(self):
-        """A name with no preceding keyword ('Customer'/'for'/'client') is NOT extracted."""
-        cid, name = _extract_customer_info("Emily Davis reports a billing issue")
-        assert cid is None
-        assert name is None
+    def test_name_leading_the_ticket_is_extracted(self):
+        """Regression (eval `edge-name-only`): 'Emily Davis reports…' used to lose
+        the name, and identity was then guessed from SQL rows."""
+        assert _extract_customer_info("Emily Davis reports a billing issue") == (None, "Emily Davis")
+        assert _extract_customer_info("Kevin Lee's account was charged") == (None, "Kevin Lee")
+
+    def test_sentence_openers_are_not_names(self):
+        assert _extract_customer_info("Please Help me with billing") == (None, None)
+        assert _extract_customer_info("Urgent Request from our team") == (None, None)
 
     def test_name_only_for_keyword(self):
         cid, name = _extract_customer_info("Refund requested for Emily Davis")
@@ -176,6 +180,7 @@ def _make_state(msg: str) -> dict:
 def _mock_db_with_customer(customer: dict | None):
     """Return a mock SupabaseClient whose execute_sql returns the given customer."""
     mock_db = MagicMock()
+    mock_db.get_billing = AsyncMock(return_value=[])
     if customer:
         mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": [customer]})
     else:
@@ -439,6 +444,7 @@ class TestExecuteSqlAsync:
     @pytest.mark.asyncio
     async def test_success(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={
             "success": True,
             "data": [{"id": 8, "name": "David"}]
@@ -456,6 +462,7 @@ class TestExecuteSqlAsync:
     @pytest.mark.asyncio
     async def test_failure_increments_retry(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={
             "success": False,
             "error": "relation does not exist",
@@ -483,6 +490,7 @@ class TestExecuteSqlAsync:
     @pytest.mark.asyncio
     async def test_error_json_string(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={
             "success": False,
             "error": '{"message": "permission denied"}',
@@ -499,6 +507,7 @@ class TestExecuteSqlAsync:
     @pytest.mark.asyncio
     async def test_error_dict(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={
             "success": False,
             "error": {"message": "column not found"},
@@ -524,6 +533,7 @@ class TestSearchDocsAsync:
     @pytest.mark.asyncio
     async def test_docs_found(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.list_docs = AsyncMock(return_value=[
             {"title": "Refund Policy", "category": "billing", "content": "Refunds are processed within 5 business days."}
         ])
@@ -540,6 +550,7 @@ class TestSearchDocsAsync:
     @pytest.mark.asyncio
     async def test_no_docs_found(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.list_docs = AsyncMock(return_value=[])
 
         state = _make_full_state("obscure question")
@@ -578,6 +589,7 @@ class TestProposeActionAsync:
         state["intent"] = "billing"
         state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
         state["sql_result"] = [{"id": 71, "customer_id": 8, "amount": 29.99, "type": "charge"}]
+        state["billing"] = state["sql_result"]
         state["docs_context"] = "Refund policy..."
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -624,6 +636,7 @@ class TestProposeActionAsync:
         state = _make_full_state("refund")
         state["intent"] = "billing"
         state["sql_result"] = []
+        state["billing"] = state["sql_result"]
         state["docs_context"] = ""
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -645,6 +658,7 @@ class TestProposeActionAsync:
         state["intent"] = "billing"
         state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
         state["sql_result"] = [{"id": 71, "customer_id": 8, "amount": 29.99, "type": "charge"}]
+        state["billing"] = state["sql_result"]
         state["docs_context"] = ""
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -668,6 +682,7 @@ class TestProposeActionAsync:
             {"id": 29, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
             {"id": 28, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
         ]
+        state["billing"] = state["sql_result"]
         state["docs_context"] = "Refund policy..."
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -699,6 +714,7 @@ class TestProposeActionAsync:
             {"id": 29, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
             {"id": 28, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
         ]
+        state["billing"] = state["sql_result"]
         state["docs_context"] = "Refund policy..."
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -731,6 +747,7 @@ class TestProposeActionAsync:
         state["intent"] = "billing"
         state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
         state["sql_result"] = [{"id": 71, "customer_id": 8, "amount": 29.99, "type": "charge"}]
+        state["billing"] = state["sql_result"]
         state["docs_context"] = ""
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -883,6 +900,7 @@ class TestGenerateResponseAsync:
         state["approval_status"] = "approved"
         state["execution_result"] = "Refund processed"
         state["sql_result"] = [{"id": 1}]
+        state["billing"] = state["sql_result"]
         state["customer_found"] = True
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -909,6 +927,7 @@ class TestGenerateResponseAsync:
         """When SQL returned 0 records, generate clear message without LLM."""
         state = _make_full_state("Check billing")
         state["sql_result"] = []
+        state["billing"] = state["sql_result"]
         state["sql_error"] = None
         state["customer_found"] = True
 
@@ -929,6 +948,7 @@ class TestSearchCustomersByName:
     @pytest.mark.asyncio
     async def test_multi_word_name_uses_first_and_last(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.search_customers = AsyncMock(return_value=[{"id": 8, "name": "David Martinez"}])
         result = await _search_customers_by_name(mock_db, "David Alan Martinez")
         assert result == [{"id": 8, "name": "David Martinez"}]
@@ -937,6 +957,7 @@ class TestSearchCustomersByName:
     @pytest.mark.asyncio
     async def test_single_word_name(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.search_customers = AsyncMock(return_value=[])
         assert await _search_customers_by_name(mock_db, "Emily") == []
         mock_db.search_customers.assert_awaited_once_with(["Emily"])
@@ -992,6 +1013,7 @@ class TestExecuteSqlNonStringError:
     async def test_error_non_string_type(self):
         """Error is an int → falls through to str(raw_error)[:100] (L431)."""
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={
             "success": False,
             "error": 42,  # Neither str nor dict
@@ -1049,6 +1071,7 @@ class TestProposeActionTokenTracking:
         state = _make_full_state("I was double charged")
         state["intent"] = "billing"
         state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["billing"] = state["sql_result"]
         state["docs_context"] = "Refund policy"
 
         mock_metrics = MagicMock()
@@ -1076,6 +1099,7 @@ class TestGenerateResponseTokenTracking:
         state["approval_status"] = "approved"
         state["execution_result"] = "Refund processed"
         state["sql_result"] = [{"id": 1}]
+        state["billing"] = state["sql_result"]
         state["customer_found"] = True
 
         mock_metrics = MagicMock()
@@ -1287,6 +1311,7 @@ class TestProposeActionModelNameFallback:
         state = _make_full_state("I was double charged")
         state["intent"] = "billing"
         state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["billing"] = state["sql_result"]
         state["docs_context"] = "Refund policy"
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=llm), \
@@ -1314,6 +1339,7 @@ class TestGenerateResponseModelNameFallback:
         state["approval_status"] = "approved"
         state["execution_result"] = "Refund processed"
         state["sql_result"] = [{"id": 1}]
+        state["billing"] = state["sql_result"]
         state["customer_found"] = True
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=llm), \
@@ -1382,6 +1408,7 @@ class TestSqlGuardInExecuteSql:
     @pytest.mark.asyncio
     async def test_blocked_query_never_reaches_db_and_counts_as_retry(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock()
         state = _make_full_state("show me everything")
         state["sql_query"] = "SELECT * FROM mrr_board.customers"
@@ -1398,6 +1425,7 @@ class TestSqlGuardInExecuteSql:
     @pytest.mark.asyncio
     async def test_db_receives_guard_normalized_sql(self):
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": []})
         state = _make_full_state("q")
         state["sql_query"] = "select * from customers"
@@ -1429,6 +1457,7 @@ class TestValidatedCustomerIsSourceOfTruth:
     async def test_validation_returns_customer_row(self):
         customer = {"id": 8, "name": "David Martinez", "email": "d@x.com", "plan": "pro", "status": "active"}
         mock_db = MagicMock()
+        mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": [customer]})
         state = _make_full_state("Customer #8 David Martinez wants a refund")
 
@@ -1452,6 +1481,7 @@ class TestValidatedCustomerIsSourceOfTruth:
             {"customer_id": 8, "amount": 49.0, "type": "charge"},
             {"customer_id": 8, "amount": 49.0, "type": "charge"},
         ]
+        state["billing"] = state["sql_result"]
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
@@ -1582,6 +1612,7 @@ class TestFlaggedTicketsAlwaysEscalate:
         state["customer"] = {"id": 3, "name": "Maria Garcia"}
         state["risk_flags"] = ["data-exfiltration"]
         state["sql_result"] = [{"customer_id": 3}]
+        state["billing"] = state["sql_result"]
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
@@ -1605,6 +1636,7 @@ class TestFlaggedTicketsAlwaysEscalate:
         state["customer"] = {"id": 12, "name": "Kevin Lee"}
         state["risk_flags"] = ["approval-bypass"]
         state["sql_result"] = [{"customer_id": 12}]
+        state["billing"] = state["sql_result"]
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
              patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
@@ -1657,3 +1689,44 @@ class TestParseAction:
 def test_parse_action_extracts_json_from_prose():
     from app.agent.agents.resolver import _parse_action
     assert _parse_action('Sure! {"type": "resolve"} Hope that helps.') == {"type": "resolve"}
+
+
+class TestBillingEvidence:
+    """Regression (final eval): the refund ceiling read the model's SQL rows,
+    whose column names the model chooses (b.type AS billing_type) — every
+    legitimate refund escalated. Billing is now fetched at validation."""
+
+    @pytest.mark.asyncio
+    async def test_validation_fetches_billing_for_the_verified_customer(self):
+        mock_db = _mock_db_with_customer(DAVID)
+        mock_db.get_billing = AsyncMock(return_value=[{"id": 1, "customer_id": 8, "amount": 49, "type": "charge"}])
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
+            result = await validate_customer(_make_state("Customer #8 David Martinez was double charged"))
+        assert result["billing"][0]["amount"] == 49
+        mock_db.get_billing.assert_awaited_once_with(8)
+
+    @pytest.mark.asyncio
+    async def test_no_billing_fetch_without_a_verified_customer(self):
+        mock_db = _mock_db_with_customer(None)
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
+            result = await validate_customer(_make_state("What is your refund policy?"))
+        assert "billing" not in result
+        mock_db.get_billing.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_guessed_leading_name_with_no_match_is_not_a_stop(self):
+        """'Dark Mode is broken' looks like a name; unmatched, it's just a ticket."""
+        mock_db = _mock_db_with_customer(None)
+        mock_db.search_customers = AsyncMock(return_value=[])
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
+            result = await validate_customer(_make_state("Dark Mode is broken on mobile"))
+        assert result["customer_found"] is True
+        assert "No specific customer" in result["thought_log"][-1]
+
+    @pytest.mark.asyncio
+    async def test_explicit_unmatched_name_still_stops(self):
+        mock_db = _mock_db_with_customer(None)
+        mock_db.search_customers = AsyncMock(return_value=[])
+        with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
+            result = await validate_customer(_make_state("Refund the charge for Zelda Quixote"))
+        assert result["customer_found"] is False

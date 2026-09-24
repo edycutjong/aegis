@@ -306,6 +306,7 @@ class TestUnverifiedCustomerInvariant:
             "thought_log": [],
             "intent": "billing",
             "docs_context": "",
+            "billing": extra.get("sql_result", []),
             **extra,
         }
         with patch(
@@ -327,8 +328,8 @@ class TestInvariantsHoldOnEveryPath:
             "thread_id": "t", "thought_log": [], "intent": "billing", "docs_context": "",
             "risk_flags": ["instruction-override"],
             "customer": {"id": 8, "name": "David Martinez"},
-            "sql_result": [{"id": 30, "customer_id": 8, "amount": 49, "type": "refund",
-                            "status": "pending", "description": "Duplicate charge refund"}],
+            "billing": [{"id": 30, "customer_id": 8, "amount": 49, "type": "refund",
+                         "status": "pending", "description": "Duplicate charge refund"}],
         }
         with patch("app.agent.agents.resolver.get_model_for_intent"), \
              patch("app.agent.agents.resolver.get_tracker"):

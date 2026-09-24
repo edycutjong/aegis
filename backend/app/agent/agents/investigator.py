@@ -32,6 +32,13 @@ AGENT_DESCRIPTION = (
 # Customer Validation Helpers
 # ─────────────────────────────────────────────────────────────
 
+# Opening words that are capitalized because they start a sentence, not names.
+_NOT_A_FIRST_NAME = frozenset(
+    "please hi hello hey dear urgent the our my your we i can could would why how what when "
+    "where who is are do does need help thanks thank refund billing account customer".split()
+)
+
+
 def _extract_customer_info(message: str) -> tuple[int | None, str | None]:
     """Extract customer ID and name from a support ticket message.
 
@@ -59,6 +66,11 @@ def _extract_customer_info(message: str) -> tuple[int | None, str | None]:
         )
         if name_match:
             mentioned_name = name_match.group(1).strip()
+        else:
+            # A ticket that opens with the name: "Emily Davis reports her ..."
+            lead = re.match(r"\s*([A-Z][a-z]+)\s+([A-Z][a-z]+)(?:\s+[a-z]|'s\b)", message)
+            if lead and lead.group(1).lower() not in _NOT_A_FIRST_NAME:
+                mentioned_name = f"{lead.group(1)} {lead.group(2)}"
 
     return customer_id, mentioned_name
 
@@ -76,6 +88,13 @@ def _strip_fences(text: str) -> str:
     if fenced:
         text = fenced.group(1)
     return text.strip().rstrip(";").strip()
+
+
+def _name_is_explicit(message: str, name: str) -> bool:
+    """True when the name was introduced as a customer ("for X", "Customer X")."""
+    import re
+
+    return bool(re.search(rf"(?:[Cc]ustomer|[Ff]or|[Cc]lient)\s+{re.escape(name)}", message))
 
 
 def _fuzzy_name_match(name_a: str, name_b: str) -> float:
@@ -108,6 +127,20 @@ def _status_warning(customer: dict) -> str | None:
 
 @traceable(name="validate_customer")
 async def validate_customer(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    """Validate the customer, then gather their billing records as evidence.
+
+    The billing rows are fetched here, deterministically, because they bound
+    every refund and credit downstream; the model's own SQL chooses its column
+    names and can't be relied on to expose `type` or `amount`.
+    """
+    result = await _validate_identity(state)
+    customer = result.get("customer")
+    if customer and customer.get("id") is not None:
+        result["billing"] = await get_supabase().get_billing(customer["id"])
+    return result
+
+
+async def _validate_identity(state: AgentState) -> dict:
     """Validate customer identity before investigation.
 
     Handles 8 edge cases:
@@ -254,6 +287,17 @@ async def validate_customer(state: AgentState, config: RunnableConfig | None = N
                 ),
                 "thought_log": thoughts + [
                     f"✗ [{AGENT_NAME}] Ambiguous name \"{mentioned_name}\" — {len(matches)} matches found, need disambiguation"
+                ],
+            }
+
+        elif customer_id is None and not _name_is_explicit(user_msg, mentioned_name):
+            # A guessed leading name ("Dark Mode is broken") that matches no
+            # one is not a customer reference — treat it as case 6.
+            return {
+                "customer_found": True,
+                "active_agent": AGENT_NAME,
+                "thought_log": thoughts + [
+                    f"✓ [{AGENT_NAME}] No specific customer ID or name in message — proceeding with investigation"
                 ],
             }
 

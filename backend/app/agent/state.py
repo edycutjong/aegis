@@ -46,6 +46,7 @@ class AgentState(TypedDict, total=False):
     sql_retry_count: int
     customer_found: bool
     customer: dict  # Validated customer row (id, name, email, plan, status) — source of truth for actions
+    billing: list[dict]  # That customer's billing rows, fetched directly — bounds refunds/credits
     customer_candidates: list[dict]
 
     # Documentation search
