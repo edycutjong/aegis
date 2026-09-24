@@ -57,8 +57,21 @@ lint-fix: ## 🩹 Auto-fix lint issues (ruff + eslint)
 	cd frontend && npm run lint:fix
 
 typecheck: ## 🔎 Type check backend (mypy) + frontend (tsc)
-	cd backend && python -m mypy app --ignore-missing-imports || true
+	cd backend && python -m mypy app --ignore-missing-imports
 	cd frontend && npm run typecheck
+
+# ── Live checks (real models + real DB; need backend/.env) ─
+
+.PHONY: preflight evals evals-check
+
+preflight: ## 🩺 One real call per model + DB + privilege boundary (~$0.001)
+	cd backend && python -W ignore -m app.preflight
+
+evals: ## 📊 Run the 40-case golden set x3 against real models → evals/SCORECARD.md (~$0.30)
+	cd backend && python -W ignore -m evals.run --trials 3 --concurrency 3
+
+evals-check: ## 🚦 Evals + fail on safety violation or >5pt regression vs baseline
+	cd backend && python -W ignore -m evals.run --trials 3 --concurrency 3 --check
 
 e2e: ## 🎭 Run Playwright E2E tests (no backend or API keys needed)
 	cd frontend && npm run e2e

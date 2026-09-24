@@ -1,0 +1,77 @@
+"""Preflight — prove the live dependencies answer before anything else runs.
+
+    python -m app.preflight
+
+The unit suite mocks every model and the database, so it stayed green while
+every configured Groq model was decommissioned and the database was suspended.
+This makes one tiny real call per dependency and exits non-zero on any
+failure, turning silent decay into a red build. ~10 API calls, well under a cent.
+"""
+
+import asyncio
+import sys
+import time
+
+from langchain_core.messages import HumanMessage
+
+from app.config import get_settings
+from app.db.supabase import get_supabase
+from app.routing.model_router import FALLBACK_MODEL, INTENT_MODEL_MAP, _create_model
+
+AEGIS_TABLES = ("customers", "billing", "support_tickets", "internal_docs")
+
+
+async def _check_model(name: str) -> tuple[bool, str]:
+    llm = _create_model(name, max_retries=0)
+    response = await llm.ainvoke([HumanMessage(content="Reply with the single word: ok")])
+    text = (response.content or "").strip() if isinstance(response.content, str) else str(response.content)
+    return bool(text), text[:40]
+
+
+async def _check_tables() -> tuple[bool, str]:
+    db = get_supabase()
+    counts = []
+    for table in AEGIS_TABLES:
+        result = await db.execute_sql(f"SELECT COUNT(*) AS n FROM {table}")
+        if not result["success"]:
+            return False, f"{table}: {str(result.get('error'))[:80]}"
+        counts.append(f"{table}={result['data'][0]['n']}")
+    return True, ", ".join(counts)
+
+
+async def _check_privilege_boundary() -> tuple[bool, str]:
+    """The SQL function must NOT be able to read outside the Aegis tables."""
+    result = await get_supabase().execute_sql("SELECT COUNT(*) FROM auth.users")
+    denied = not result["success"] and "permission denied" in str(result.get("error", ""))
+    return denied, "auth.users denied" if denied else "auth.users READABLE — privilege boundary broken"
+
+
+def _is_throttle(error: Exception) -> bool:
+    text = f"{type(error).__name__} {error}"
+    return "429" in text or "ResourceExhausted" in text or "RateLimit" in text
+
+
+async def main() -> int:
+    settings = get_settings()
+    models = sorted({settings.fast_model, settings.smart_model, *INTENT_MODEL_MAP.values(), *FALLBACK_MODEL.values()})
+    checks = [(f"model {m}", _check_model(m)) for m in models]
+    checks += [("database tables", _check_tables()), ("privilege boundary", _check_privilege_boundary())]
+
+    failed = 0
+    for label, coro in checks:
+        started = time.perf_counter()
+        try:
+            ok, detail = await coro
+        except Exception as e:  # any exception is a failed dependency…
+            ok, detail = False, f"{type(e).__name__}: {str(e)[:100]}"
+            if _is_throttle(e):  # …except throttling: the model exists and answered 429
+                ok, detail = True, "⚠ throttled right now (model exists; failover covers it)"
+        failed += not ok
+        print(f"  {'✓' if ok else '✗'} {label:<34} {time.perf_counter() - started:5.2f}s  {detail}")
+
+    print(f"\n{'✅ all dependencies healthy' if not failed else f'❌ {failed} check(s) failed'}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(asyncio.run(main()))

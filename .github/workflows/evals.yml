@@ -1,0 +1,75 @@
+name: Evals
+
+# Real models, real database — so not on every PR (it costs money and needs
+# secrets). Runs weekly to catch silent provider decay (a retired model, a
+# suspended database) and on demand before merging prompt or routing changes.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 1" # Mondays 09:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    name: Preflight + golden-set evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip when secrets are not configured
+        id: gate
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$GROQ_API_KEY" ] || [ -z "$OPENAI_API_KEY" ]; then
+            echo "::notice::Eval secrets not configured — skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install
+        if: steps.gate.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Preflight (every model answers, DB answers, privilege boundary holds)
+        if: steps.gate.outputs.run == 'true'
+        run: python -W ignore -m app.preflight
+
+      - name: Golden-set evals (3 trials, gated on baseline)
+        if: steps.gate.outputs.run == 'true'
+        run: python -W ignore -m evals.run --trials 3 --concurrency 3 --check
+
+      - name: Scorecard → job summary
+        if: always() && steps.gate.outputs.run == 'true'
+        run: cat evals/SCORECARD.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.run == 'true'
+        with:
+          name: eval-results
+          path: |
+            backend/evals/SCORECARD.md
+            backend/evals/results/latest.json
