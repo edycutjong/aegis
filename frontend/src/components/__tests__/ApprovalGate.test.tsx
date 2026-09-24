@@ -79,9 +79,20 @@ describe("ApprovalGate", () => {
         expect(onDeny).toHaveBeenCalledWith(ESCAPE_DENY_REASON);
     });
 
-    it("locks the controls while releasing", () => {
+    it("shows progress on the decision actually taken", () => {
+        const onDeny = vi.fn();
+        const { rerender } = render(<ApprovalGate action={REFUND} onApprove={vi.fn()} onDeny={onDeny} isLoading pending="deny" />);
+        expect(screen.getByRole("button", { name: /Denying/ })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Approve & execute" })).toBeDisabled();
+        expect(screen.queryByText(/Releasing/)).not.toBeInTheDocument();
+        rerender(<ApprovalGate action={REFUND} onApprove={vi.fn()} onDeny={onDeny} isLoading pending="approve" />);
+        expect(screen.getByRole("button", { name: /Releasing/ })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Deny" })).toBeDisabled();
+    });
+
+    it("locks the controls while a decision is in flight", () => {
         const { onDeny } = setup({}, true);
-        expect(screen.getByRole("button", { name: /Releasing/ })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Approve & execute" })).toBeDisabled();
         expect(screen.getByRole("button", { name: "Deny" })).toBeDisabled();
         fireEvent.keyDown(screen.getByRole("region"), { key: "Escape" });
         expect(onDeny).not.toHaveBeenCalled();

@@ -127,7 +127,6 @@ describe("StepLine", () => {
 
 describe("RunReceipt", () => {
     const base = {
-        thread_id: "t",
         total_cost_usd: 0.0019,
         total_tokens: 2567,
         duration_seconds: 30.93,

@@ -10,6 +10,8 @@ interface ApprovalGateProps {
     onApprove: (note: string) => void;
     onDeny: (reason: string) => void;
     isLoading: boolean;
+    /** Which decision is in flight, so the right button shows progress. */
+    pending?: "approve" | "deny" | null;
 }
 
 export const DEFAULT_DENY_REASON = "Manager denied the proposed action";
@@ -37,7 +39,7 @@ const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD
  * of executing. Nothing moves until a person decides. Focus lands on Deny —
  * the safe choice — and Escape takes the fail-safe path too.
  */
-export default function ApprovalGate({ action, onApprove, onDeny, isLoading }: ApprovalGateProps) {
+export default function ApprovalGate({ action, onApprove, onDeny, isLoading, pending = null }: ApprovalGateProps) {
     const [note, setNote] = useState("");
     const rootRef = useRef<HTMLElement>(null);
     const denyRef = useRef<HTMLButtonElement>(null);
@@ -128,11 +130,12 @@ export default function ApprovalGate({ action, onApprove, onDeny, isLoading }: A
 
                 <div className="gate-actions">
                     <button ref={denyRef} type="button" className="btn btn-deny" onClick={() => deny(DEFAULT_DENY_REASON)} disabled={isLoading}>
-                        Deny
+                        {isLoading && pending === "deny" ? <LoaderCircle size={15} className="animate-spin" aria-hidden={true} /> : null}
+                        {isLoading && pending === "deny" ? "Denying…" : "Deny"}
                     </button>
                     <button type="button" className="btn btn-release" onClick={() => onApprove(note.trim())} disabled={isLoading}>
-                        {isLoading ? <LoaderCircle size={15} className="animate-spin" aria-hidden={true} /> : null}
-                        {isLoading ? "Releasing…" : "Approve & execute"}
+                        {isLoading && pending === "approve" ? <LoaderCircle size={15} className="animate-spin" aria-hidden={true} /> : null}
+                        {isLoading && pending === "approve" ? "Releasing…" : "Approve & execute"}
                     </button>
                 </div>
                 <p className="text-[12px] text-3 mt-3">

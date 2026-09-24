@@ -173,6 +173,19 @@ describe("MetricsPanel", () => {
         expect(await screen.findAllByText("—")).not.toHaveLength(0);
     });
 
+    it("shows a skeleton for the database until counts arrive, and never a fake zero", async () => {
+        let resolve!: (v: Record<string, { count: number; error?: string }>) => void;
+        vi.mocked(getDbStatus).mockReturnValueOnce(new Promise((r) => (resolve = r)));
+        render(<MetricsPanel metrics={FULL} backend="up" />);
+        expect(screen.getByLabelText("Loading database status")).toBeInTheDocument();
+        expect(screen.getByText("All visitors · this server")).toBeInTheDocument();
+        await act(async () => resolve({ customers: { count: 51 }, billing: { count: 0, error: "Query failed" } }));
+        expect(screen.queryByLabelText("Loading database status")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Customers/ })).toHaveTextContent("51");
+        expect(screen.getByTitle("Query failed")).toHaveTextContent("—");
+        expect(screen.queryByRole("button", { name: /Billing/ })).not.toBeInTheDocument();
+    });
+
     it("links to LangSmith traces when tracing is on", async () => {
         vi.mocked(getTracingStatus).mockResolvedValue({ enabled: true, project: "aegis", connected: true });
         const onOpenTraces = vi.fn();

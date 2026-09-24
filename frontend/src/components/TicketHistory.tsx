@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, History, Trash2 } from "lucide-react";
 import type { TicketHistoryEntry } from "@/hooks/useTicketHistory";
 
 interface TicketHistoryProps {
@@ -17,113 +18,71 @@ function relativeTime(ts: number): string {
     return `${Math.floor(diff / 86400)}d ago`;
 }
 
+/**
+ * Tickets this browser has run (localStorage — private to this visitor,
+ * unlike the Observability panel, which aggregates everyone).
+ */
 export default function TicketHistory({ entries, onSelect, onClear }: TicketHistoryProps) {
     const [expanded, setExpanded] = useState(false);
-
 
     if (entries.length === 0) return null;
 
     return (
-        <div className="ticket-history-container mb-4">
-            {/* Header — always visible */}
-            <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setExpanded((v) => !v)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded((v) => !v); } }}
-                className="ticket-history-header"
-                style={{ cursor: "pointer" }}
-            >
-                <div className="flex items-center gap-2">
-                    <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{ color: "var(--aegis-text-muted)" }}
-                    >
-                        <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--aegis-text-muted)" }}>
-                        Recent Tickets
-                    </span>
+        <div className="ticket-history-container">
+            <div className="ticket-history-header">
+                <button
+                    type="button"
+                    className="ticket-history-toggle"
+                    aria-expanded={expanded}
+                    aria-controls="ticket-history-list"
+                    onClick={() => setExpanded((v) => !v)}
+                    title="Stored in this browser only"
+                >
+                    <History size={13} aria-hidden="true" className="text-3 shrink-0" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-3 whitespace-nowrap">Recent Tickets</span>
                     <span className="ticket-history-badge">{entries.length}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onClear();
-                        }}
-                        className="ticket-history-clear-btn"
-                        title="Clear history"
-                    >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                    </button>
-                    <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="ticket-history-chevron"
-                        style={{
-                            color: "var(--aegis-text-muted)",
-                            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-                            transition: "transform 0.2s ease",
-                        }}
-                    >
-                        <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                </div>
+                    <span className="sr-only">, stored in this browser only</span>
+                    <ChevronDown
+                        size={14}
+                        aria-hidden="true"
+                        className="ml-auto text-3 transition-transform duration-200"
+                        style={{ transform: expanded ? "rotate(180deg)" : "none" }}
+                    />
+                </button>
+                <button type="button" onClick={onClear} className="ticket-history-clear-btn" aria-label="Clear ticket history" title="Clear history">
+                    <Trash2 size={12} aria-hidden="true" />
+                </button>
             </div>
 
-            {/* Entries — collapsible */}
             <div
+                id="ticket-history-list"
                 className="ticket-history-body"
-                style={{
-                    maxHeight: expanded ? `${entries.length * 64 + 8}px` : "0px",
-                }}
+                hidden={!expanded}
+                style={{ maxHeight: expanded ? `${entries.length * 64 + 8}px` : "0px" }}
             >
-                <div className="space-y-1 pt-2">
+                <div className="space-y-1 pt-1 pb-1">
                     {entries.map((entry, i) => (
                         <button
                             key={`${entry.timestamp}-${i}`}
+                            type="button"
                             onClick={() => onSelect(entry.message)}
                             className="ticket-history-entry"
                         >
                             <div className="flex items-start gap-2 flex-1 min-w-0">
                                 <span
                                     className="ticket-history-status-dot"
-                                    style={{
-                                        background: entry.status === "completed" ? "var(--aegis-success)" : "var(--aegis-danger)",
-                                    }}
+                                    style={{ background: entry.status === "completed" ? "var(--ok)" : "var(--fail)" }}
+                                    aria-hidden="true"
                                 />
+                                <span className="sr-only">{entry.status === "completed" ? "Resolved: " : "Stopped: "}</span>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-xs truncate" style={{ color: "var(--aegis-text)" }}>
+                                    <p className="text-xs truncate text-1">
                                         {entry.message.length > 60 ? entry.message.slice(0, 60) + "…" : entry.message}
                                     </p>
-                                    {entry.responsePreview && (
-                                        <p className="text-xs truncate mt-0.5" style={{ color: "var(--aegis-text-muted)", opacity: 0.7 }}>
-                                            {entry.responsePreview}
-                                        </p>
-                                    )}
+                                    {entry.responsePreview && <p className="text-xs truncate mt-0.5 text-3">{entry.responsePreview}</p>}
                                 </div>
                             </div>
-                            <span className="ticket-history-time">
-                                {relativeTime(entry.timestamp)}
-                            </span>
+                            <span className="ticket-history-time">{relativeTime(entry.timestamp)}</span>
                         </button>
                     ))}
                 </div>

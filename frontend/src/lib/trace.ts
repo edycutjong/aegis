@@ -159,6 +159,7 @@ export type RunStatus =
     | "processing"
     | "awaiting_approval"
     | "releasing"
+    | "denying"
     | "completed"
     | "cached"
     | "disambiguation"
@@ -194,7 +195,7 @@ export function derivePipeline(thoughts: string[], status: RunStatus): Record<St
         if (status === "processing") result.Triage = "active";
         return result;
     }
-    const finished = TERMINAL.includes(status) || status === "awaiting_approval" || status === "releasing";
+    const finished = TERMINAL.includes(status) || status === "awaiting_approval" || status === "releasing" || status === "denying";
 
     for (const a of AGENTS) {
         const id = a.id;
@@ -210,10 +211,10 @@ export function derivePipeline(thoughts: string[], status: RunStatus): Record<St
 
     // Resolution keeps working after the gate (it writes the summary), but the
     // gate is the story there — so once the gate is involved Resolution is done.
-    if (status === "awaiting_approval" || status === "releasing") result.Resolution = "done";
+    if (status === "awaiting_approval" || status === "releasing" || status === "denying") result.Resolution = "done";
 
     if (status === "awaiting_approval") result.Gate = "held";
-    else if (status === "releasing") result.Gate = "active";
+    else if (status === "releasing" || status === "denying") result.Gate = "active";
     else if (decision?.data.decision === "denied") result.Gate = "denied";
     else if (decision) result.Gate = "done";
     else if (auto) result.Gate = "skipped";
@@ -237,7 +238,10 @@ export function agentForStep(step: string): AgentId | null {
     return null;
 }
 
-/** "models/gemini-2.5-flash" → "gemini-2.5-flash", "openai/gpt-oss-20b" → "gpt-oss-20b". */
+/**
+ * "models/gemini-2.5-flash" → "gemini-2.5-flash", "openai/gpt-oss-20b" → "gpt-oss-20b",
+ * "gpt-4.1-mini-2025-04-14" → "gpt-4.1-mini" (dated snapshot ids).
+ */
 export function shortModel(model: string): string {
-    return model.replace(/^(models|openai|meta-llama|google|anthropic)\//, "");
+    return model.replace(/^(models|openai|meta-llama|google|anthropic)\//, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
 }
