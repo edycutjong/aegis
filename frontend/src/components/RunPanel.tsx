@@ -42,6 +42,7 @@ const STATUS_BADGE: Record<RunStatus, { label: string; tone: string } | null> = 
     processing: { label: "Running", tone: "release" },
     awaiting_approval: { label: "Awaiting you", tone: "hold" },
     releasing: { label: "Releasing", tone: "release" },
+    denying: { label: "Denying", tone: "fail" },
     completed: { label: "Resolved", tone: "ok" },
     cached: { label: "Cache hit", tone: "ok" },
     disambiguation: { label: "Needs a choice", tone: "hold" },
@@ -176,12 +177,14 @@ export default function RunPanel(props: RunPanelProps) {
     const [raw, setRaw] = useState(false);
     const activeAgent = AGENTS.find((a) => stages[a.id] === "active");
 
+    const deciding = status === "releasing" || status === "denying";
+
     // Follow the log as it grows — except at the gate, which positions itself.
     useEffect(() => {
-        if (status === "awaiting_approval" || status === "releasing") return;
+        if (status === "awaiting_approval" || deciding) return;
         const el = scrollRef.current;
         el?.scrollTo?.({ top: el.scrollHeight, behavior: "smooth" });
-    }, [thoughts.length, status]);
+    }, [thoughts.length, status, deciding]);
 
     const started = status !== "idle";
     const sql = props.sqlAttempts ?? [];
@@ -192,7 +195,7 @@ export default function RunPanel(props: RunPanelProps) {
             <div className="panel-head">
                 <h2 id="run-heading" className="panel-title">Live run</h2>
                 <div className="flex items-center gap-2.5">
-                    {started && props.threadId && <Elapsed key={props.threadId} running={status === "processing" || status === "releasing"} lastAt={times[times.length - 1] ?? 0} />}
+                    {started && props.threadId && <Elapsed key={props.threadId} running={status === "processing" || deciding} lastAt={times[times.length - 1] ?? 0} />}
                     {badge && (
                         <span className={`badge badge-${badge.tone}`} role="status">
                             {badge.label}
@@ -260,8 +263,14 @@ export default function RunPanel(props: RunPanelProps) {
                     </div>
                 )}
 
-                {(status === "awaiting_approval" || status === "releasing") && props.pendingAction && (
-                    <ApprovalGate action={props.pendingAction} onApprove={props.onApprove} onDeny={props.onDeny} isLoading={props.approvalLoading} />
+                {(status === "awaiting_approval" || deciding) && props.pendingAction && (
+                    <ApprovalGate
+                        action={props.pendingAction}
+                        onApprove={props.onApprove}
+                        onDeny={props.onDeny}
+                        isLoading={props.approvalLoading}
+                        pending={status === "denying" ? "deny" : status === "releasing" ? "approve" : null}
+                    />
                 )}
 
                 {status === "disambiguation" && props.candidates.length > 0 && (
@@ -277,7 +286,7 @@ export default function RunPanel(props: RunPanelProps) {
                     </section>
                 )}
 
-                {props.receipt && status === "completed" && <RunReceipt receipt={props.receipt} />}
+                {props.receipt && (status === "completed" || status === "cached") && <RunReceipt receipt={props.receipt} />}
 
                 {props.notice && <NoticeCard key={props.notice.title + props.notice.detail} notice={props.notice} onRetry={props.onRetry} />}
             </div>

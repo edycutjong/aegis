@@ -148,8 +148,8 @@ describe("TicketHistory", () => {
 
         const dots = container.querySelectorAll(".ticket-history-status-dot");
         expect(dots.length).toBe(2);
-        expect((dots[0] as HTMLElement).style.background).toBe("var(--aegis-success)");
-        expect((dots[1] as HTMLElement).style.background).toBe("var(--aegis-danger)");
+        expect((dots[0] as HTMLElement).style.background).toBe("var(--ok)");
+        expect((dots[1] as HTMLElement).style.background).toBe("var(--fail)");
     });
 
     // ── Message Truncation ──
@@ -178,24 +178,19 @@ describe("TicketHistory", () => {
     });
 
     // ── Key Press Expand/Collapse ──
-    it("expands and collapses on Enter/Space key press", async () => {
+    it("is a real disclosure button that reports its state", async () => {
         const user = userEvent.setup();
-        const { container } = render(
-            <TicketHistory entries={sampleEntries} onSelect={onSelect} onClear={onClear} />
-        );
-
-        const body = container.querySelector(".ticket-history-body") as HTMLElement;
-        const header = screen.getByText("Recent Tickets").closest(".ticket-history-header") as HTMLElement;
-
-        header.focus();
-        fireEvent.keyDown(header, { key: "Enter" });
-        expect(body.style.maxHeight).not.toBe("0px"); // expanded
-
-        fireEvent.keyDown(header, { key: " " });
-        expect(body.style.maxHeight).toBe("0px"); // collapsed
-
-        // Add unused key to test coverage (Escape)
-        fireEvent.keyDown(header, { key: "Escape" });
-        expect(body.style.maxHeight).toBe("0px"); // Remains collapsed
+        render(<TicketHistory entries={sampleEntries} onSelect={onSelect} onClear={onClear} />);
+        const toggle = screen.getByRole("button", { name: /Recent Tickets/ });
+        expect(toggle).toHaveAttribute("aria-expanded", "false");
+        expect(toggle).toHaveAttribute("aria-controls", "ticket-history-list");
+        expect(document.getElementById("ticket-history-list")).not.toBeVisible();
+        toggle.focus();
+        await user.keyboard("{Enter}");
+        expect(toggle).toHaveAttribute("aria-expanded", "true");
+        expect(document.getElementById("ticket-history-list")).toBeVisible();
+        await user.keyboard(" ");
+        expect(toggle).toHaveAttribute("aria-expanded", "false");
+        expect(screen.getByText(/this browser/)).toBeInTheDocument();
     });
 });

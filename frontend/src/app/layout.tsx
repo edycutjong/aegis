@@ -24,21 +24,32 @@ const TITLE = "Aegis — support agents that stop for a human";
 const DESCRIPTION =
     "A LangGraph multi-agent support desk: agents triage, investigate a live database and propose one action — then pause at a human approval gate before anything executes.";
 
+const OG_IMAGE = { url: "/og.png", width: 1200, height: 630, alt: "Aegis — the agents do the investigation, you release the action" };
+
 export const metadata: Metadata = {
+    metadataBase: new URL("https://aegis-pi-five.vercel.app"),
     title: TITLE,
     description: DESCRIPTION,
-    icons: { icon: { url: "/icon.svg", type: "image/svg+xml" } },
+    icons: {
+        icon: [
+            { url: "/icon.svg", type: "image/svg+xml" },
+            { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+        ],
+        apple: { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    },
     openGraph: {
         title: TITLE,
         description: DESCRIPTION,
         siteName: "Aegis",
         locale: "en_US",
         type: "website",
+        images: [OG_IMAGE],
     },
     twitter: {
         card: "summary_large_image",
         title: TITLE,
         description: DESCRIPTION,
+        images: [OG_IMAGE.url],
     },
 };
 

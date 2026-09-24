@@ -1850,6 +1850,10 @@ kbd {
   transition: border-color 0.15s, background 0.15s;
 }
 
+.db-cell-down {
+  opacity: 0.7;
+}
+
 .db-cell:hover {
   border-color: var(--line-2);
 }
@@ -1958,12 +1962,22 @@ kbd {
 .ticket-history-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 9px 12px;
-  user-select: none;
+  gap: 4px;
+  padding: 4px 8px 4px 4px;
 }
 
-.ticket-history-header:hover {
+.ticket-history-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.ticket-history-toggle:hover {
   background: var(--surface-2);
 }
 

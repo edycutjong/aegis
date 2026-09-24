@@ -18,6 +18,7 @@ import {
     type Metrics,
     type CustomerCandidate,
     type SqlAttempt,
+    type RecentRequest,
 } from "@/lib/api";
 import { describeError, type RunNotice } from "@/lib/errors";
 import type { Preset } from "@/lib/presets";
@@ -38,6 +39,8 @@ export default function Dashboard() {
     const [finalResponse, setFinalResponse] = useState<string | null>(null);
     const [notice, setNotice] = useState<RunNotice | null>(null);
     const [sqlAttempts, setSqlAttempts] = useState<SqlAttempt[]>([]);
+    const [receipt, setReceipt] = useState<RecentRequest | null>(null);
+    const currentThread = useRef<string | null>(null);
     const startedAt = useRef(0);
     const stream = useRef<EventSource | null>(null);
 
@@ -97,6 +100,25 @@ export default function Dashboard() {
         });
     }, []);
 
+    /**
+     * The receipt is served with the thread (thread ids are private), and the
+     * tracker may finish a beat after the stream does — so poll briefly.
+     */
+    const loadReceipt = useCallback((id: string) => {
+        const attempt = (n: number) =>
+            setTimeout(async () => {
+                try {
+                    const thread = await getThread(id);
+                    if (currentThread.current !== id) return;
+                    if (thread.receipt) setReceipt(thread.receipt);
+                    else if (n < 2) attempt(n + 1);
+                } catch {
+                    // The receipt is a nice-to-have; the run itself already finished.
+                }
+            }, 800);
+        attempt(0);
+    }, []);
+
     const handleSubmit = useCallback(async (msg?: string) => {
         const text = (msg ?? message).trim();
         if (!text) return;
@@ -105,6 +127,8 @@ export default function Dashboard() {
         setThoughts([]);
         setTimes([]);
         setSqlAttempts([]);
+        setReceipt(null);
+        currentThread.current = null;
         setFinalResponse(null);
         setPendingAction(null);
         setCandidates([]);
@@ -126,12 +150,14 @@ export default function Dashboard() {
         try {
             const res = await startChat(text);
             setThreadId(res.thread_id);
+            currentThread.current = res.thread_id;
 
             if (res.cache_hit) {
                 try {
                     const cached = await getThread(res.thread_id);
                     adoptLog(cached.thought_log);
                     setSqlAttempts(cached.sql_attempts ?? []);
+                    setReceipt(cached.receipt ?? null);
                     setFinalResponse(cached.final_response ?? "Served from the response cache.");
                 } catch {
                     setFinalResponse("This exact ticket was answered recently, so the cached reply was served instantly with no LLM calls.");
@@ -154,6 +180,7 @@ export default function Dashboard() {
                     adoptLog(log);
                     setFinalResponse(response);
                     setStatus("completed");
+                    loadReceipt(res.thread_id);
                     setTimeout(refreshMetrics, 800);
                 },
                 (error) => {
@@ -177,7 +204,7 @@ export default function Dashboard() {
             setStatus("error");
             if (describeError(err).kind === "offline") setBackendUp(false);
         }
-    }, [message, adoptLog, refreshMetrics]);
+    }, [message, adoptLog, refreshMetrics, loadReceipt]);
 
     const decide = useCallback(async (approved: boolean, reason: string) => {
         /* v8 ignore start -- the gate only renders once a thread exists */
@@ -185,7 +212,7 @@ export default function Dashboard() {
         /* v8 ignore stop */
         setApprovalLoading(true);
         setNotice(null);
-        setStatus("releasing");
+        setStatus(approved ? "releasing" : "denying");
         try {
             const res = await approveAction(threadId, approved, reason);
             try {
@@ -199,13 +226,14 @@ export default function Dashboard() {
             setFinalResponse(res.result || (approved ? "Action released." : "Action denied. No changes were made."));
             setPendingAction(null);
             setStatus("completed");
+            loadReceipt(threadId);
             setTimeout(refreshMetrics, 800);
         } catch (err) {
             setNotice(describeError(err));
             setStatus("awaiting_approval");
         }
         setApprovalLoading(false);
-    }, [threadId, adoptLog, refreshMetrics]);
+    }, [threadId, adoptLog, refreshMetrics, loadReceipt]);
 
     const handleSelectCustomer = useCallback((candidate: CustomerCandidate) => {
         const corrected = /[Cc]ustomer\s*#?\d*\s*[A-Z]/.test(ticket)
@@ -220,9 +248,8 @@ export default function Dashboard() {
         handleSubmit(p.message);
     }, [handleSubmit]);
 
-    const busy = status === "processing" || status === "releasing";
+    const busy = status === "processing" || status === "releasing" || status === "denying";
     const backend: BackendState = backendUp === null ? "connecting" : backendUp ? "up" : "down";
-    const receipt = metrics?.agent_metrics.recent_requests?.find((r) => r.thread_id === threadId) ?? null;
 
     return (
         <div className="app" data-held={status === "awaiting_approval" ? "true" : undefined}>

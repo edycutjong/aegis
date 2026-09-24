@@ -83,6 +83,8 @@ export interface ThreadState {
     final_response: string | null;
     customer_candidates?: CustomerCandidate[] | null;
     sql_attempts?: SqlAttempt[];
+    /** Per-run cost receipt; null until the tracker has recorded the run. */
+    receipt?: RecentRequest | null;
 }
 
 /** One SQL query the Investigator wrote, and what happened when it ran. */
@@ -118,7 +120,6 @@ export interface RequestStep {
 
 /** A completed run's receipt from /api/metrics. */
 export interface RecentRequest {
-    thread_id: string;
     total_cost_usd: number;
     total_tokens: number;
     duration_seconds: number;

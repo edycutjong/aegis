@@ -18,7 +18,7 @@ const METRICS: Metrics = {
         cost_saved_by_cache: 0,
         model_distribution: { "gpt-4.1": 1 },
         recent_requests: [
-            { thread_id: "t1", total_cost_usd: 0.0021, total_tokens: 1234, duration_seconds: 4.2, models_used: {}, cache_hit: false },
+            { total_cost_usd: 0.0021, total_tokens: 1234, duration_seconds: 4.2, models_used: {}, cache_hit: false },
         ],
     },
     cache_metrics: { hits: 0, misses: 0, total_requests: 0, hit_rate_percent: 0, connected: false },
@@ -72,6 +72,9 @@ async function startRun(label = /Double charge/) {
 describe("Dashboard", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(getThread).mockReset();
+        // Fake timers everywhere so receipt polls can't leak into the next test.
+        vi.useFakeTimers({ shouldAdvanceTime: true });
         vi.mocked(getMetrics).mockResolvedValue(METRICS);
         vi.mocked(startChat).mockResolvedValue({ thread_id: "t1", status: "processing", cache_hit: false });
         vi.mocked(connectSSE).mockImplementation((_id, onThought, onApproval, onCompleted, onError, onDisambiguation, onSql) => {
@@ -81,7 +84,10 @@ describe("Dashboard", () => {
         localStorage.clear();
     });
 
-    afterEach(() => vi.useRealTimers());
+    afterEach(() => {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
 
     it("explains itself on first paint and reports the backend as live", async () => {
         render(<Dashboard />);
@@ -122,6 +128,7 @@ describe("Dashboard", () => {
             proposed_action: null,
             final_response: "Refund recommended.",
             sql_attempts: [{ query: "SELECT * FROM billing", error: null, rows: 3 }],
+            receipt: METRICS.agent_metrics.recent_requests[0],
         });
         render(<Dashboard />);
         await startRun();
@@ -145,7 +152,7 @@ describe("Dashboard", () => {
         expect(screen.getByText("Resolved")).toBeInTheDocument();
         expect(screen.getByText("3 rows")).toBeInTheDocument();
         // The receipt comes from the tracker's record of this thread.
-        expect(await screen.findByRole("region", { name: "Run receipt" })).toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Run receipt" }, { timeout: 3000 })).toBeInTheDocument();
     });
 
     it("falls back to a local log line and default copy when the thread can't be re-read", async () => {
@@ -181,6 +188,75 @@ describe("Dashboard", () => {
         await userEvent.click(screen.getByRole("button", { name: "Approve & execute" }));
         expect((await screen.findAllByText("ok")).length).toBeGreaterThan(0);
         expect(screen.getByText("9 rows")).toBeInTheDocument();
+    });
+
+    it("labels a deny in flight as denying, not releasing", async () => {
+        let resolve!: (v: { thread_id: string; status: string; result: string | null }) => void;
+        vi.mocked(approveAction).mockReturnValue(new Promise((r) => (resolve = r)));
+        vi.mocked(getThread).mockRejectedValue(new Error("gone"));
+        render(<Dashboard />);
+        await startRun();
+        act(() => cb.onApproval(ACTION));
+        await userEvent.click(screen.getByRole("button", { name: "Deny" }));
+        expect(screen.getByRole("button", { name: /Denying/ })).toBeInTheDocument();
+        expect(screen.queryByText(/Releasing/)).not.toBeInTheDocument();
+        expect(screen.getByText("Denying", { selector: ".badge" })).toBeInTheDocument();
+        await act(async () => resolve({ thread_id: "t1", status: "completed", result: "Denied." }));
+        expect((await screen.findAllByText("Denied.")).length).toBeGreaterThan(0);
+    });
+
+    it("polls briefly for the receipt, and drops it if a new run started", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        vi.mocked(getThread)
+            .mockResolvedValueOnce({ message: "m", status: "completed", thought_log: [], proposed_action: null, final_response: "a", receipt: null })
+            .mockResolvedValueOnce({ message: "m", status: "completed", thought_log: [], proposed_action: null, final_response: "a", receipt: METRICS.agent_metrics.recent_requests[0] });
+        render(<Dashboard />);
+        await startRun();
+        act(() => cb.onCompleted("done", []));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(900);
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(900);
+        });
+        expect(await screen.findByRole("region", { name: "Run receipt" })).toBeInTheDocument();
+        expect(getThread).toHaveBeenCalledTimes(2);
+    });
+
+    it("gives up on the receipt after a few tries or on error, and ignores stale runs", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        vi.mocked(getThread).mockResolvedValue({ message: "m", status: "completed", thought_log: [], proposed_action: null, final_response: "a" });
+        render(<Dashboard />);
+        await startRun();
+        act(() => cb.onCompleted("done", []));
+        for (let i = 0; i < 4; i++) {
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(900);
+            });
+        }
+        expect(getThread).toHaveBeenCalledTimes(3);
+        expect(screen.queryByRole("region", { name: "Run receipt" })).not.toBeInTheDocument();
+
+        // A receipt fetch that fails is swallowed.
+        vi.mocked(getThread).mockRejectedValueOnce(new Error("x"));
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        await waitFor(() => expect(startChat).toHaveBeenCalledTimes(2));
+        act(() => cb.onCompleted("done", []));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(900);
+        });
+
+        // A receipt for an old thread never lands on the new run.
+        vi.mocked(getThread).mockResolvedValue({ message: "m", status: "completed", thought_log: [], proposed_action: null, final_response: "a", receipt: METRICS.agent_metrics.recent_requests[0] });
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        await waitFor(() => expect(startChat).toHaveBeenCalledTimes(3));
+        act(() => cb.onCompleted("done", []));
+        vi.mocked(startChat).mockReturnValueOnce(new Promise(() => {}));
+        await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(900);
+        });
+        expect(screen.queryByRole("region", { name: "Run receipt" })).not.toBeInTheDocument();
     });
 
     it("keeps the gate open and explains when the decision fails", async () => {
@@ -245,11 +321,12 @@ describe("Dashboard", () => {
 
     it("serves cache hits from the stored thread", async () => {
         vi.mocked(startChat).mockResolvedValue({ thread_id: "c1", status: "cached", cache_hit: true });
-        vi.mocked(getThread).mockResolvedValueOnce({ message: "m", status: "completed", thought_log: ["✓ [Triage] Classified intent: billing (confidence: 99%)"], proposed_action: null, final_response: "Cached reply", sql_attempts: [{ query: "SELECT 1", error: null, rows: 7 }] });
+        vi.mocked(getThread).mockResolvedValueOnce({ message: "m", status: "cached", thought_log: ["✓ [Triage] Classified intent: billing (confidence: 99%)"], proposed_action: null, final_response: "Cached reply", sql_attempts: [{ query: "SELECT 1", error: null, rows: 7 }], receipt: METRICS.agent_metrics.recent_requests[0] });
         render(<Dashboard />);
         await userEvent.click(screen.getAllByRole("button", { name: /Double charge/ })[0]);
         expect(await screen.findByText("Cached reply")).toBeInTheDocument();
         expect(screen.getByText("7 rows")).toBeInTheDocument();
+        expect(screen.getByRole("region", { name: "Run receipt" })).toBeInTheDocument();
         expect(screen.getByText("Cache hit")).toBeInTheDocument();
     });
 

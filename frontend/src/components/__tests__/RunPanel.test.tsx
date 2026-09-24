@@ -128,7 +128,7 @@ describe("RunPanel", () => {
                     threadId: "t",
                     thoughts: LOG,
                     finalResponse: "All sorted.",
-                    receipt: { thread_id: "t", total_cost_usd: 0.002, total_tokens: 10, duration_seconds: 3, models_used: {}, cache_hit: false },
+                    receipt: { total_cost_usd: 0.002, total_tokens: 10, duration_seconds: 3, models_used: {}, cache_hit: false },
                 })}
             />
         );

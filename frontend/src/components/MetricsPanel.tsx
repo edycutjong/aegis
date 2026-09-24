@@ -62,6 +62,7 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
     const [clearMsg, setClearMsg] = useState<string | null>(null);
     const [tracingEnabled, setTracingEnabled] = useState(false);
     const [db, setDb] = useState<DbStatus | null>(null);
+    const [dbLoading, setDbLoading] = useState(true);
     const [expanded, setExpanded] = useState<string | null>(null);
     const [tableRows, setTableRows] = useState<Record<string, unknown>[]>([]);
     const [tableLoading, setTableLoading] = useState(false);
@@ -70,7 +71,10 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
         getTracingStatus()
             .then((s) => setTracingEnabled(s.enabled))
             .catch(() => setTracingEnabled(false));
-        getDbStatus().then(setDb).catch(() => { });
+        getDbStatus()
+            .then(setDb)
+            .catch(() => { })
+            .finally(() => setDbLoading(false));
     }, []);
 
     const handleClearCache = async () => {
@@ -114,7 +118,9 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
         <aside className="panel panel-metrics" aria-labelledby="metrics-heading">
             <div className="panel-head">
                 <h2 id="metrics-heading" className="panel-title">Observability</h2>
-                <span className="text-[12px] text-3">this server, live</span>
+                <span className="text-[12px] text-3" title="Aggregated across every visitor of this demo since the server started">
+                    All visitors · this server
+                </span>
             </div>
 
             <div className="panel-body space-y-5">
@@ -215,6 +221,19 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
                     </>
                 )}
 
+                {dbLoading && (
+                    <div aria-label="Loading database status">
+                        <h3 className="section-label flex items-center gap-1.5">
+                            <Database size={12} aria-hidden="true" /> Live database
+                        </h3>
+                        <div className="db-grid mt-2">
+                            {Object.keys(TABLE_META).map((k) => (
+                                <div key={k} className="skeleton h-[38px]" />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {db && (
                     <div>
                         <h3 className="section-label flex items-center gap-1.5">
@@ -224,6 +243,15 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
                             {Object.entries(TABLE_META).map(([key, meta]) => {
                                 const table = db[key];
                                 if (!table) return null;
+                                // A failed count query reports 0 plus an error — never show that as a real zero.
+                                if (table.error) {
+                                    return (
+                                        <div key={key} className="db-cell db-cell-down" title={table.error}>
+                                            <span className="text-[12px] text-3">{meta.label}</span>
+                                            <span className="font-mono text-[13px] text-3">—</span>
+                                        </div>
+                                    );
+                                }
                                 return (
                                     <button
                                         key={key}

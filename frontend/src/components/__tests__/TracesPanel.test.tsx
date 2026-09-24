@@ -74,7 +74,7 @@ describe("TracesPanel", () => {
     it("shows loading state when open", () => {
         mockGetTraces.mockReturnValue(new Promise(() => { })); // never resolves
         render(<TracesPanel open onClose={noop} />);
-        expect(screen.getByText("Loading traces…")).toBeInTheDocument();
+        expect(screen.getByText(/Fetching recent runs from LangSmith/)).toBeInTheDocument();
     });
 
     it("renders trace data after loading", async () => {
@@ -111,8 +111,31 @@ describe("TracesPanel", () => {
         render(<TracesPanel open onClose={noop} />);
 
         await waitFor(() => {
-            expect(screen.getByText("No traces yet — submit a ticket to generate one")).toBeInTheDocument();
+            expect(screen.getByText("No full agent runs in LangSmith yet")).toBeInTheDocument();
         });
+        expect(screen.queryByText(/hidden/)).not.toBeInTheDocument();
+    });
+
+    it("hides empty helper-call stubs and explains why nothing is listed", async () => {
+        const stub = { id: "s", name: "propose_action", status: "success", latency_ms: 0, total_tokens: 0, total_cost: 0, start_time: null, child_runs: [] };
+        mockGetTraces.mockResolvedValue({ traces: [stub, { ...stub, id: "s2" }], error: null });
+        render(<TracesPanel open onClose={noop} />);
+        expect(await screen.findByText(/2 empty helper calls hidden/)).toBeInTheDocument();
+        expect(screen.queryByText("propose_action")).not.toBeInTheDocument();
+        expect(screen.getByText("0 traces")).toBeInTheDocument();
+
+        mockGetTraces.mockResolvedValue({ traces: [stub], error: null });
+        render(<TracesPanel open onClose={noop} />);
+        expect(await screen.findByText(/1 empty helper call hidden/)).toBeInTheDocument();
+    });
+
+    it("lists traces that have timing but no child runs without a dead expand control", async () => {
+        const flat = { id: "f", name: "classify_intent", status: "success", latency_ms: 320, total_tokens: 90, total_cost: 0.0001, start_time: null, child_runs: [] };
+        mockGetTraces.mockResolvedValue({ traces: [flat], error: null });
+        render(<TracesPanel open onClose={noop} />);
+        const row = await screen.findByRole("button", { name: /classify_intent/ });
+        expect(row).toBeDisabled();
+        expect(row).not.toHaveAttribute("aria-expanded");
     });
 
     it("shows error state", async () => {

@@ -77,6 +77,11 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
         return () => window.removeEventListener("keydown", handler);
     }, [open, onClose]);
 
+    // LangSmith also records isolated helper calls (0 ms, no tokens, no child
+    // runs). They carry nothing to inspect, so they never render as rows.
+    const useful = traces.filter((t) => t.child_runs.length > 0 || t.latency_ms > 0 || t.total_tokens > 0);
+    const hidden = traces.length - useful.length;
+
     const toggleTrace = (id: string) => {
         setExpandedTraceIds((prev) => {
             const next = new Set(prev);
@@ -113,7 +118,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                             LangSmith Traces
                         </h2>
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-mono" style={{ background: "var(--aegis-surface-2)", border: "1px solid var(--aegis-border)", color: "var(--aegis-text-muted)" }}>
-                            {traces.length} trace{traces.length !== 1 ? "s" : ""}
+                            {useful.length} trace{useful.length !== 1 ? "s" : ""}
                         </span>
                     </div>
                     <button
@@ -134,7 +139,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                             <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                             </svg>
-                            <span className="text-xs">Loading traces…</span>
+                            <span className="text-xs">Fetching recent runs from LangSmith — the first load can take up to a minute…</span>
                         </div>
                     ) : error && traces.length === 0 ? (
                         <div className="offline-state max-w-md mx-auto my-8">
@@ -143,27 +148,33 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                                 Traces come from LangSmith via the backend — check the API connection.
                             </p>
                         </div>
-                    ) : traces.length === 0 ? (
+                    ) : useful.length === 0 ? (
                         <div className="offline-state max-w-md mx-auto my-8">
                             <p className="text-[13px] font-medium mb-1" style={{ color: "var(--aegis-text-2)" }}>
-                                No traces yet — submit a ticket to generate one
+                                No full agent runs in LangSmith yet
                             </p>
-                            <p className="text-[11px]" style={{ color: "var(--aegis-text-muted)" }}>
-                                Every run records per-node latency, tokens, and cost.
+                            <p className="text-[12px] leading-relaxed" style={{ color: "var(--aegis-text-muted)" }}>
+                                Tracing is connected, but LangSmith hasn&apos;t recorded a complete run to show here
+                                {hidden > 0 ? ` (${hidden} empty helper ${hidden === 1 ? "call" : "calls"} hidden)` : ""}. The run receipt under
+                                every finished ticket shows the same breakdown: each LLM call, its model, tokens and cost.
                             </p>
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {traces.map((trace) => {
+                            {useful.map((trace) => {
                                 const isOpen = expandedTraceIds.has(trace.id);
+                                const expandable = trace.child_runs.length > 0;
                                 const maxChildLatency = Math.max(...trace.child_runs.map((c) => c.latency_ms), 1);
 
                                 return (
                                     <div key={trace.id} className="metric-card p-0 overflow-hidden">
                                         {/* Trace header */}
                                         <button
+                                            type="button"
                                             onClick={() => toggleTrace(trace.id)}
-                                            className="w-full flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/5"
+                                            disabled={!expandable}
+                                            aria-expanded={expandable ? isOpen : undefined}
+                                            className="w-full flex items-center justify-between px-4 py-3 transition-colors enabled:hover:bg-white/5 disabled:cursor-default"
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div
@@ -189,19 +200,19 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                                                 <span className="text-xs font-mono font-semibold" style={{ color: "#34d399" }}>
                                                     ${trace.total_cost.toFixed(4)}
                                                 </span>
-                                                <svg
+                                                {expandable && <svg
                                                     width="12" height="12" viewBox="0 0 24 24" fill="none"
                                                     stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                                                     className="transition-transform duration-200"
                                                     style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
                                                 >
                                                     <path d="M6 9l6 6 6-6" />
-                                                </svg>
+                                                </svg>}
                                             </div>
                                         </button>
 
                                         {/* Child runs — full width waterfall */}
-                                        {isOpen && trace.child_runs.length > 0 && (
+                                        {isOpen && expandable && (
                                             <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--aegis-border)" }}>
                                                 {/* Column headers */}
                                                 <div

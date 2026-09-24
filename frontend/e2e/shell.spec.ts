@@ -43,5 +43,10 @@ test.describe("dashboard shell (no backend)", () => {
 
         const ogTitle = page.locator('meta[property="og:title"]');
         await expect(ogTitle).toHaveAttribute("content", /Aegis/);
+
+        // A large-image card needs an absolute image URL, or previews render blank.
+        await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /^https:\/\/.+\/og\.png$/);
+        await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", /^https:\/\/.+\/og\.png$/);
+        await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", /apple-touch-icon\.png/);
     });
 });

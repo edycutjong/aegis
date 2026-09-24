@@ -177,5 +177,6 @@ describe("helpers", () => {
         expect(shortModel("models/gemini-2.5-flash")).toBe("gemini-2.5-flash");
         expect(shortModel("openai/gpt-oss-20b")).toBe("gpt-oss-20b");
         expect(shortModel("gpt-4.1")).toBe("gpt-4.1");
+        expect(shortModel("gpt-4.1-mini-2025-04-14")).toBe("gpt-4.1-mini");
     });
 });
