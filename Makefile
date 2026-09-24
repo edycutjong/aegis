@@ -94,47 +94,12 @@ security-scan: audit ## 🔐 Full security sweep (deps + secrets in git history)
 	@echo "=== license compliance (frontend) ==="
 	@cd frontend && npx license-checker --production --failOn "GPL-3.0;AGPL-3.0" --summary || true
 
-# ── Screenshots & Videos ──────────────────────────────────
+# ── Screenshots ───────────────────────────────────────────
 
-.PHONY: screenshots demo clips
+.PHONY: screenshots
 
-screenshots: ## 📸 Capture all 24 UI screenshots (requires stack running)
+screenshots: ## 📸 README screenshots via real runs (BASE_URL=… for the live demo; default localhost:3000)
 	node scripts/capture-screenshots.mjs
-
-# Individual screenshot targets for development
-ss-dashboard:          ## 📸 shot 01: dashboard
-	node scripts/capture-screenshots.mjs dashboard
-ss-refund:             ## 📸 shot 02: refund HITL suite (thinking → modal → deny → approve)
-	node scripts/capture-screenshots.mjs refund-hitl
-ss-technical:          ## 📸 shot 03: technical HITL suite
-	node scripts/capture-screenshots.mjs technical-hitl
-ss-billing:            ## 📸 shot 04: billing resolution
-	node scripts/capture-screenshots.mjs billing-resolution
-ss-upgrade:            ## 📸 shot 05: upgrade HITL suite
-	node scripts/capture-screenshots.mjs upgrade-resolution
-ss-reactivate:         ## 📸 shot 06: reactivate resolution
-	node scripts/capture-screenshots.mjs reactivate-resolution
-ss-suspend:            ## 📸 shot 07: suspend HITL suite
-	node scripts/capture-screenshots.mjs suspend-hitl
-ss-cache:              ## 📸 shot 08: semantic cache hit
-	node scripts/capture-screenshots.mjs cache-hit
-ss-edge:               ## 📸 shots 09-13: all edge cases
-	node scripts/capture-screenshots.mjs edge-notfound edge-mismatch edge-typo edge-nameonly edge-cancelled
-ss-metrics:            ## 📸 shot 14: observability metrics
-	node scripts/capture-screenshots.mjs metrics
-ss-traces:             ## 📸 shot 15: LangSmith traces
-	node scripts/capture-screenshots.mjs traces
-ss-tickets:            ## 📸 shot 16: recent tickets
-	node scripts/capture-screenshots.mjs recent-tickets
-ss-recent-tickets: ss-tickets ## 📸 alias for ss-tickets
-ss-database:           ## 📸 shot 17: database explorer
-	node scripts/capture-screenshots.mjs database
-
-demo: ## 🎬 Record full demo video (requires stack running)
-	node scripts/record-demo.mjs
-
-clips: ## 🎞️  Record individual feature clips (requires stack running)
-	node scripts/record-clips.mjs
 
 # ── Build & CI ────────────────────────────────────────────
 
@@ -154,8 +119,8 @@ help: ## 📖 Show available commands
 	@echo "  \033[1;36mAegis\033[0m — Production AI Agent for Customer Support"
 	@echo "  ─────────────────────────────────────────────────"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36mmake %-18s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "  \033[2mQuick start:  make up    →    make test    →    make screenshots\033[0m"
+	@echo "  \033[2mQuick start:  make up    →    make test    →    make preflight    →    make evals\033[0m"
 	@echo ""

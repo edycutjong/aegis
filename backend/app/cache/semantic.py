@@ -1,7 +1,12 @@
-"""Semantic caching layer using Redis.
+"""Response cache using Redis.
 
-Flex 3: If a user asks the exact same question twice within an hour,
-the backend serves the cached answer in ~50ms. Cost to the company: $0.00.
+If the exact same ticket (after whitespace/case normalization) arrives again
+within the TTL, the cached answer is served in ~50ms at zero LLM cost.
+
+Naming note: the module and class keep their historical "semantic" name, but
+matching is exact (SHA-256 of the normalized text), not embedding similarity.
+Semantic matching would need an embedding model and a tuned threshold — a
+wrong near-match here would serve another customer's resolution.
 """
 
 import hashlib
@@ -12,7 +17,7 @@ from app.config import get_settings
 
 
 class SemanticCache:
-    """Redis-backed semantic cache for agent responses."""
+    """Redis-backed exact-match response cache (see module docstring)."""
 
     def __init__(self):
         settings = get_settings()

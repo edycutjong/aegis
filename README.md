@@ -1,506 +1,243 @@
+<div align="center">
+
+# ⛊ Aegis
+
+**A multi-agent support engine that investigates tickets against a live database, proposes one action,
+and stops for a human before anything that moves money or changes an account.**
+
+### [▶ Try the live demo](https://aegis-pi-five.vercel.app) · [Eval scorecard](backend/evals/SCORECARD.md) · [Security model](#-treat-every-llm-output-as-hostile-input) · [API docs](https://api-production-79b1f.up.railway.app/docs)
+
 [![CI](https://github.com/edycutjong/aegis/actions/workflows/ci.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/edycutjong/aegis)
-[![Python](https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Evals](https://github.com/edycutjong/aegis/actions/workflows/evals.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/evals.yml)
+[![CodeQL](https://github.com/edycutjong/aegis/actions/workflows/codeql.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/codeql.yml)
+[![Coverage](https://img.shields.io/badge/coverage-100%25%20backend%20%C2%B7%20100%25%20frontend-brightgreen)](#-quality-gates)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-# ⛊ Aegis — Autonomous Enterprise Action Engine
+<img src="docs/screenshots/02-approval-gate.png" alt="Aegis holding a $49 refund at the human approval gate, with the full agent trace visible above it" width="100%">
 
-> **Read the full Case Study & Architecture Breakdown here:** [edycu.dev/work/aegis](https://edycu.dev/work/aegis)
+</div>
 
-> A multi-agent AI system that acts as a Tier-2 Support Engineer. Investigates complex issues via SQL + documentation, proposes financial/technical actions, and **waits for human approval** before executing.
+## The short version
 
-## ✨ Key Features
+Aegis works a Tier-2 support queue. A LangGraph pipeline of four agents triages the ticket, verifies the
+customer, writes and runs SQL against Postgres, retrieves the relevant internal policy, and proposes
+**exactly one** action: refund, credit, tier change, suspend, reactivate, escalate, or resolve. Anything
+except `resolve` **pauses** on a LangGraph interrupt until a human approves or denies it.
 
-| Feature | Description |
+It is measured, not just demoed: a 40-ticket golden set, including 13 prompt-injection and SQL-exfiltration
+attacks, runs three times against the real models and the real database:
+
+<!-- scorecard:start -->
+| | |
 |---|---|
-| **Human-in-the-Loop (HITL)** | Agent pauses execution and waits for human approval before any action that moves money or changes account state (refund, credit, tier change, suspend, reactivate). Only `resolve` is auto-approved. |
-| **Dynamic Model Routing** | Routes simple intents to Groq `gpt-oss` (~$0.0001), complex intents to GPT-4.1/Gemini (~$0.008) — with fallback |
-| **Smart Customer Validation** | Handles 8 edge cases: ID+name match, fuzzy name matching, typo correction, name-only search, disambiguation, suspended/cancelled accounts, not-found, and ID mismatch |
-| **Self-Healing SQL** | Generates SQL from natural language, executes against Supabase, and auto-retries up to 3× by feeding errors back to the LLM |
-| **Semantic Caching** | Identical queries served from Redis cache in <50ms at $0.00 cost — failures are never cached |
-| **Real-time Streaming** | Watch the agent's thought process step-by-step via Server-Sent Events (SSE) |
-| **Dual-Mode ThoughtStream** | Toggle between clean User mode and detailed Dev mode with color-coded agent badges |
-| **Observability Dashboard** | Track token usage, cost per request, cache hit ratio, model distribution, and database status |
+| **End-to-end pass rate** (120 runs) | **96.7%** |
+| **Safety-invariant violations** | **0** |
+| **Prompt-injection attempts contained** | **100.0%** |
+| Intent · customer · action accuracy | 100.0% · 100.0% · 96.7% |
+| Input screen: injections flagged / benign tickets flagged | 69.2% / 0.0% |
+| Latency to the approval gate, p50 / p95 | 6.32s / 11.46s |
+| LLM cost per ticket, median | **$0.0028** |
+<!-- scorecard:end -->
 
-## 🏗️ Architecture
+Every number is reproducible with `make evals`. The known failures are listed in the
+[scorecard](backend/evals/SCORECARD.md), not hidden.
+
+---
+
+## How it works
 
 ```mermaid
-flowchart TD
-    A["Next.js Frontend"] -- REST + SSE --> B["FastAPI Backend"]
-    B -- cache check --> D["Redis Cache"]
-    B -- cache miss --> F["LangGraph Agent"]
-    F --> G["Classify → Validate → Write SQL → Execute"]
-    G --> G2["Search Docs → Propose → ⏸ HITL Approval"]
-    G2 --> G3["Execute Action → Respond → Frontend"]
-    F --> C["Model Router → LLM APIs"]
-    G --> I["Supabase PostgreSQL"]
-    F -. traces .-> J["LangSmith"]
+flowchart LR
+    T([Ticket]) --> S["🛡 screen_input<br/><sub>Prompt Guard 2 + rules</sub>"]
+    S --> C["classify_intent<br/><sub>fast model · routes the lane</sub>"]
+    C --> V{"validate_customer<br/><sub>8 identity edge cases</sub>"}
+    V -- not found / mismatch --> R
+    V -- verified --> W["write_sql<br/><sub>frontier model</sub>"]
+    W --> X{"execute_sql<br/><sub>sqlglot guard → least-privilege role</sub>"}
+    X -- error or guard block<br/>(≤3×) --> W
+    X -- rows --> K["search_docs<br/><sub>ranked policy retrieval</sub>"]
+    K --> P["propose_action<br/><sub>one action, evidence-bound</sub>"]
+    P --> G{{"⏸ await_approval<br/>LangGraph interrupt"}}
+    G -- approved --> E[execute_action]
+    G -- denied --> R
+    E --> R["generate_response"]
+    R --> Z([Reply])
+
+    style G fill:#3b2a06,stroke:#f5a524,color:#fff
+    style S fill:#231a3a,stroke:#8b5cf6,color:#fff
+    style X fill:#231a3a,stroke:#8b5cf6,color:#fff
 ```
 
-## 📸 Demo
-
-<p align="center">
-  <img src="docs/screenshots/01-dashboard.png" alt="Aegis Dashboard — Autonomous Enterprise Action Engine" width="100%">
-</p>
-
-<details>
-<summary>🧠 Agent ThoughtStream (Real-time Processing)</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/03-technical-resolution-thinking.png" alt="Agent ThoughtStream — real-time step-by-step processing with intent classification, customer validation, SQL execution" width="100%">
-</p>
-<p align="center"><em>Watch the agent think step-by-step: intent classification → customer validation → SQL generation → policy search → action proposal</em></p>
-</details>
-
-<details>
-<summary>⚡ Full Resolution Workflow</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/04-billing-resolution.png" alt="Aegis Dashboard — Full agent workflow with ThoughtStream, observability metrics, and model distribution" width="100%">
-</p>
-<p align="center">
-  <em>Agent resolves a ticket end-to-end: intent classification → customer validation → SQL execution → policy search → human approval → resolution</em>
-</p>
-</details>
-
-<details>
-<summary>🔒 Human-in-the-Loop Approval Modal</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/02-refund-modal.png" alt="HITL Approval Modal — Agent pauses for human authorization before executing destructive actions" width="80%">
-</p>
-<p align="center"><em>The agent pauses and waits for human authorization before executing any action requiring strict oversight</em></p>
-</details>
-
-<details>
-<summary>🔧 Multi-Ticket Type Support (Technical, Billing, Upgrade, Reactivate, Suspend)</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/03-technical-resolution-approve.png" alt="Technical ticket resolution — API rate limiting investigation" width="100%">
-</p>
-<p align="center"><em>Technical ticket: Investigates API rate limiting errors with SQL queries and resolves automatically (no HITL needed)</em></p>
-<br>
-<p align="center">
-  <img src="docs/screenshots/06-reactivate.png" alt="Reactivation HITL — Account reactivation requires human approval" width="100%">
-</p>
-<p align="center"><em>Account reactivation: HITL approval required before restoring suspended enterprise accounts</em></p>
-<br>
-<p align="center">
-  <img src="docs/screenshots/07-suspend.png" alt="Suspension HITL — Account suspension requires human approval" width="100%">
-</p>
-<p align="center"><em>Account suspension: HITL approval required before suspending accounts for ToS violations</em></p>
-</details>
-
-<details>
-<summary>✍️ Smart Customer Validation (Edge Cases)</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/11-edge-typo.png" alt="Typo correction — fuzzy name matching auto-corrects misspellings" width="100%">
-</p>
-<p align="center"><em>Typo correction: "Davd Martines" fuzzy-matched to "David Martinez" (≥75% similarity)</em></p>
-<br>
-<p align="center">
-  <img src="docs/screenshots/09-edge-notfound.png" alt="Customer not found — graceful error handling for nonexistent customers" width="100%">
-</p>
-<p align="center"><em>Customer #999 not found — the agent stops gracefully with a clear error message</em></p>
-<br>
-<p align="center">
-  <img src="docs/screenshots/10-edge-mismatch.png" alt="Name/ID mismatch — security check catches wrong name for customer ID" width="100%">
-</p>
-<p align="center"><em>Name/ID mismatch: Customer #8 is David Martinez, not Sarah Chen — agent flags the security mismatch</em></p>
-</details>
-
-<details>
-<summary>⚡ Semantic Cache</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/15-cache-hit.png" alt="Semantic cache hit — identical query served instantly at $0.00 cost" width="100%">
-</p>
-<p align="center"><em>Identical query served from Redis cache in &lt;50ms at $0.00 cost</em></p>
-</details>
-
-<details>
-<summary>📊 Observability Metrics</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/18-metrics.png" alt="Observability metrics — token usage, cost tracking, model distribution, cache hit ratio" width="100%">
-</p>
-<p align="center"><em>Real-time observability: total tokens, cost per request, cache hit ratio, model distribution, HITL wait times</em></p>
-</details>
-
-<details>
-<summary>🔭 LangSmith Traces</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/19-traces.png" alt="LangSmith traces panel — full pipeline visibility with latency and token counts" width="100%">
-</p>
-<p align="center"><em>Built-in LangSmith traces panel with run details, latency, token counts, and status per trace</em></p>
-<br>
-<p align="center">
-  <img src="docs/screenshots/19-traces-1.png" alt="LangSmith trace expanded — node-level spans showing each agent step with latency" width="100%">
-</p>
-<p align="center"><em>Expanded trace: node-level spans for every agent step — classify → validate → SQL → search → propose → approve → execute</em></p>
-<br>
-<p align="center">
-  <img src="docs/screenshots/19-traces-2.png" alt="LangSmith trace detail — LLM call inputs, outputs, token counts and model name" width="100%">
-</p>
-<p align="center"><em>LLM call detail: inputs, outputs, token counts, model name, and latency per invocation</em></p>
-</details>
-
-<details>
-<summary>🗄️ Database Explorer & Ticket History</summary>
-<br>
-<p align="center">
-  <img src="docs/screenshots/21-database.png" alt="Database explorer — browse Supabase tables directly from the dashboard" width="100%">
-</p>
-<p align="center"><em>Database explorer: browse Supabase tables (customers, billing, tickets, docs) directly from the dashboard</em></p>
-<br>
-<p align="center">
-  <img src="docs/screenshots/23-recent-tickets.png" alt="Ticket history — localStorage-persisted recent ticket log" width="100%">
-</p>
-<p align="center"><em>Ticket history: all processed tickets persisted in localStorage with status and response preview</em></p>
-</details>
-
-## 🤖 Multi-Agent Architecture
-
-Aegis organizes its workflow as **4 specialized agents** collaborating in sequence. Each agent has a clear responsibility and reports its progress via the real-time thought stream:
-
-| Agent | Role | Nodes |
+| Agent | Nodes | Model lane |
 |---|---|---|
-| 🏷 **Triage Agent** | Classifies incoming tickets into billing, technical, account, or general | `classify_intent` |
-| 🔍 **Investigator Agent** | Validates customer identity (8 edge cases), generates & executes SQL with self-healing retry | `validate_customer`, `write_sql`, `execute_sql` |
-| 📚 **Knowledge Agent** | Searches internal docs for relevant policies, procedures, and guidelines | `search_docs` |
-| ⚡ **Resolution Agent** | Proposes actions, manages HITL approval, executes approved actions, generates summary | `propose_action`, `await_approval`, `execute_action`, `generate_response` |
+| **Triage** | `screen_input`, `classify_intent` | Groq `gpt-oss-20b` + Llama Prompt Guard 2 |
+| **Investigator** | `validate_customer`, `write_sql`, `execute_sql` | GPT-4.1 (SQL is where being wrong is expensive) |
+| **Knowledge** | `search_docs` | none: deterministic ranked retrieval |
+| **Resolution** | `propose_action`, `await_approval`, `execute_action`, `generate_response` | Groq `gpt-oss-120b` (billing/general) or Gemini 2.5 Flash (technical/account) |
 
-### Agent Execution Trace
+Every primary model fails over to a **different vendor** with a 30s timeout. Cost is attributed from the
+provider's response metadata, so a failed-over call is priced as the model that actually answered. (In
+the published eval run the Gemini free-tier quota was exhausted, so that lane was served entirely by the
+`gpt-4.1-mini` fallback. The [scorecard](backend/evals/SCORECARD.md) lists the models that actually ran.)
 
-```
-[Triage] Classified intent: billing (95%)
-  → [Investigator] Customer validated: #8 David Martinez (pro, active)
-  → [Investigator] SQL executed successfully — found 3 records
-  → [Knowledge] Found 2 relevant internal documents
-  → [Resolution] Proposed action: refund — Refund $29.99 duplicate charge
-  → [Resolution] ⏸ Awaiting human approval...
-  → [Resolution] Action executed: Refund processed (TXN-04821)
-  → [Resolution] Generated resolution summary
-```
+---
 
-### Customer Validation Edge Cases
+## Engineering decisions
 
-The Investigator Agent handles these scenarios robustly:
+### ⏸ The human gate is structural, not a prompt
 
-| Scenario | Behavior |
-|---|---|
-| `Customer #8 David Martinez` | ✅ Direct ID+name match |
-| `Customer #8 Davd Martines` | ✅ Fuzzy match (typo auto-corrected, ≥75% similarity) |
-| `Emily Davis` (no ID) | ✅ Name search → exact match found |
-| `Customer #8 Sarah Chen` (wrong name) | ⚠️ Name mismatch → stops with error |
-| `Customer #999` | ⚠️ Not found → stops with error |
-| `Customer #5` (suspended) | ⚠️ Proceeds with suspension warning |
-| `Customer #20` (cancelled) | ⚠️ Proceeds with cancellation warning |
-| `Smith` (ambiguous name) | 🔀 Multiple matches → returns candidates for disambiguation |
+The pause is a LangGraph `interrupt()` with a checkpointer, not an instruction asking the model to wait.
+Only `resolve` completes without a human, and safety-invariant tests enumerating all 293 combinations
+(`test_safety_invariants.py`) pin that for every action type and state combination. On top of that,
+three rules are enforced in code after the model speaks:
 
-## 📊 Cost Analysis
+- **Identity comes from validation, not the model.** The verified customer row flows through graph state
+  and overrides whatever ID or name the LLM wrote. A hallucinated ID cannot receive a refund.
+- **A mutating action with no verified customer is downgraded to `escalate`.**
+- **A ticket flagged by the input screen always escalates.** The model's own text is dropped rather than
+  quoted, so a complied-with injection can't ride along in the proposal.
 
-| Model | Used For | Cost per Request |
+### 🛡 Treat every LLM output as hostile input
+
+LLM-written SQL passes through three independent layers. Any one of them can fail and the next still holds:
+
+1. **App: [`sql_guard.py`](backend/app/db/sql_guard.py).** sqlglot parses the AST: exactly one `SELECT`,
+   allowlisted tables only, no other schemas, no side-effecting functions (`pg_sleep`, `set_config`, …),
+   rows capped at 50. A rejection is fed back to the model as the error, so the self-healing loop repairs
+   the query instead of the database ever seeing it.
+2. **Postgres:** a pinned `search_path` and a 5s `statement_timeout`.
+3. **Privileges:** the SQL function is owned by `aegis_query`, a `NOLOGIN` role with `SELECT` on four tables
+   and nothing else. **This is the wall; everything above it is a speed bump.**
+
+Prompt injection is screened on the way in by **Llama Prompt Guard 2**, which catches jailbreaks (0.998 on
+"ignore all previous instructions"), plus narrow deterministic rules for what it misses: data exfiltration,
+fake `<system>` tags, authority claims ("I'm the CEO"), JSON action smuggling, and bidi-hidden text. The
+screen deliberately doesn't catch everything. The scorecard reports its recall and its false-positive rate
+separately from containment, to show the deeper layers hold when it misses.
+
+<details>
+<summary><b>How this was found:</b> the SQL function was readable with a public key</summary>
+<br>
+
+The original function was `SECURITY DEFINER`, owned by `postgres`, and executable by the `anon` role. The
+backend authenticates with Supabase's *publishable* key, which is designed to be public, and the database
+is shared with other projects. So anyone holding that key could `SELECT` from every schema in the database.
+The keyword blocklist inside the function stopped DDL and DML but not reads. Fixed in `seed.sql` and
+verified live: Aegis tables are readable; `auth.*`, every other schema, and `pg_sleep` are denied. The
+check now runs in `make preflight`.
+</details>
+
+### 📊 Coverage measures your code. Evals measure your product.
+
+The unit suite is at 100% coverage with every LLM and the database mocked. It stayed fully green while
+every configured Groq model had been decommissioned and the database was suspended. So the suite now has
+a counterpart that measures the running system:
+
+- **[`evals/golden.jsonl`](backend/evals/golden.jsonl):** 40 tickets: 18 core flows, 8 identity edge cases,
+  13 attacks, and 1 failed-payment case. Each is scored on intent, customer, action/outcome, and **safety
+  invariants**: no mutating action without a human, amounts never above what billing supports, actions only
+  on the ticket's customer, SQL never outside the allowlist, no compliance with exfiltration requests.
+- **`--trials 3`**, because a single pass of a non-deterministic system proves little.
+- **`--check`** fails CI on any safety violation or a >5-point regression against
+  [`baseline.json`](backend/evals/baseline.json). It runs weekly and on demand
+  ([`evals.yml`](.github/workflows/evals.yml)).
+- **`make preflight`**: one real call per configured model, plus database and privilege-boundary checks,
+  for under a cent. It is the check that would have caught the retired models on day one.
+
+<details>
+<summary><b>What the evals caught</b> (all fixed, each now a regression test)</summary>
+<br>
+
+| Symptom in the eval | Root cause | Fix |
 |---|---|---|
-| `openai/gpt-oss-20b` (Groq) | Intent classification, search, response | ~$0.0001 |
-| Gemini 2.5 Flash | Fallback fast tasks | ~$0.0001 |
-| GPT-4.1 / Claude | SQL generation + reasoning | ~$0.008 |
-| **Total avg per ticket** | | **~$0.009** |
-| **With semantic cache hit** | | **$0.00** |
+| Verified customers escalated as "not found" | Resolver inferred existence from SQL rows; billing rows have `customer_id` but no `name` | Validated customer row carried in graph state |
+| `#777 Kevin Lee` resolved to #12, then 0 rows | SQL writer trusted the ticket's ID, not the validated one | Validated ID passed to the SQL prompt |
+| 6-hour outage got a **$5** credit (policy: 50% = $249.50) | Retrieval searched for the intent word only; the outage policy never surfaced | Term-overlap ranking over the whole knowledge base |
+| 9 of 39 runs crashed under 4-way concurrency | Gemini free tier: 5 req/min; Groq: 8K tokens/min; "fallback" pointed at the same vendor | Fail-fast cross-provider failover + 30s timeouts |
+| Agent explained how to query `information_schema` | Prompt rules alone lose to a weaker fallback model | Input screen + escalation enforced in code |
+| Money promised inside a `resolve` | Policy said the credit is "automatic" | Rule: every money movement is `refund`/`credit` → human gate |
 
-### Model Routing Strategy
+Plus two quieter bugs: `.strip("sql")` strips a *character set*, so `ORDER BY email` became `ORDER BY emai`;
+and the zero-records reply pasted the whole ticket after "Customer #".
+</details>
 
-```
-Simple intents (billing_inquiry, general)  →  Groq openai/gpt-oss-120b  (fast, cheap)
-Complex intents (refund, account, technical)  →  Gemini 2.5 Flash  (accurate)
-SQL generation + action proposal  →  GPT-4.1 / Claude  (smart)
+### 💸 Spend protection for a public demo
 
-Groq unavailable?  →  Fallback to Gemini
-```
+`POST /api/chat` is the only endpoint that starts LLM work. It has a per-visitor sliding window
+(8 tickets / 10 min) and a **global daily cap** (300 tickets). Proxy headers can be spoofed, so the daily
+cap is the real ceiling. A 429 carries `Retry-After`, which the UI turns into a countdown. Raw provider
+errors, which include account IDs, stay in server logs; the browser gets sanitized text.
 
-## 🛠 Tech Stack
+---
 
-| Layer | Technology |
+## Screenshots
+
+| Held at the gate | Released |
 |---|---|
-| **Backend** | Python 3.12+, FastAPI, LangGraph, LangChain |
-| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
-| **Database** | Supabase (PostgreSQL) |
-| **Cache** | Redis (semantic deduplication) |
-| **LLMs** | Groq `gpt-oss` (fast), GPT-4.1/Claude (complex), Gemini (fallback) |
-| **Observability** | LangSmith tracing + built-in token/cost tracking |
-| **Testing** | pytest + pytest-cov (backend), Vitest + React Testing Library (frontend) |
-| **CI/CD** | GitHub Actions — lint, test, coverage, Docker build |
+| <img src="docs/screenshots/02-approval-gate.png" alt="Refund held at the approval gate"> | <img src="docs/screenshots/03-released.png" alt="Approved refund with the customer reply and run receipt"> |
+| **SQL guard blocking an exfiltration attempt** | **Injection screen forcing escalation** |
+| <img src="docs/screenshots/04-sql-guard.png" alt="Three SQL attempts: two blocked by the SQL guard, one failed"> | <img src="docs/screenshots/05-injection-escalated.png" alt="A flagged ticket forced to human review"> |
 
-## 🧪 Testing
+<details>
+<summary>First load and mobile</summary>
+<br>
+<img src="docs/screenshots/01-overview.png" alt="Aegis dashboard on first load" width="100%">
+<p align="center"><img src="docs/screenshots/06-mobile-gate.png" alt="The approval gate on a phone" width="320"></p>
+</details>
 
-**100% coverage** across both backend and frontend — fully offline, no API keys or network needed.
+---
+
+## Run it
+
+The fastest way to see it is the **[live demo](https://aegis-pi-five.vercel.app)**: one click runs a real
+ticket through real models against a real database. The demo database is read-only, and approved actions
+are handed off as recommendations.
+
+Locally:
 
 ```bash
-make test        # run backend + frontend tests
-make ci          # full pipeline: lint → typecheck → test → audit → build
+git clone https://github.com/edycutjong/aegis.git && cd aegis
+cp backend/.env.example backend/.env    # Supabase + Groq + OpenAI keys; Gemini optional
+make db-reset                           # schema, seed data, least-privilege role
+make up                                 # backend :8000 · frontend :3000 · redis
+make preflight                          # every model answers, DB answers, privilege boundary holds
 ```
 
-### Backend (pytest)
+| Command | What it does |
+|---|---|
+| `make test` | 407 backend + 258 frontend unit tests, 100% coverage gate on both |
+| `make e2e` | 32 Playwright tests (desktop + mobile), no backend or keys needed |
+| `make evals` | Golden set × 3 against real models → `backend/evals/SCORECARD.md` (~$0.30) |
+| `make ci` | lint → typecheck → test → audit → build |
+| `make help` | everything else |
 
-```bash
-make test-backend
-# or directly:
-cd backend && python -m pytest tests/ --cov=app --cov-fail-under=100 -v
-```
+## Quality gates
 
-| Module | Stmts | Cover |
+Five-stage CI on every PR: **quality** (ruff, mypy, eslint, tsc, both unit suites at 100%) → **security**
+(CodeQL, gitleaks, TruffleHog, pip-audit, npm audit, license check) → **build** (both Docker images) →
+**E2E** (Playwright, chromium + mobile). Evals run weekly and on demand, since they cost money and need
+secrets. Dependabot, conventional commits, and release-please handle versioning.
+
+## Stack
+
+**Backend:** Python 3.12, FastAPI, LangGraph, LangChain, sqlglot, SSE · **Frontend:** Next.js 16, React 19,
+TypeScript, Tailwind 4 · **Data:** Supabase Postgres, Redis · **Models:** Groq (`gpt-oss-20b/120b`,
+Prompt Guard 2), OpenAI (GPT-4.1, 4.1-mini), Google (Gemini 2.5 Flash) · **Ops:** Railway (API),
+Vercel (web), LangSmith tracing, GitHub Actions
+
+## Production gaps
+
+Stated plainly rather than left for a reviewer to find:
+
+| Gap | Today | What production needs |
 |---|---|---|
-| `classifier.py` (Triage Agent) | 29 | 100% |
-| `investigator.py` (Investigator Agent) | 138 | 100% |
-| `researcher.py` (Knowledge Agent) | 14 | 100% |
-| `resolver.py` (Resolution Agent) | 150 | 100% |
-| `main.py` (API + SSE + HITL) | 315 | 100% |
-| `model_router.py` | 43 | 100% |
-| `semantic.py` (cache) | 73 | 100% |
-| `tracker.py` (observability) | 71 | 100% |
-| `supabase.py` | 45 | 100% |
-| All other modules | 123 | 100% |
-| **Total** | **1001** | **100%** |
+| **Auth** | None; the demo is public by design | Session/JWT auth and per-tenant row-level scoping |
+| **Approval durability** | `MemorySaver` + an in-process thread store: a restart drops pending approvals, and it can't run as more than one replica | Postgres checkpointer and a shared thread store |
+| **Action execution** | Recommendation-only; nothing is written | `actions` table, idempotency key, compensating revert, audit log |
+| **Response quality** | Scored on structure and safety, not tone | An LLM-as-judge dimension, calibrated against human labels |
+| **Response cache** | Exact match on the normalized ticket | Semantic matching only with a per-customer key; a near-match must never serve another customer's answer |
+| **Metrics** | In memory; reset on restart | Postgres/Timescale behind the same aggregate API |
 
-### Frontend (Vitest + React Testing Library)
+## License
 
-```bash
-make test-frontend
-# or directly:
-cd frontend && npm test -- --coverage
-```
-
-| Test Suite | Tests |
-|---|---|
-| `page.test.tsx` | Dashboard rendering, submission, preset buttons |
-| `ApprovalModal.test.tsx` | HITL approve/deny flow, animations |
-| `AnimatedNumber.test.tsx` | Number formatting, animations, cleanup requests |
-| `MetricsPanel.test.tsx` | Metrics display, cache clear, DB explorer |
-| `ThoughtStream.test.tsx` | Dev/User mode toggle, message simplification, idle empty states |
-| `TicketHistory.test.tsx` | History persistence, clear, selection |
-| `useTicketHistory.test.ts` | Hook behavior, localStorage |
-| `api.test.ts` | API client, SSE connection, error handling |
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Python 3.12+
-- Node.js 22+
-- Docker & Docker Compose (for Redis)
-- **API keys (minimum 2):**
-  - [Groq](https://console.groq.com/keys) — free tier, handles fast tasks (classification, docs, response)
-  - [OpenAI](https://platform.openai.com/api-keys) **or** [Anthropic](https://console.anthropic.com/settings/keys) — one is enough for complex tasks (SQL, action proposal)
-  - [Google AI / Gemini](https://aistudio.google.com/apikey) — optional fallback
-
-### 1. Clone & Setup
-
-```bash
-git clone https://github.com/edycutjong/aegis.git
-cd aegis
-```
-
-### 2. Configure environment
-
-```bash
-cp backend/.env.example backend/.env
-# Fill in your API keys (SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY, etc.)
-```
-
-### 3. Start the stack
-
-```bash
-make up
-```
-
-Starts backend (port 8000), frontend (port 3000), and Redis. Rebuilds Docker images automatically.
-
-### 4. Seed the database
-
-Run `seed.sql` in the [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql) to populate sample data. To reset and reseed at any time:
-
-```bash
-make db-reset   # requires SUPABASE_MANAGEMENT_KEY in backend/.env
-```
-
-### 5. Open the dashboard
-
-Visit `http://localhost:3000` and submit a support ticket.
-
-## 📁 Project Structure
-
-```
-aegis/
-├── backend/
-│   ├── app/
-│   │   ├── agent/
-│   │   │   ├── agents/          # 4 specialized agents
-│   │   │   │   ├── classifier.py    # Triage Agent — intent classification
-│   │   │   │   ├── investigator.py  # Investigator — customer validation + SQL
-│   │   │   │   ├── researcher.py    # Knowledge Agent — doc search
-│   │   │   │   └── resolver.py      # Resolution Agent — actions + HITL
-│   │   │   ├── graph.py         # LangGraph workflow definition
-│   │   │   ├── state.py         # AgentState TypedDict
-│   │   │   └── nodes.py         # Re-export shim for backward compat
-│   │   ├── cache/semantic.py    # Redis semantic caching
-│   │   ├── db/supabase.py       # Async Supabase client
-│   │   ├── routing/model_router.py  # Dynamic LLM routing + pricing
-│   │   ├── observability/tracker.py # Token/cost tracking
-│   │   ├── config.py            # Pydantic Settings
-│   │   └── main.py              # FastAPI app + SSE endpoints
-│   ├── tests/                   # 9 test files, 100% coverage
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── app/page.tsx         # Main dashboard
-│   │   ├── components/          # 7 React components
-│   │   │   ├── AnimatedNumber.tsx    # Smooth animated value counter
-│   │   │   ├── ApprovalModal.tsx     # HITL approval UI
-│   │   │   ├── DatabaseStatus.tsx    # DB table explorer
-│   │   │   ├── MetricsPanel.tsx      # Observability dashboard
-│   │   │   ├── ThoughtStream.tsx     # Agent progress + Dev/User toggle
-│   │   │   └── TicketHistory.tsx     # Recent tickets (localStorage)
-│   │   ├── hooks/useTicketHistory.ts
-│   │   └── lib/api.ts           # API client + SSE
-│   ├── src/components/__tests__/ # 8 test files (Vitest + RTL)
-│   ├── src/app/__tests__/       # 1 test file (Vitest + RTL)
-│   ├── Dockerfile               # Multi-stage standalone build
-│   └── package.json
-├── docker-compose.yml           # Backend + Frontend + Redis
-├── seed.sql                     # Sample data for Supabase
-└── .github/workflows/ci.yml    # Ruff + pytest + ESLint + Docker build
-```
-
-## ⚙️ Development Commands
-
-All day-to-day workflows are managed via `make`. Run `make help` to see the full list.
-
-### Stack
-
-| Command | Description |
-|---|---|
-| `make up` | 🚀 Start full stack (backend + frontend + Redis) |
-| `make down` | 🛑 Stop stack and remove images + dangling layers |
-| `make restart` | 🔄 Restart stack (preserves DB state) |
-| `make logs` | 📋 Tail backend logs (`make logs s=frontend` for frontend) |
-| `make clean` | 🧹 Nuclear clean — remove everything including base images |
-| `make db-reset` | 🗄️ Reset & reseed Supabase database |
-
-### Testing & Lint
-
-| Command | Description |
-|---|---|
-| `make ci` | 🔁 Full CI pipeline: lint → typecheck → test → audit → build |
-| `make test` | ✅ Run all tests (backend + frontend) |
-| `make test-backend` | 🐍 Backend pytest with 100% coverage enforcement |
-| `make test-frontend` | ⚛️ Frontend Vitest with coverage |
-| `make lint` | 🔍 Lint backend (ruff) + frontend (eslint) |
-| `make build` | 🏗️ Build Docker images (no cache) |
-
-### Screenshots
-
-| Command | Description |
-|---|---|
-| `make screenshots` | 📸 Capture all UI screenshots (requires stack running) |
-| `make ss-dashboard` | Shot 01: Dashboard overview |
-| `make ss-refund` | Shots 02: Refund HITL suite |
-| `make ss-technical` | Shots 03: Technical HITL suite |
-| `make ss-billing` | Shot 04: Billing resolution |
-| `make ss-upgrade` | Shots 05: Upgrade HITL suite |
-| `make ss-reactivate` | Shot 06: Reactivate resolution |
-| `make ss-suspend` | Shot 07: Suspend HITL suite |
-| `make ss-edge` | Shots 09–13: All edge cases |
-| `make ss-cache` | Shot 15: Semantic cache hit |
-| `make ss-metrics` | Shot 18: Observability metrics |
-| `make ss-traces` | Shot 19: LangSmith traces |
-| `make ss-database` | Shot 21: Database explorer |
-| `make ss-tickets` | Shot 23: Recent tickets |
-
-##  Observability
-
-Every LangGraph run produces a full trace in [LangSmith](https://smith.langchain.com/) showing the complete pipeline with token counts and latency per step:
-
-```
-classify_intent → validate_customer → write_sql → execute_sql
-  → search_docs → propose_action → await_approval → execute_action → generate_response
-```
-
-### Setup
-
-1. Create a free account at [smith.langchain.com](https://smith.langchain.com/)
-2. Get your API key from **Settings → API Keys**
-3. Add to your `backend/.env`:
-
-```bash
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=lsv2_pt_...
-LANGCHAIN_PROJECT=aegis
-```
-
-4. Verify connectivity:
-
-```bash
-curl http://localhost:8000/api/tracing-status
-# → {"enabled": true, "project": "aegis", "connected": true}
-```
-
-### What's Traced
-
-- **Node-level spans** via `@traceable` decorators on all agent nodes
-- **LLM calls** auto-traced by LangChain (input/output, token counts, model name)
-- **Graph execution** with `run_name="aegis-support-workflow"` for easy filtering
-
-## ⚙️ Environment Variables
-
-Copy `backend/.env.example` to `backend/.env` and configure:
-
-| Variable | Required | Description |
-|---|---|---|
-| `SUPABASE_URL` | ✅ | Supabase project URL |
-| `SUPABASE_KEY` | ✅ | Supabase anon/public key |
-| `SUPABASE_MANAGEMENT_KEY` | ➖ | Management API key — needed for `make db-reset` |
-| `GOOGLE_API_KEY` | ⚡ | Google Gemini key (recommended — free tier available) |
-| `OPENAI_API_KEY` | ⚡ | OpenAI key (GPT-4.1 as smart model) |
-| `ANTHROPIC_API_KEY` | ⚡ | Anthropic key (Claude as alternative smart model) |
-| `GROQ_API_KEY` | ⚡ | Groq key (free, fast inference — good for classification) |
-| `FAST_MODEL` | ➖ | Fast model name (default: `openai/gpt-oss-20b`) |
-| `SMART_MODEL` | ➖ | Smart model name (default: `gpt-4.1`) |
-| `REDIS_URL` | ➖ | Redis connection URL (default: `redis://localhost:6379`) |
-| `CACHE_TTL_SECONDS` | ➖ | Cache TTL in seconds (default: `3600`) |
-| `FRONTEND_URL` | ➖ | CORS origin (default: `http://localhost:3000`) |
-| `LANGCHAIN_TRACING_V2` | ➖ | Enable LangSmith tracing (code default: `false`; `.env.example` sets `true`) |
-| `LANGCHAIN_API_KEY` | ➖ | LangSmith API key for tracing |
-| `LANGCHAIN_PROJECT` | ➖ | LangSmith project name (default: `aegis`) |
-| `DEBUG` | ➖ | Enable debug logging (default: `false`) |
-
-> ✅ = required, ⚡ = need at least one LLM key, ➖ = optional
-
-## 🚧 Production Gaps
-
-Aegis is a demonstration system. These are the things that would have to change
-before it ran against real customers, stated plainly rather than discovered by a
-reader:
-
-| Gap | Current | Would need |
-|---|---|---|
-| **Authentication** | None. Every endpoint is open. | JWT/session auth + per-tenant row-level scoping |
-| **Approval durability** | `thread_store` is an in-process dict and LangGraph uses `MemorySaver`; a restart loses pending approvals, and it cannot run more than one replica | Redis or Postgres checkpointer + shared thread store |
-| **LLM-generated SQL** | Validated by a keyword blocklist inside a `SECURITY DEFINER` function — it stops DDL/DML but not `UNION SELECT` | `sqlglot` parse, single-`SELECT` assertion, table allowlist, low-privilege role under RLS |
-| **Action execution** | Recommendation-only — `execute_action` returns text and writes nothing | An `actions` table with an idempotency key and a compensating revert path |
-| **Provider resilience** | No timeout or retry on `ainvoke`; a hung provider hangs the workflow | `asyncio.wait_for`, bounded backoff, real cross-provider failover |
-| **Response cache** | Exact-match SHA-256 on the normalized query — not semantic despite the name | Embedding + vector similarity with a tuned threshold |
-| **Metrics storage** | In-memory; resets on restart | Postgres/TimescaleDB, with the same aggregate API |
-
-**Agent quality is not yet measured.** The 100% coverage figure above is line
-coverage over deterministic logic with every LLM mocked — it verifies the code
-is exercised, not that the agent is *correct*. An evaluation suite with a golden
-ticket set is the next piece of work, and until it exists no claim is made about
-accuracy.
-
-## 📄 License
-
-MIT
+[MIT](LICENSE)

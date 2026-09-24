@@ -145,7 +145,7 @@ async def root():
 async def start_chat(request: ChatRequest, http_request: Request):
     """Start a new agent workflow for a support ticket.
 
-    1. Check semantic cache for duplicate queries
+    1. Check the response cache for a repeat of this exact ticket
     2. If miss, start the LangGraph workflow
     3. Return thread_id for SSE streaming
     """
