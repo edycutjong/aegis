@@ -89,3 +89,53 @@ def test_every_blocked_query_is_also_rejected_when_trailing_semicolon_added():
     for sql, _ in BLOCKED:
         if sql:
             assert not check_sql(sql + ";").ok
+
+
+# Found by an adversarial review of the old function DENYLIST: every one of
+# these parsed as a single allowlisted-table SELECT and slipped through.
+AUDIT_ESCAPES = [
+    "SELECT pg_sleep_for('6s')",
+    "SELECT pg_sleep_until(now())",
+    "SELECT lo_from_bytea(0, 'x')",
+    "SELECT pg_advisory_lock(1)",
+    "SELECT dblink_connect('host=evil')",
+    "SELECT pg_notify('chan', 'x')",
+    "SELECT pg_logical_emit_message(true, 'a', 'b')",
+    "SELECT database_to_xml(true, true, '')",
+    "SELECT table_to_xml('pg_authid', true, true, '')",
+    "SELECT pg_ls_waldir()",
+    "SELECT version()",
+    "SELECT inet_server_addr()",
+    "SELECT repeat('a', 1000000000)",
+    "SELECT 'customers'::regclass FROM customers",
+    "SELECT pg_get_functiondef('f'::regproc)",
+    "SELECT * FROM customers WHERE name = pg_read_file('x')",
+    "SELECT CASE WHEN true THEN lo_from_bytea(0, 'x') END FROM customers",
+    "SELECT NOT pg_try_advisory_lock(1)",
+]
+
+REALISTIC = [
+    "SELECT c.id, c.name, b.amount FROM customers c JOIN billing b ON b.customer_id = c.id "
+    "WHERE c.id = 8 AND b.type = 'charge' OR b.amount > 5 ORDER BY b.created_at DESC LIMIT 20",
+    "SELECT COUNT(*) AS n, SUM(amount) FROM billing WHERE customer_id = 8 "
+    "AND created_at >= date_trunc('month', now()) - interval '1 month'",
+    "SELECT * FROM support_tickets WHERE customer_id = 3 AND status IN ('open', 'in_progress') "
+    "AND created_at BETWEEN now() - interval '7 days' AND now()",
+    "SELECT CASE WHEN type = 'refund' THEN -amount ELSE amount END AS signed FROM billing "
+    "WHERE NOT (status = 'failed') AND description ILIKE '%dup%'",
+    "SELECT id, created_at::date, ROUND(amount, 2), string_agg(description, ', ') FROM billing GROUP BY 1, 2, 3",
+    "SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) FROM billing",
+]
+
+
+@pytest.mark.parametrize("sql", AUDIT_ESCAPES)
+def test_function_allowlist_blocks_audit_escapes(sql):
+    result = check_sql(sql)
+    assert not result.ok, sql
+    assert "not allowed" in result.reason
+
+
+@pytest.mark.parametrize("sql", REALISTIC)
+def test_realistic_investigation_queries_still_pass(sql):
+    result = check_sql(sql)
+    assert result.ok, result.reason
