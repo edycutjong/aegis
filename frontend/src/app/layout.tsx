@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Chakra_Petch, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -14,14 +14,20 @@ const jetbrainsMono = JetBrains_Mono({
     variable: "--font-jetbrains-mono",
 });
 
-const TITLE = "Aegis — Autonomous Enterprise Action Engine";
+const chakra = Chakra_Petch({
+    subsets: ["latin"],
+    weight: ["600", "700"],
+    variable: "--font-chakra",
+});
+
+const TITLE = "Aegis — support agents that stop for a human";
 const DESCRIPTION =
-    "Multi-agent AI system with Human-in-the-Loop approval, dynamic model routing, semantic caching, and real-time observability.";
+    "A LangGraph multi-agent support desk: agents triage, investigate a live database and propose one action — then pause at a human approval gate before anything executes.";
 
 export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
-    icons: { icon: { url: "/favicon.svg", type: "image/svg+xml" } },
+    icons: { icon: { url: "/icon.svg", type: "image/svg+xml" } },
     openGraph: {
         title: TITLE,
         description: DESCRIPTION,
@@ -36,9 +42,14 @@ export const metadata: Metadata = {
     },
 };
 
+export const viewport: Viewport = {
+    themeColor: "#0a0e17",
+    colorScheme: "dark",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+        <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${chakra.variable}`} suppressHydrationWarning>
             <body className="antialiased" suppressHydrationWarning>{children}</body>
         </html>
     );

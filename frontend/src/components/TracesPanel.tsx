@@ -101,7 +101,7 @@ export default function TracesPanel({ open, onClose }: TracesPanelProps) {
                 aria-label="LangSmith traces"
                 aria-hidden={!open}
                 inert={!open}
-                style={{ transform: open ? "translateY(0)" : "translateY(100%)" }}
+                style={{ transform: open ? "translateY(0)" : "translateY(100%)", visibility: open ? "visible" : "hidden", transition: open ? undefined : "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s 0.35s" }}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: "1px solid var(--aegis-border)" }}>

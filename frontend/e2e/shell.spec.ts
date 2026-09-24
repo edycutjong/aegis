@@ -17,8 +17,13 @@ test.describe("dashboard shell (no backend)", () => {
             page.getByPlaceholder(/Describe the support issue/i)
         ).toBeVisible();
 
-        // Quick Test presets are static; they must not depend on the backend.
-        await expect(page.getByRole("button", { name: /Quick Test/i })).toBeVisible();
+        // Example tickets are static; they must not depend on the backend.
+        await expect(page.getByRole("tab", { name: /Scenarios/i })).toBeVisible();
+        await expect(page.getByRole("button", { name: /Double charge/i }).first()).toBeVisible();
+
+        // First-run clarity: the pitch and the pipeline explain the product.
+        await expect(page.getByRole("heading", { name: /You release the action/i })).toBeVisible();
+        await expect(page.getByRole("list", { name: "Agent pipeline" })).toBeVisible();
     });
 
     test("shows no Next.js error overlay", async ({ page }) => {

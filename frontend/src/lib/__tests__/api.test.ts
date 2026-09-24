@@ -18,6 +18,7 @@ import {
     connectSSE,
     getTraces,
     getTracingStatus,
+    ApiError,
 } from "../api";
 
 describe("api.ts", () => {
@@ -262,7 +263,7 @@ describe("api.ts", () => {
 
             connectSSE("thread-1", onThought, onApproval, onCompleted, onError, onDisambiguation);
 
-            expect(mockES.addEventListener).toHaveBeenCalledTimes(4);
+            expect(mockES.addEventListener).toHaveBeenCalledTimes(5);
 
             // Simulate thought event
             listeners["thought"]({ data: JSON.stringify({ step: "step1" }) });
@@ -327,6 +328,61 @@ describe("api.ts", () => {
                 data: JSON.stringify({ response: "pick", thought_log: [], customer_candidates: candidates }),
             });
             expect(onCompleted).toHaveBeenCalledWith("pick", []);
+        });
+
+        it("streams SQL attempts from sql, approval and completed events", () => {
+            const onSql = vi.fn();
+            connectSSE("t6", vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onSql);
+            const attempts = [{ query: "SELECT 1", error: null, rows: 1 }];
+            listeners["sql"]({ data: JSON.stringify({ attempts }) });
+            listeners["approval_required"]({ data: JSON.stringify({ action: {}, sql_attempts: attempts }) });
+            listeners["completed"]({ data: JSON.stringify({ response: "ok", thought_log: [], sql_attempts: attempts }) });
+            expect(onSql).toHaveBeenCalledTimes(3);
+            expect(onSql).toHaveBeenCalledWith(attempts);
+        });
+
+        it("ignores SQL data without a listener, and events without attempts", () => {
+            const onSql = vi.fn();
+            connectSSE("t7", vi.fn(), vi.fn(), vi.fn(), vi.fn());
+            listeners["sql"]({ data: JSON.stringify({ attempts: [] }) });
+            connectSSE("t8", vi.fn(), vi.fn(), vi.fn(), vi.fn(), undefined, onSql);
+            listeners["approval_required"]({ data: JSON.stringify({ action: {} }) });
+            expect(onSql).not.toHaveBeenCalled();
+        });
+    });
+
+    // ── Typed errors ──
+    describe("ApiError handling", () => {
+        const errRes = (status: number, body: unknown, headers: Record<string, string> = {}) => ({
+            ok: false,
+            status,
+            statusText: "Err",
+            headers: new Headers(headers),
+            json: () => (body instanceof Error ? Promise.reject(body) : Promise.resolve(body)),
+        });
+
+        it("carries status, detail and Retry-After for a 429", async () => {
+            mockFetch.mockResolvedValue(errRes(429, { detail: "Slow down" }, { "Retry-After": "90" }));
+            const err = await startChat("x").catch((e) => e);
+            expect(err).toBeInstanceOf(ApiError);
+            expect(err).toMatchObject({ status: 429, detail: "Slow down", retryAfterSeconds: 90 });
+        });
+
+        it("tolerates non-JSON bodies, non-string details and bad Retry-After", async () => {
+            mockFetch.mockResolvedValue(errRes(500, new Error("not json"), { "Retry-After": "soon" }));
+            const err = await approveAction("t", true).catch((e) => e);
+            expect(err).toMatchObject({ status: 500, detail: null, retryAfterSeconds: null });
+
+            mockFetch.mockResolvedValue(errRes(422, { detail: [{ msg: "too long" }] }));
+            const err2 = await getThread("t").catch((e) => e);
+            expect(err2).toMatchObject({ status: 422, detail: null });
+        });
+
+        it("turns network failures into status 0", async () => {
+            mockFetch.mockRejectedValue(new TypeError("Failed to fetch"));
+            await expect(startChat("x")).rejects.toMatchObject({ status: 0 });
+            await expect(getThread("t")).rejects.toMatchObject({ status: 0 });
+            await expect(approveAction("t", false, "no")).rejects.toMatchObject({ status: 0 });
         });
     });
 });

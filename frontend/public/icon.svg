@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Aegis mark — a payload halted on its rail by the gate bar it has not crossed">
+  <!-- The mechanism, not the myth: no shield. A payload runs the rail (blue,
+       moving) and stands arrested at the gate (amber, held) — the ring marks
+       the lock, the dotted rail marks the step not yet taken. -->
+  <defs>
+    <linearGradient id="railGrad" gradientUnits="userSpaceOnUse" x1="80" y1="256" x2="222" y2="256">
+      <stop offset="0%" stop-color="var(--release, #3b82f6)" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="var(--release, #3b82f6)"/>
+    </linearGradient>
+    <radialGradient id="payloadGrad" cx="0.36" cy="0.32" r="0.95">
+      <stop offset="0%" stop-color="#7db4fc"/>
+      <stop offset="55%" stop-color="var(--release, #3b82f6)"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </radialGradient>
+    <linearGradient id="gateGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="var(--hold, #f59e0b)"/>
+    </linearGradient>
+    <radialGradient id="blueHalo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="var(--release, #3b82f6)" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="var(--release, #3b82f6)" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="amberHalo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="var(--hold, #f59e0b)" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="var(--hold, #f59e0b)" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Self-plate: keeps the mark legible on GitHub light AND dark -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="var(--bg-base, #0a0e17)" stroke="rgba(255,255,255,0.09)" stroke-width="2"/>
+
+  <!-- Ambient halos (gradient, not filter) -->
+  <circle cx="222" cy="256" r="150" fill="url(#blueHalo)"/>
+  <circle cx="353" cy="256" r="130" fill="url(#amberHalo)"/>
+
+  <!-- Rail: traveled segment, solid blue -->
+  <line x1="80" y1="256" x2="222" y2="256" stroke="url(#railGrad)" stroke-width="18" stroke-linecap="round"/>
+
+  <!-- Rail: the step not yet taken, dotted past the gate -->
+  <line x1="400" y1="256" x2="446" y2="256" stroke="#64748b" stroke-width="11" stroke-linecap="round" stroke-dasharray="0.1 23"/>
+
+  <!-- The hold ring — amber locks around the arrested payload -->
+  <circle cx="222" cy="256" r="88" fill="none" stroke="var(--hold, #f59e0b)" stroke-width="12"/>
+
+  <!-- The payload — the proposed action, still blue, still whole -->
+  <circle cx="222" cy="256" r="60" fill="url(#payloadGrad)"/>
+
+  <!-- The gate — dropped across the path, one step short of EXECUTE -->
+  <rect x="332" y="142" width="42" height="228" rx="21" fill="url(#gateGrad)"/>
+</svg>

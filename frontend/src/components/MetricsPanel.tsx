@@ -1,13 +1,16 @@
 "use client";
 
-
 import { useState, useEffect } from "react";
+import { Activity, ArrowUpRight, Database, LoaderCircle, ServerOff, Trash2 } from "lucide-react";
 import type { Metrics, DbStatus } from "@/lib/api";
 import { clearCache, getDbStatus, getTableData, getTracingStatus } from "@/lib/api";
+import { shortModel } from "@/lib/trace";
+import type { BackendState } from "./TopBar";
 import AnimatedNumber from "./AnimatedNumber";
 
 interface MetricsPanelProps {
     metrics: Metrics | null;
+    backend: BackendState;
     onCacheCleared?: () => void;
     onOpenTraces?: () => void;
 }
@@ -16,86 +19,76 @@ const TABLE_META: Record<string, { label: string; columns: string[] }> = {
     customers: { label: "Customers", columns: ["id", "name", "email", "plan", "status", "company"] },
     billing: { label: "Billing", columns: ["id", "customer_id", "amount", "type", "status", "description"] },
     support_tickets: { label: "Tickets", columns: ["id", "customer_id", "subject", "priority", "status", "category"] },
-    internal_docs: { label: "Docs", columns: ["id", "title", "category"] },
+    internal_docs: { label: "Policy docs", columns: ["id", "title", "category"] },
 };
 
-function timeAgo(iso: string): { text: string; stale: boolean } {
-    const diff = Date.now() - new Date(iso).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return { text: "just now", stale: false };
-    if (mins < 60) return { text: `${mins}m ago`, stale: false };
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return { text: `${hrs}h ago`, stale: hrs > 3 };
-    const days = Math.floor(hrs / 24);
-    return { text: `${days}d ago`, stale: true };
+/** Provider hue for the routing bar, keyed by model-name prefix. */
+const PROVIDERS: Array<{ match: RegExp; label: string; color: string }> = [
+    { match: /gemini/, label: "Google", color: "#7cadfb" },
+    { match: /gpt-oss|llama/, label: "Groq", color: "#f0abfc" },
+    { match: /^(gpt|o\d)/, label: "OpenAI", color: "#34d399" },
+    { match: /claude/, label: "Anthropic", color: "#fdba74" },
+];
+
+function providerFor(model: string) {
+    const name = shortModel(model);
+    return PROVIDERS.find((p) => p.match.test(name)) ?? { label: "Other", color: "#94a3b8" };
 }
 
-function formatCompact(n: number, decimals = 1): string {
-    if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(decimals) + "B";
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(decimals) + "M";
-    if (n >= 10_000) return (n / 1_000).toFixed(decimals) + "K";
-    return n.toLocaleString();
+function formatCompact(n: number): string {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+    if (n >= 10_000) return (n / 1_000).toFixed(1) + "K";
+    return Math.round(n).toLocaleString("en-US");
 }
 
-function truncate(val: unknown, max = 32): string {
+function truncate(val: unknown, max = 28): string {
     const s = String(val ?? "—");
     return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function Stat({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
     return (
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--aegis-text-muted)" }}>
-            {children}
-        </h3>
+        <div className="stat" title={hint}>
+            <dt className="stat-label">{label}</dt>
+            <dd className="stat-value tnum">{children}</dd>
+        </div>
     );
 }
 
-export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: MetricsPanelProps) {
+export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenTraces }: MetricsPanelProps) {
     const agent = metrics?.agent_metrics;
     const cache = metrics?.cache_metrics;
     const [clearing, setClearing] = useState(false);
     const [clearMsg, setClearMsg] = useState<string | null>(null);
     const [tracingEnabled, setTracingEnabled] = useState(false);
-
-    // Check if LangSmith tracing is enabled on mount
-    useEffect(() => {
-        getTracingStatus()
-            .then((s) => setTracingEnabled(s.enabled))
-            .catch(() => setTracingEnabled(false));
-    }, []);
-
-    // Database state
     const [db, setDb] = useState<DbStatus | null>(null);
     const [expanded, setExpanded] = useState<string | null>(null);
     const [tableRows, setTableRows] = useState<Record<string, unknown>[]>([]);
     const [tableLoading, setTableLoading] = useState(false);
 
     useEffect(() => {
+        getTracingStatus()
+            .then((s) => setTracingEnabled(s.enabled))
+            .catch(() => setTracingEnabled(false));
         getDbStatus().then(setDb).catch(() => { });
     }, []);
-
-    // Calculate model distribution percentages
-    const modelTotal = agent?.model_distribution
-        ? Object.values(agent.model_distribution).reduce((a, b) => a + b, 0)
-        : 0;
 
     const handleClearCache = async () => {
         setClearing(true);
         setClearMsg(null);
         try {
             const result = await clearCache();
-            setClearMsg(`Cleared! (${result.keys_deleted} keys)`);
+            setClearMsg(`Cleared ${result.keys_deleted} keys`);
             onCacheCleared?.();
-            setTimeout(() => setClearMsg(null), 2000);
         } catch {
-            setClearMsg("Failed to clear");
-            setTimeout(() => setClearMsg(null), 2000);
+            setClearMsg("Couldn't clear");
         } finally {
             setClearing(false);
+            setTimeout(() => setClearMsg(null), 2000);
         }
     };
 
-    const handleCardClick = async (tableName: string) => {
+    const handleTableClick = async (tableName: string) => {
         if (expanded === tableName) {
             setExpanded(null);
             setTableRows([]);
@@ -113,326 +106,162 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
         }
     };
 
-    // DB freshness
-    const latestTimestamps = db
-        ? Object.values(db).filter((t) => t.latest).map((t) => new Date(t.latest!).getTime())
-        : [];
-    const mostRecent = latestTimestamps.length > 0 ? new Date(Math.max(...latestTimestamps)).toISOString() : null;
-    const freshness = mostRecent ? timeAgo(mostRecent) : null;
+    const models = Object.entries(agent?.model_distribution ?? {}).sort((a, b) => b[1] - a[1]);
+    const modelTotal = models.reduce((sum, [, n]) => sum + n, 0);
     const expandedMeta = expanded ? TABLE_META[expanded] : null;
 
     return (
-        <div className="glass-panel h-full min-h-0 flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="panel-header">
-                <h2 className="panel-title">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" />
-                    </svg>
-                    Observability
-                </h2>
+        <aside className="panel panel-metrics" aria-labelledby="metrics-heading">
+            <div className="panel-head">
+                <h2 id="metrics-heading" className="panel-title">Observability</h2>
+                <span className="text-[12px] text-3">this server, live</span>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" style={{ scrollbarGutter: "stable" }}>
+            <div className="panel-body space-y-5">
                 {metrics === null ? (
-                    /* ── Deliberate offline state — no fake zeros ── */
-                    <div className="offline-state">
-                        <svg className="mx-auto mb-3" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /><line x1="2" y1="22" x2="22" y2="2" />
-                        </svg>
-                        <p className="text-[13px] font-medium mb-1" style={{ color: "var(--aegis-text-2)" }}>
-                            Telemetry offline
-                        </p>
-                        <p className="text-[11px] leading-relaxed" style={{ color: "var(--aegis-text-muted)" }}>
-                            Cost, latency, and cache metrics stream here once the backend is running on port 8000.
-                        </p>
-                    </div>
+                    backend === "connecting" ? (
+                        <div className="space-y-2" aria-label="Loading metrics">
+                            <div className="skeleton h-[118px]" />
+                            <div className="skeleton h-[72px]" />
+                        </div>
+                    ) : (
+                        <div className="offline">
+                            <ServerOff size={18} aria-hidden="true" className="text-3" />
+                            <p className="text-[13px] font-medium text-2 mt-2">Telemetry offline</p>
+                            <p className="text-[12px] text-3 leading-relaxed mt-1">
+                                Cost, latency and routing stream in here once the agent API is reachable.
+                            </p>
+                        </div>
+                    )
                 ) : (
                     <>
-                        {/* Primary Metrics */}
-                        <div className="grid grid-cols-2 gap-2.5">
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">Avg Cost/Req</span>
-                                <span className="metric-value">
-                                    $<AnimatedNumber value={agent?.avg_cost_usd || 0} format={(v) => v.toFixed(4)} />
-                                </span>
-                            </div>
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">Total Requests</span>
-                                <span className="metric-value">
-                                    <AnimatedNumber value={agent?.total_requests || 0} format={(v) => formatCompact(Math.round(v))} />
-                                </span>
-                            </div>
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">Total Cost</span>
-                                <span className="metric-value">
-                                    $<AnimatedNumber value={agent?.total_cost_usd || 0} format={(v) => v.toFixed(4)} />
-                                </span>
-                            </div>
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">Total Tokens</span>
-                                <span className="metric-value">
-                                    <AnimatedNumber value={agent?.total_tokens || 0} format={(v) => formatCompact(Math.round(v))} />
-                                </span>
-                            </div>
+                        <dl className="stat-grid">
+                            <Stat label="Runs">
+                                <AnimatedNumber value={agent?.total_requests || 0} format={(v) => formatCompact(v)} />
+                            </Stat>
+                            <Stat label="Avg wall time">
+                                {agent?.avg_duration_seconds ? <AnimatedNumber value={agent.avg_duration_seconds} format={(v) => v.toFixed(1) + "s"} /> : "—"}
+                            </Stat>
+                            <Stat label="Tokens">
+                                <AnimatedNumber value={agent?.total_tokens || 0} format={(v) => formatCompact(v)} />
+                            </Stat>
+                            <Stat label="Total LLM spend" hint="Measured from real token usage on this server since it started">
+                                $<AnimatedNumber value={agent?.total_cost_usd || 0} format={(v) => v.toFixed(3)} />
+                            </Stat>
+                            <Stat label="Approved at gate">
+                                {agent?.hitl_approval_rate != null ? <AnimatedNumber value={agent.hitl_approval_rate} format={(v) => Math.round(v) + "%"} /> : "—"}
+                            </Stat>
+                            <Stat label="Avg human wait">
+                                {agent?.avg_hitl_wait_seconds != null ? <AnimatedNumber value={agent.avg_hitl_wait_seconds} format={(v) => v.toFixed(1) + "s"} /> : "—"}
+                            </Stat>
+                        </dl>
+
+                        <div>
+                            <h3 className="section-label">Model routing</h3>
+                            {modelTotal > 0 ? (
+                                <div className="mt-2">
+                                    <div className="route-bar" role="img" aria-label={models.map(([m, n]) => `${shortModel(m)} ${Math.round((n / modelTotal) * 100)}%`).join(", ")}>
+                                        {models.map(([m, n]) => (
+                                            <span key={m} style={{ width: `${(n / modelTotal) * 100}%`, background: providerFor(m).color }} />
+                                        ))}
+                                    </div>
+                                    <ul className="route-list">
+                                        {models.map(([m, n]) => (
+                                            <li key={m}>
+                                                <span className="agent-dot" style={{ background: providerFor(m).color }} aria-hidden="true" />
+                                                <span className="font-mono truncate">{shortModel(m)}</span>
+                                                <span className="text-3 ml-auto shrink-0">{providerFor(m).label}</span>
+                                                <span className="tnum w-9 text-right shrink-0">{Math.round((n / modelTotal) * 100)}%</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : (
+                                <p className="text-[12px] text-3 mt-2">Run a ticket to see which model each step was routed to.</p>
+                            )}
                         </div>
 
-                        {/* Production Metrics */}
-                        <div className="grid grid-cols-2 gap-2.5">
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">HITL Approval</span>
-                                <span className="metric-value" style={{ color: agent?.hitl_approval_rate != null ? (agent.hitl_approval_rate >= 80 ? "#4ade80" : "#f87171") : "var(--aegis-text-muted)" }}>
-                                    {agent?.hitl_approval_rate != null ? <AnimatedNumber value={agent.hitl_approval_rate} format={(v) => Math.round(v) + "%"} /> : "—"}
-                                </span>
-                            </div>
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">Avg Resolution</span>
-                                <span className="metric-value">
-                                    {agent?.avg_duration_seconds ? <AnimatedNumber value={agent.avg_duration_seconds} format={(v) => v.toFixed(1) + "s"} /> : "—"}
-                                </span>
-                            </div>
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">HITL Wait</span>
-                                <span className="metric-value">
-                                    {agent?.avg_hitl_wait_seconds != null ? <AnimatedNumber value={agent.avg_hitl_wait_seconds} format={(v) => v.toFixed(1) + "s"} /> : "—"}
-                                </span>
-                            </div>
-                            <div className="metric-card">
-                                <span className="metric-label block mb-0.5">Cache Savings</span>
-                                <span className="metric-value" style={{ color: "var(--aegis-success)" }}>
-                                    $<AnimatedNumber value={agent?.cost_saved_by_cache || 0} format={(v) => v.toFixed(4)} />
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
+                        <div>
                             <div className="flex items-center justify-between">
-                                <SectionLabel>Semantic Cache</SectionLabel>
+                                <h3 className="section-label">Semantic cache</h3>
                                 <div className="flex items-center gap-2">
-                                    {clearMsg && (
-                                        <span className="text-[11px]" style={{ color: "var(--aegis-success)" }}>{clearMsg}</span>
-                                    )}
+                                    {clearMsg && <span className="text-[12px] text-2" role="status">{clearMsg}</span>}
                                     <button
                                         id="clear-cache-btn"
+                                        type="button"
                                         onClick={handleClearCache}
                                         disabled={clearing || !cache?.connected}
-                                        className="p-1 rounded-md transition-colors duration-200 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                                        className="icon-btn"
+                                        aria-label="Clear semantic cache"
                                         title="Clear cache"
-                                        style={{ color: "var(--aegis-text-muted)" }}
                                     >
-                                        {clearing ? (
-                                            <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                                            </svg>
-                                        ) : (
-                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                                            </svg>
-                                        )}
+                                        {clearing ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
                                     </button>
                                 </div>
                             </div>
-                            <div className="metric-card">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[11px]" style={{ color: "var(--aegis-text-muted)" }}>Hit Rate</span>
-                                    <span className="text-sm font-bold font-mono tnum" style={{ color: (cache?.hit_rate_percent || 0) > 50 ? "#4ade80" : "var(--release-text)" }}>
-                                        <AnimatedNumber value={cache?.hit_rate_percent || 0} format={(v) => v.toFixed(1) + "%"} />
-                                    </span>
-                                </div>
-                                {/* Progress bar */}
-                                <div className="w-full h-1.5 rounded-full" style={{ background: "var(--aegis-border)" }}>
-                                    <div
-                                        className="h-full rounded-full transition-all duration-500"
-                                        style={{
-                                            width: `${cache?.hit_rate_percent || 0}%`,
-                                            background: "var(--release)",
-                                        }}
-                                    />
-                                </div>
-                                <div className="flex justify-between mt-2">
-                                    <span className="text-[11px] font-mono" style={{ color: "var(--aegis-text-muted)" }}>
-                                        <AnimatedNumber value={cache?.hits || 0} format={(v) => Math.round(v) + " hits"} />
-                                    </span>
-                                    <span className="text-[11px] font-mono" style={{ color: "var(--aegis-text-muted)" }}>
-                                        <AnimatedNumber value={cache?.misses || 0} format={(v) => Math.round(v) + " misses"} />
-                                    </span>
-                                </div>
+                            <div className="meter mt-2" role="img" aria-label={`Cache hit rate ${(cache?.hit_rate_percent || 0).toFixed(0)}%`}>
+                                <span style={{ width: `${cache?.hit_rate_percent || 0}%` }} />
                             </div>
-                            <div className="flex items-center gap-2 mt-1">
-                                <div className="w-1.5 h-1.5 rounded-full" style={{ background: cache?.connected ? "var(--aegis-success)" : "var(--aegis-danger)" }} />
-                                <span className="text-[11px]" style={{ color: "var(--aegis-text-muted)" }}>
-                                    Redis {cache?.connected ? "Connected" : "Disconnected"}
+                            <div className="flex justify-between text-[12px] text-3 mt-1.5 tnum">
+                                <span>
+                                    <AnimatedNumber value={cache?.hit_rate_percent || 0} format={(v) => v.toFixed(0) + "% hit rate"} />
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${cache?.connected ? "bg-ok" : "bg-fail"}`} aria-hidden="true" />
+                                    Redis {cache?.connected ? "connected" : "off"}
                                 </span>
                             </div>
                         </div>
                     </>
                 )}
 
-                {/* Model Distribution */}
-                {agent?.model_distribution && modelTotal > 0 && (() => {
-                    // Compute provider-level aggregation
-                    const providers: Record<string, { count: number; color: string }> = {};
-                    const providerMap: Record<string, { label: string; color: string }> = {
-                        gemini: { label: "Gemini", color: "#7cadfb" },
-                        llama: { label: "Groq", color: "#fbbf24" },
-                        gpt: { label: "OpenAI", color: "#34d399" },
-                        o: { label: "OpenAI", color: "#34d399" },
-                        claude: { label: "Anthropic", color: "#c4b5fd" },
-                    };
-
-                    for (const [model, count] of Object.entries(agent.model_distribution)) {
-                        const prefix = Object.keys(providerMap).find((p) => model.startsWith(p)) || "other";
-                        const meta = providerMap[prefix] || { label: "Other", color: "#94a3b8" };
-                        const key = meta.label;
-                        if (!providers[key]) providers[key] = { count: 0, color: meta.color };
-                        providers[key].count += count;
-                    }
-
-                    return (
-                        <div className="space-y-2">
-                            <SectionLabel>Model Usage</SectionLabel>
-
-                            {/* Provider split bar */}
-                            <div className="metric-card">
-                                <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mb-2 w-full">
-                                    {Object.entries(providers).map(([label, { count, color }]) => {
-                                        const pct = ((count / modelTotal) * 100);
-                                        return (
-                                            <div key={label} className="flex items-center gap-1.5 text-[11px] font-medium whitespace-nowrap" style={{ color: "var(--aegis-text-2)" }}>
-                                                <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: color }} />
-                                                <span>{label}</span>
-                                                <span className="font-mono tnum" style={{ color: "var(--aegis-text)" }}>
-                                                    <AnimatedNumber value={pct} format={(v) => Math.round(v) + "%"} />
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                <div className="w-full h-1.5 rounded-full flex overflow-hidden gap-px" style={{ background: "var(--aegis-border)" }}>
-                                    {Object.entries(providers).map(([label, { count, color }]) => (
-                                        <div
-                                            key={label}
-                                            className="h-full transition-all duration-500"
-                                            style={{
-                                                width: `${((count / modelTotal) * 100).toFixed(1)}%`,
-                                                background: color,
-                                            }}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })()}
-
-
-
-                {/* ── LangSmith Traces trigger ── */}
-                {tracingEnabled && (
-                    <button
-                        onClick={onOpenTraces}
-                        className="w-full metric-card flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-white/5 cursor-pointer group"
-                    >
-                        <div className="flex items-center gap-2">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                            </svg>
-                            <span className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--aegis-text-muted)" }}>
-                                LangSmith Traces
-                            </span>
-                        </div>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-y-[-2px]">
-                            <path d="M7 17l9.2-9.2M17 17V7H7" />
-                        </svg>
-                    </button>
-                )}
-                {/* ── Database Section ── */}
                 {db && (
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--aegis-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14a9 3 0 0 0 18 0V5" /><path d="M3 12a9 3 0 0 0 18 0" />
-                                </svg>
-                                <SectionLabel>Database</SectionLabel>
-                            </div>
-                            {freshness && (
-                                <span className="text-[10px] font-mono" style={{ color: freshness.stale ? "var(--hold-text)" : "var(--aegis-success)" }}>
-                                    {freshness.stale ? "⚠" : "✓"} {freshness.text}
-                                </span>
-                            )}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <h3 className="section-label flex items-center gap-1.5">
+                            <Database size={12} aria-hidden="true" /> Live database
+                        </h3>
+                        <div className="db-grid mt-2">
                             {Object.entries(TABLE_META).map(([key, meta]) => {
                                 const table = db[key];
                                 if (!table) return null;
-                                const isActive = expanded === key;
                                 return (
                                     <button
                                         key={key}
-                                        onClick={() => handleCardClick(key)}
-                                        className="metric-card py-2 px-3 flex items-center justify-between gap-2 transition-colors duration-200 cursor-pointer text-left"
-                                        style={{
-                                            borderColor: isActive ? "var(--release)" : undefined,
-                                            background: isActive ? "rgba(59,130,246,0.08)" : undefined,
-                                        }}
+                                        type="button"
+                                        onClick={() => handleTableClick(key)}
+                                        className="db-cell"
+                                        aria-expanded={expanded === key}
+                                        aria-controls="db-preview"
                                     >
-                                        <span className="text-[11px]" style={{ color: "var(--aegis-text-2)" }}>
-                                            {meta.label}
-                                        </span>
-                                        <span className="text-sm font-bold font-mono tnum" style={{ color: isActive ? "var(--release-text)" : "var(--aegis-text)" }}>
-                                            {table.count}
-                                        </span>
+                                        <span className="text-[12px] text-2">{meta.label}</span>
+                                        <span className="font-mono tnum text-[13px] text-1">{table.count}</span>
                                     </button>
                                 );
                             })}
                         </div>
-
-                        {/* Expanded data table */}
                         {expanded && expandedMeta && (
-                            <div
-                                className="metric-card overflow-x-auto"
-                                style={{ maxHeight: "220px", overflowY: "auto", padding: 0 }}
-                            >
+                            <div id="db-preview" className="db-preview">
                                 {tableLoading ? (
-                                    <div className="flex items-center justify-center py-4 gap-2" style={{ color: "var(--aegis-text-muted)" }}>
-                                        <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                                        </svg>
-                                        <span className="text-[10px]">Loading…</span>
-                                    </div>
+                                    <p className="text-[12px] text-3 p-3 flex items-center gap-2">
+                                        <LoaderCircle size={13} className="animate-spin" aria-hidden="true" /> Loading…
+                                    </p>
                                 ) : tableRows.length === 0 ? (
-                                    <div className="text-[11px] text-center py-3" style={{ color: "var(--aegis-text-muted)" }}>No records</div>
+                                    <p className="text-[12px] text-3 p-3 text-center">No records</p>
                                 ) : (
-                                    <table className="w-full" style={{ borderCollapse: "collapse", fontSize: "11px" }}>
+                                    <table>
+                                        <caption className="sr-only">{expandedMeta.label} table preview</caption>
                                         <thead>
                                             <tr>
                                                 {expandedMeta.columns.map((col) => (
-                                                    <th
-                                                        key={col}
-                                                        className="text-left px-2 py-1.5 font-semibold uppercase tracking-wider sticky top-0"
-                                                        style={{ color: "var(--aegis-text-muted)", borderBottom: "1px solid var(--aegis-border)", background: "var(--aegis-surface-2)", fontSize: "9px" }}
-                                                    >
-                                                        {col.replace(/_/g, " ")}
-                                                    </th>
+                                                    <th key={col} scope="col">{col.replace(/_/g, " ")}</th>
                                                 ))}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {tableRows.map((row, i) => (
-                                                <tr
-                                                    key={i}
-                                                    className="transition-colors hover:bg-white/5"
-                                                    style={{ borderBottom: "1px solid var(--aegis-border)" }}
-                                                >
+                                                <tr key={i}>
                                                     {expandedMeta.columns.map((col) => (
-                                                        <td
-                                                            key={col}
-                                                            className="px-2 py-1"
-                                                            style={{ color: "var(--aegis-text-2)", whiteSpace: "nowrap" }}
-                                                            title={String(row[col] ?? "")}
-                                                        >
+                                                        <td key={col} title={String(row[col] ?? "")}>
                                                             {col === "amount" && typeof row[col] === "number"
                                                                 ? `$${(row[col] as number).toFixed(2)}`
                                                                 : truncate(row[col])}
@@ -447,7 +276,15 @@ export default function MetricsPanel({ metrics, onCacheCleared, onOpenTraces }: 
                         )}
                     </div>
                 )}
+
+                {tracingEnabled && (
+                    <button type="button" onClick={onOpenTraces} className="link-row">
+                        <Activity size={14} aria-hidden="true" />
+                        <span>LangSmith traces</span>
+                        <ArrowUpRight size={14} aria-hidden="true" className="ml-auto" />
+                    </button>
+                )}
             </div>
-        </div>
+        </aside>
     );
 }

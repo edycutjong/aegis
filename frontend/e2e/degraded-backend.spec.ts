@@ -43,3 +43,36 @@ test.describe("backend unreachable", () => {
         await expect(page.getByText(/Awaiting human approval/i)).toHaveCount(0);
     });
 });
+
+test.describe("rate-limited demo", () => {
+    test("explains a 429 instead of pretending to run", async ({ page }) => {
+        await page.route("**/api/chat", (route) =>
+            route.fulfill({
+                status: 429,
+                contentType: "application/json",
+                headers: { "access-control-allow-origin": "*" },
+                body: JSON.stringify({ detail: "Easy there. The demo allows 8 tickets every 10 minutes per visitor." }),
+            })
+        );
+        await page.route("**/api/metrics", (route) => route.abort());
+        await page.goto("/");
+
+        await page.getByRole("button", { name: /Double charge/i }).first().click();
+
+        const alert = page.locator(".notice");
+        await expect(alert).toContainText("catching its breath");
+        await expect(alert).toContainText("8 tickets every 10 minutes");
+        await expect(page.getByText("Rate limited")).toBeVisible();
+        await expect(page.getByText(/Awaiting you/i)).toHaveCount(0);
+    });
+
+    test("tells the visitor when the backend is unreachable", async ({ page }) => {
+        await page.route("**/api/**", (route) => route.abort());
+        await page.goto("/");
+        await expect(page.getByRole("status").filter({ hasText: "Offline" })).toBeVisible();
+
+        await page.getByRole("button", { name: /Double charge/i }).first().click();
+        await expect(page.locator(".notice")).toContainText("Can't reach the Aegis backend");
+        await expect(page.getByRole("button", { name: /Try again/i })).toBeVisible();
+    });
+});
