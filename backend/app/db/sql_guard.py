@@ -5,7 +5,7 @@ three independent layers, and it is the only one that can explain a rejection
 back to the model so the self-healing loop can repair the query:
 
   1. This guard  — parse with sqlglot, allow exactly one read-only SELECT over
-                   an allowlist of tables, deny side-effecting functions,
+                   an allowlist of tables and an allowlist of functions,
                    bound the row count.
   2. Postgres    — `execute_readonly_query` rejects non-SELECT text and runs
                    with a 5s statement_timeout.
@@ -22,13 +22,34 @@ from sqlglot import exp
 
 ALLOWED_TABLES = frozenset({"customers", "billing", "support_tickets", "internal_docs"})
 
-# Functions with side effects or that reach outside the query's own data.
-DENIED_FUNCTIONS = frozenset({
-    "pg_sleep", "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "pg_stat_file",
-    "lo_import", "lo_export", "lo_get", "dblink", "dblink_exec", "set_config",
-    "current_setting", "pg_terminate_backend", "pg_cancel_backend", "pg_reload_conf",
-    "txid_current", "nextval", "setval", "query_to_xml", "copy",
+# Functions are ALLOWLISTED, not denylisted: Postgres grants EXECUTE on
+# hundreds of functions to every role (lo_from_bytea writes, pg_advisory_lock
+# holds pooled connections, repeat('a', 1e9) exhausts memory), and a denylist
+# will always miss one. These are the aggregate, date, string and window
+# functions an investigation query actually needs. Names are sqlglot's
+# canonical ones (e.g. string_agg parses as group_concat).
+ALLOWED_FUNCTIONS = frozenset({
+    # aggregates
+    "count", "sum", "avg", "min", "max", "array_agg", "group_concat", "j_s_o_n_array_agg",
+    "logical_or", "logical_and", "bool_or", "bool_and",
+    # conditionals
+    "coalesce", "nullif", "greatest", "least", "if", "case",
+    # math
+    "abs", "round", "ceil", "floor",
+    # strings
+    "lower", "upper", "length", "concat", "trim", "substring", "str_position", "replace",
+    "left", "right", "initcap", "split_part",
+    # dates
+    "current_date", "current_timestamp", "extract", "timestamp_trunc", "date_trunc",
+    "time_to_str", "to_char", "date_part", "age", "cast", "try_cast",
+    # windows
+    "row_number", "rank", "dense_rank", "lag", "lead", "first_value", "last_value",
+    # json output shaping
+    "json_build_object", "jsonb_build_object", "json_object",
 })
+
+# Operator nodes that sqlglot models as Func subclasses.
+_OPERATORS = (exp.Binary, exp.Connector, exp.Predicate, exp.Unary, exp.In, exp.Between, exp.Case, exp.If)
 
 MAX_ROWS = 50
 
@@ -84,9 +105,16 @@ def check_sql(sql: str) -> GuardResult:
             return _reject(f"table '{name}' is not allowed (allowed: {allowed})")
 
     for func in tree.find_all(exp.Func):
-        fname = (func.sql_name() if not isinstance(func, exp.Anonymous) else func.name).lower()
-        if fname in DENIED_FUNCTIONS:
+        if isinstance(func, _OPERATORS):
+            continue  # AND/OR/IN/=/+ are Func subclasses in sqlglot, not calls
+        fname = (func.name if isinstance(func, exp.Anonymous) else func.sql_name()).lower()
+        if fname not in ALLOWED_FUNCTIONS:
             return _reject(f"function '{fname}' is not allowed")
+
+    # Casts to OID types (::regclass, ::regproc) resolve arbitrary catalog objects.
+    for cast in tree.find_all(exp.Cast):
+        if cast.to.sql().lower().startswith("reg"):
+            return _reject(f"cast to {cast.to.sql()} is not allowed")
 
     # Bound the result size at the outermost level.
     limit = tree.args.get("limit")

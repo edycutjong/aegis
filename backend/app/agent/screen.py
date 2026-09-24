@@ -17,6 +17,7 @@ the approval gate and SQL guard still stand behind them.
 """
 
 import re
+import unicodedata
 
 import httpx
 
@@ -28,26 +29,31 @@ PROMPT_GUARD_TIMEOUT_S = 3.0
 
 RULES: dict[str, re.Pattern] = {
     "instruction-override": re.compile(
-        r"\b(ignore|disregard|forget)\b.{0,20}\b(previous|prior|above|all|your)\b.{0,20}\b(instructions?|rules?|prompts?)\b"
-        r"|\byou are now\b|\b(admin|developer|god|jailbreak) mode\b|\bsystem prompt\b",
+        r"\b(ignore|disregard|forget|override)\b.{0,20}\b(previous|prior|above|all|your|earlier)\b.{0,20}"
+        r"\b(instructions?|rules?|prompts?|guidelines?)\b"
+        r"|\byou are now\b|\b(admin|developer|god|jailbreak|dan) mode\b"
+        r"|\b(reveal|print|show|repeat|ignore)\b.{0,15}\b(your|the)\s+system\s+prompt\b",
         re.IGNORECASE,
     ),
-    "role-spoofing": re.compile(r"</?\s*(system|assistant|user|developer)\s*>|\[(system|assistant)\]", re.IGNORECASE),
+    "role-spoofing": re.compile(r"</?\s*(system|assistant|developer)\s*>|\[(system|assistant)\]|^\s*system\s*:", re.IGNORECASE | re.MULTILINE),
     "approval-bypass": re.compile(
         r"\b(without|no|skip|bypass)\s+(human\s+|manager\s+)?(review|approval)\b|\bno approval needed\b"
-        r"|\bpre-?approved\b|\bemergency override\b|\bskips? approval\b"
-        r"|\bi\s*(am|'m)\s+the\s+(ceo|cto|cfo|owner|admin|administrator)\b",
+        r"|\bpre-?approved\b|\bemergency override\b|\bskips? (the )?approval\b"
+        r"|\bi\s*(am|'m)\s+the\s+(ceo|cto|cfo|owner|admin|administrator)\b.{0,80}"
+        r"\b(authori[sz]e|approve|override|immediately|no approval)\b",
         re.IGNORECASE,
     ),
     "data-exfiltration": re.compile(
-        r"\binformation_schema\b|\bpg_catalog\b|\bpg_(user|shadow|roles|authid|tables)\b|\bauth\.users\b"
-        r"|\b(write|run|execute|give me|show me)\b.{0,25}\b(sql|queries|query)\b"
-        r"|\b(every|all)\s+(row|rows|table|tables)\b"
+        r"\binformation_schema\b|\bpg_catalog\b|\bpg_(user|shadow|roles|authid|tables|stat\w*)\b|\bauth\.users\b"
+        r"|\b(write|give me|show me|generate)\b.{0,20}\b(sql|query)\b.{0,30}\b(lists?|dumps?|returns?|every|all)\b.{0,20}\b(tables?|rows?|users?|schemas?)\b"
         r"|\bjoin\b.{0,30}\b[a-z_]+\.[a-z_]+\b.{0,20}\btables?\b"
-        r"|\b(paste|dump|full text of)\b.{0,40}\b(documents?|docs|procedures?)\b",
+        r"|\b(paste|dump|full text of)\b.{0,40}\b(internal\s+)?(documents?|docs|procedures?)\b",
         re.IGNORECASE,
     ),
-    "hidden-text": re.compile("[‪-‮⁦-⁩​-‏]"),
+    # Bidi overrides, zero-width space/word-joiner, and Unicode tag characters
+    # (U+E0000 block, invisible "ASCII smuggling"). ZWJ/ZWNJ are excluded:
+    # they appear in ordinary emoji (👩‍💻) and in several scripts.
+    "hidden-text": re.compile("[\u202a-\u202e\u2066-\u2069\u200b\u2060\U000e0000-\U000e007f]"),
     "action-smuggling": re.compile(
         r'"type"\s*:\s*"(refund|credit|tier_change|suspend|reactivate|resolve)"'
         r"|\b(respond|reply|output)\b.{0,30}\baction type\b",
@@ -56,9 +62,22 @@ RULES: dict[str, re.Pattern] = {
 }
 
 
+def _normalize(message: str) -> str:
+    """Undo cheap obfuscation before matching: compatibility forms
+    (full-width letters), and hyphens inside words ("dis-regard")."""
+    text = unicodedata.normalize("NFKC", message)
+    return re.sub(r"(?<=[a-zA-Z])-(?=[a-zA-Z])", "", text)
+
+
 def rule_flags(message: str) -> list[str]:
     """Names of every deterministic rule the message trips."""
-    return [name for name, pattern in RULES.items() if pattern.search(message)]
+    normalized = _normalize(message)
+    return [
+        name for name, pattern in RULES.items()
+        # hidden-text must see the raw input: NFKC would not remove it anyway,
+        # but matching raw keeps the rule's intent obvious.
+        if pattern.search(message if name == "hidden-text" else normalized)
+    ]
 
 
 async def prompt_guard_score(message: str) -> float | None:
