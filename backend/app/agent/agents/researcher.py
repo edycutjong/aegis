@@ -31,7 +31,10 @@ TOP_K = 4
 _STOPWORDS = frozenset(
     "the and for with that this from have has his her their they them was were are "
     "you your our not but can will would could should about into what when which who "
-    "why how please customer says said wants want asks need needs account plan".split()
+    "why how please customer says said wants want asks need needs account plan "
+    # Ticket boilerplate that matches policy titles by accident
+    # ("process a refund" → "Account Deletion Process").
+    "process processed investigate confirm confirmed issue help month week today".split()
 )
 
 
