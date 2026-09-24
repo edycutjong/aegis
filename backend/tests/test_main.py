@@ -1530,3 +1530,51 @@ class TestTracesEndpoint:
                     # child_runs should be empty since chain-a/b parent isn't root
                     assert data["traces"][0]["child_runs"] == []
 
+
+
+class TestDemoProtection:
+    """Spend protection for the public demo."""
+
+    def test_rate_limited_request_returns_429_with_retry_after(self, client):
+        import app.main as main_mod
+        with patch.object(main_mod.rate_limiter, "check", return_value=(False, "slow down", 42)), \
+             patch("app.main._run_agent", new_callable=AsyncMock) as run:
+            response = client.post("/api/chat", json={"message": "Help with billing"})
+        assert response.status_code == 429
+        assert response.json()["detail"] == "slow down"
+        assert response.headers["retry-after"] == "42"
+        run.assert_not_called()
+
+    def test_per_client_limit_trips_after_budget(self, client):
+        import app.main as main_mod
+        limit = main_mod.rate_limiter.per_client
+        with patch("app.main._run_agent", new_callable=AsyncMock):
+            codes = [
+                client.post("/api/chat", json={"message": f"ticket {i}"}).status_code
+                for i in range(limit + 1)
+            ]
+        assert codes[:limit] == [200] * limit
+        assert codes[-1] == 429
+
+    def test_overlong_message_is_rejected(self, client):
+        response = client.post("/api/chat", json={"message": "x" * 5000})
+        assert response.status_code == 422
+
+    def test_thread_store_evicts_oldest(self):
+        import app.main as main_mod
+        saved = dict(main_mod.thread_store)
+        try:
+            main_mod.thread_store.clear()
+            for i in range(main_mod.MAX_THREADS):
+                main_mod.thread_store[f"t{i}"] = {}
+            main_mod._evict_old_threads()
+            assert "t0" not in main_mod.thread_store
+            assert len(main_mod.thread_store) == main_mod.MAX_THREADS - 1
+        finally:
+            main_mod.thread_store.clear()
+            main_mod.thread_store.update(saved)
+
+
+def test_cors_origins_accepts_comma_separated_list(mock_settings):
+    mock_settings.frontend_url = "https://aegis.vercel.app/, https://aegis.dev"
+    assert mock_settings.cors_origins == ["https://aegis.vercel.app", "https://aegis.dev"]
