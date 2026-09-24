@@ -16,7 +16,7 @@ Thanks for your interest in contributing to Aegis! Here's how to get started.
    ```bash
    cd backend
    python -m venv venv && source venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
    cp .env.example .env  # Fill in your API keys
    ```
 

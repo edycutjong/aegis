@@ -91,14 +91,14 @@ class SemanticCache:
         deleted = 0
         if self.redis:
             try:
-                cursor = "0"
-                while cursor:
+                cursor = 0
+                while True:
                     cursor, keys = await self.redis.scan(
                         cursor=cursor, match="aegis:cache:*", count=100
                     )
                     if keys:
                         deleted += await self.redis.delete(*keys)
-                    if cursor == "0":
+                    if int(cursor) == 0:
                         break
             except Exception as e:
                 print(f"[Cache] Failed to clear: {e}")
