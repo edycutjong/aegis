@@ -77,6 +77,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Retry-After"],  # lets the UI show a countdown on 429
 )
 
 
@@ -220,6 +221,7 @@ async def _run_agent(thread_id: str, message: str):
                         thread_store[thread_id]["final_response"] = update["final_response"]
                     if "customer_candidates" in update:
                         thread_store[thread_id]["customer_candidates"] = update["customer_candidates"]
+                    _record_sql(thread_store[thread_id], update)
 
         # Check if we hit an interrupt (HITL)
         state = agent_graph.get_state(config)
@@ -244,9 +246,33 @@ async def _run_agent(thread_id: str, message: str):
             tracker.complete_request(thread_id)
 
     except Exception as e:
+        message = public_error(e)
         thread_store[thread_id]["status"] = "error"
-        thread_store[thread_id]["thought_log"].append(f"✗ Error: {str(e)}")
-        print(f"[Agent Error] {thread_id}: {e}")
+        thread_store[thread_id]["error"] = message
+        thread_store[thread_id]["thought_log"].append(f"✗ Error: {message}")
+        print(f"[Agent Error] {thread_id}: {e}")  # full detail stays in server logs
+
+
+def public_error(error: Exception) -> str:
+    """User-safe error text. Raw provider errors carry account/org ids."""
+    text = f"{type(error).__name__} {error}"
+    if "429" in text or "RateLimit" in text or "ResourceExhausted" in text or "quota" in text.lower():
+        return "The model providers are rate-limiting this demo right now. Please try again in a minute."
+    if "Timeout" in text or "timed out" in text.lower():
+        return "A model provider timed out. Please try again."
+    return f"The agent workflow failed ({type(error).__name__})."
+
+
+def _record_sql(thread: dict, update: dict) -> None:
+    """Keep every SQL attempt (query + outcome) so the UI can show self-healing."""
+    attempts = thread.setdefault("sql_attempts", [])
+    if "sql_query" in update and update["sql_query"]:
+        attempts.append({"query": update["sql_query"], "error": None, "rows": None})
+    if attempts and ("sql_error" in update or "sql_result" in update):
+        last = attempts[-1]
+        error = update.get("sql_error") or None
+        last["error"] = str(error)[:300] if error else None
+        last["rows"] = None if error else len(update.get("sql_result") or [])
 
 
 @app.get("/api/stream/{thread_id}")
@@ -259,6 +285,7 @@ async def stream_thoughts(thread_id: str):
 
     async def event_generator():
         last_log_count = 0
+        last_sql = "[]"
 
         while True:
             thread = thread_store.get(thread_id)
@@ -280,6 +307,11 @@ async def stream_thoughts(thread_id: str):
                     }
                 last_log_count = len(current_log)
 
+            sql_snapshot = json.dumps(thread.get("sql_attempts", []))
+            if sql_snapshot != last_sql:
+                last_sql = sql_snapshot
+                yield {"event": "sql", "data": json.dumps({"attempts": thread.get("sql_attempts", [])})}
+
             # Check for status changes
             status = thread.get("status", "processing")
 
@@ -289,6 +321,7 @@ async def stream_thoughts(thread_id: str):
                     "data": json.dumps({
                         "action": thread.get("proposed_action"),
                         "message": "Human approval required",
+                        "sql_attempts": thread.get("sql_attempts", []),
                     }),
                 }
                 break
@@ -300,6 +333,7 @@ async def stream_thoughts(thread_id: str):
                         "response": thread.get("final_response"),
                         "thought_log": current_log,
                         "customer_candidates": thread.get("customer_candidates"),
+                        "sql_attempts": thread.get("sql_attempts", []),
                     }),
                 }
                 break
@@ -307,7 +341,7 @@ async def stream_thoughts(thread_id: str):
             elif status == "error":
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": "Agent workflow failed"}),
+                    "data": json.dumps({"error": thread.get("error") or "Agent workflow failed"}),
                 }
                 break
 

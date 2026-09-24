@@ -1578,3 +1578,68 @@ class TestDemoProtection:
 def test_cors_origins_accepts_comma_separated_list(mock_settings):
     mock_settings.frontend_url = "https://aegis.vercel.app/, https://aegis.dev"
     assert mock_settings.cors_origins == ["https://aegis.vercel.app", "https://aegis.dev"]
+
+
+class TestSqlVisibilityAndErrors:
+    """The trace UI shows every SQL attempt; errors reaching the UI are sanitized."""
+
+    def test_record_sql_tracks_attempts_and_outcomes(self):
+        from app.main import _record_sql
+        thread: dict = {}
+        _record_sql(thread, {"sql_query": "SELECT bad FROM customers"})
+        _record_sql(thread, {"sql_error": "column bad does not exist", "sql_result": []})
+        _record_sql(thread, {"sql_query": "SELECT * FROM customers"})
+        _record_sql(thread, {"sql_error": "", "sql_result": [{"id": 1}, {"id": 2}]})
+        _record_sql(thread, {"thought_log": ["unrelated"]})
+        assert thread["sql_attempts"] == [
+            {"query": "SELECT bad FROM customers", "error": "column bad does not exist", "rows": None},
+            {"query": "SELECT * FROM customers", "error": None, "rows": 2},
+        ]
+
+    def test_result_without_attempt_is_ignored(self):
+        from app.main import _record_sql
+        thread: dict = {}
+        _record_sql(thread, {"sql_result": []})
+        assert thread["sql_attempts"] == []
+
+    @pytest.mark.parametrize("error,expected", [
+        (Exception("Error code: 429 - org_01abc rate limit"), "rate-limiting"),
+        (type("ResourceExhausted", (Exception,), {})("quota"), "rate-limiting"),
+        (TimeoutError("timed out"), "timed out"),
+        (ValueError("secret org_01abc detail"), "(ValueError)"),
+    ])
+    def test_public_error_never_leaks_provider_text(self, error, expected):
+        from app.main import public_error
+        message = public_error(error)
+        assert expected in message
+        assert "org_01abc" not in message
+
+    def test_stream_emits_sql_snapshot_and_error_message(self, client):
+        from app.main import thread_store
+        thread_store["stream-err"] = {
+            "message": "t", "status": "error", "thought_log": [],
+            "sql_attempts": [{"query": "SELECT 1", "error": None, "rows": 1}],
+            "error": "The model providers are rate-limiting this demo right now.",
+        }
+        text = client.get("/api/stream/stream-err").text
+        del thread_store["stream-err"]
+        assert "event: sql" in text
+        assert "SELECT 1" in text
+        assert "rate-limiting this demo" in text
+
+    def test_stream_approval_includes_sql_attempts(self, client):
+        from app.main import thread_store
+        thread_store["stream-gate"] = {
+            "message": "t", "status": "awaiting_approval", "thought_log": [],
+            "proposed_action": {"type": "refund"},
+            "sql_attempts": [{"query": "SELECT 2", "error": None, "rows": 0}],
+        }
+        text = client.get("/api/stream/stream-gate").text
+        del thread_store["stream-gate"]
+        assert "approval_required" in text and "SELECT 2" in text
+
+    def test_retry_after_is_exposed_to_browsers(self, client):
+        import app.main as main_mod
+        with patch.object(main_mod.rate_limiter, "check", return_value=(False, "slow", 9)):
+            response = client.post("/api/chat", json={"message": "x"}, headers={"Origin": "http://localhost:3000"})
+        assert "retry-after" in response.headers.get("access-control-expose-headers", "").lower()
