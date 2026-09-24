@@ -16,7 +16,6 @@ class Settings:
     # Supabase
     supabase_url: str = ""
     supabase_key: str = ""
-    supabase_db_url: str = ""
 
     # LLM API Keys
     openai_api_key: str = ""
@@ -53,7 +52,6 @@ class Settings:
         """Load from environment variables."""
         self.supabase_url = os.getenv("SUPABASE_URL", self.supabase_url)
         self.supabase_key = os.getenv("SUPABASE_KEY", self.supabase_key)
-        self.supabase_db_url = os.getenv("SUPABASE_DB_URL", self.supabase_db_url)
 
         self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", self.anthropic_api_key)

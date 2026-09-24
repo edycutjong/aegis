@@ -15,6 +15,7 @@ invented a $5 credit where policy says 50% of the monthly bill. Caught by the
 
 import re
 
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.agent.state import AgentState
@@ -71,7 +72,7 @@ def rank_docs(docs: list[dict], ticket: str, intent: str | None, k: int = TOP_K)
 
 
 @traceable(name="search_docs")
-async def search_docs(state: AgentState, config: dict | None = None) -> dict:
+async def search_docs(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Search internal documentation for relevant policies/procedures."""
     db = get_supabase()
     docs = rank_docs(await db.list_docs(), state["user_message"], state.get("intent"))

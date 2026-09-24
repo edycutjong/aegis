@@ -9,6 +9,7 @@ This classification determines how downstream agents investigate the issue.
 
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.agent.state import AgentState
@@ -25,7 +26,7 @@ AGENT_DESCRIPTION = (
 
 
 @traceable(name="screen_input")
-async def screen_input(state: AgentState, config: dict | None = None) -> dict:
+async def screen_input(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Screen the raw ticket for prompt-injection before any LLM reads it."""
     flags, score = await screen(state["user_message"])
     score_note = f"prompt-guard {score:.3f}" if score is not None else "prompt-guard unavailable"
@@ -43,7 +44,7 @@ async def screen_input(state: AgentState, config: dict | None = None) -> dict:
 
 
 @traceable(name="classify_intent")
-async def classify_intent(state: AgentState, config: dict | None = None) -> dict:
+async def classify_intent(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Classify the user's support ticket into a category.
 
     Uses the FAST/CHEAP model — this is simple classification.

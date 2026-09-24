@@ -11,7 +11,6 @@ class SupabaseClient:
         settings = get_settings()
         self.url = settings.supabase_url
         self.key = settings.supabase_key
-        self.db_url = settings.supabase_db_url
         self.headers = {
             "apikey": self.key,
             "Authorization": f"Bearer {self.key}",
@@ -42,63 +41,22 @@ class SupabaseClient:
                     "status_code": response.status_code,
                 }
 
-    async def get_customer(self, customer_id: int) -> dict | None:
-        """Fetch a customer by ID."""
+    async def search_customers(self, name_parts: list[str], limit: int = 5) -> list[dict]:
+        """Case-insensitive name search via PostgREST filters.
+
+        Parameters travel as query-string filters, never interpolated into
+        SQL, so a ticket's text cannot change the shape of the lookup.
+        """
+        terms = [p.replace("*", "").replace(",", "").replace("(", "").replace(")", "") for p in name_parts]
+        terms = [t for t in terms if t]
+        if not terms:
+            return []
+        filters = ",".join(f"name.ilike.*{t}*" for t in terms)
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 f"{self.url}/rest/v1/customers",
                 headers={**self.headers, "Accept": "application/json"},
-                params={"id": f"eq.{customer_id}", "select": "*"},
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data[0] if data else None
-            return None
-
-    async def get_customer_billing(self, customer_id: int) -> list[dict]:
-        """Fetch billing records for a customer."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{self.url}/rest/v1/billing",
-                headers={**self.headers, "Accept": "application/json"},
-                params={
-                    "customer_id": f"eq.{customer_id}",
-                    "select": "*",
-                    "order": "created_at.desc",
-                    "limit": "20",
-                },
-            )
-            if response.status_code == 200:
-                return response.json()
-            return []
-
-    async def get_support_tickets(self, customer_id: int) -> list[dict]:
-        """Fetch support tickets for a customer."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{self.url}/rest/v1/support_tickets",
-                headers={**self.headers, "Accept": "application/json"},
-                params={
-                    "customer_id": f"eq.{customer_id}",
-                    "select": "*",
-                    "order": "created_at.desc",
-                },
-            )
-            if response.status_code == 200:
-                return response.json()
-            return []
-
-    async def search_docs(self, query: str, limit: int = 5) -> list[dict]:
-        """Search internal documentation by keyword."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{self.url}/rest/v1/internal_docs",
-                headers={**self.headers, "Accept": "application/json"},
-                params={
-                    "or": f"(title.ilike.%{query}%,content.ilike.%{query}%,category.ilike.%{query}%)",
-                    "select": "id,title,content,category",
-                    "limit": str(limit),
-                },
+                params={"select": "id,name,email,plan,status", "and": f"({filters})", "limit": str(limit)},
             )
             if response.status_code == 200:
                 return response.json()

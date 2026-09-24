@@ -14,6 +14,7 @@ import json
 import time
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.agent.state import AgentState
@@ -30,49 +31,143 @@ AGENT_DESCRIPTION = (
 )
 
 
-def _detect_already_resolved(sql_results: list, user_message: str) -> dict | None:
+def _detect_already_resolved(sql_results: list, customer: dict | None) -> dict | None:
     """Check if billing data shows the issue was already resolved.
 
-    Scans SQL results for refund/credit records that indicate a prior
-    resolution (e.g., a 'Duplicate charge refund' already exists).
-    Returns a pre-built 'resolve' action dict, or None.
+    Looks for a completed or in-flight (pending) refund/credit whose
+    description marks it as a duplicate-charge fix, on the validated
+    customer's own records. Returns a pre-built 'resolve' action, or None.
+    Failed refunds don't count: the customer is still owed the money.
     """
     if not sql_results or not isinstance(sql_results, list):
         return None
+    customer_id = (customer or {}).get("id")
 
-    refunds = [
-        r for r in sql_results
-        if isinstance(r, dict) and r.get("type") in ("refund", "credit")
-    ]
-    if not refunds:
-        return None
-
-    for refund in refunds:
-        refund_amt = float(refund.get("amount", 0))
-        desc = (refund.get("description") or "").lower()
+    for row in sql_results:
+        if not isinstance(row, dict) or row.get("type") not in ("refund", "credit"):
+            continue
+        if row.get("status", "completed") not in ("completed", "pending"):
+            continue
+        # Billing rows carry `id` = billing id; the customer is `customer_id`.
+        if customer_id is not None and row.get("customer_id") not in (None, customer_id):
+            continue
+        desc = (row.get("description") or "").lower()
         if "duplicate" in desc or "double" in desc:
-            # Extract customer info from the first record that has it
-            customer_id = None
-            customer_name = None
-            for row in sql_results:
-                if isinstance(row, dict) and (row.get("id") or row.get("customer_id")):
-                    customer_id = row.get("id") or row.get("customer_id")
-                    customer_name = row.get("name") or row.get("customer_name")
-                    break
+            amount = _to_amount(row.get("amount")) or 0.0
+            state_word = "is already being processed" if row.get("status") == "pending" else "was already processed"
             return {
                 "type": "resolve",
                 "amount": None,
                 "customer_id": customer_id,
-                "customer_name": customer_name or "Unknown",
-                "description": (
-                    f"Issue already resolved — a refund of ${refund_amt:.2f} "
-                    f"was previously processed ({desc})"
-                ),
-                "reason": (
-                    "Billing records show a refund has already been applied "
-                    "for this issue. No further action needed."
-                ),
+                "customer_name": (customer or {}).get("name", "Unknown"),
+                "description": f"Issue already resolved — a refund of ${amount:.2f} {state_word} ({desc})",
+                "reason": "Billing records show this charge has already been refunded. No further action needed.",
             }
+    return None
+
+
+MUTATING_TYPES = frozenset({"refund", "credit", "tier_change", "suspend", "reactivate"})
+
+
+def _to_amount(value) -> float | None:
+    """Parse an LLM-supplied amount ("49", "49.00", "$49", 49) into a float."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        amount = float(str(value).replace("$", "").replace(",", "").strip())
+    except ValueError:
+        return None
+    return amount if amount == amount and amount not in (float("inf"), float("-inf")) else None
+
+
+def _max_charge(sql_results: list, customer_id) -> float | None:
+    """Largest charge on the customer's own records — the ceiling for any refund/credit."""
+    parsed = (
+        _to_amount(r.get("amount"))
+        for r in sql_results or []
+        if isinstance(r, dict) and r.get("type") == "charge"
+        and (customer_id is None or r.get("customer_id") in (None, customer_id))
+    )
+    charges = [c for c in parsed if c is not None]
+    return max(charges) if charges else None
+
+
+def _escalate(action: dict, description: str, reason: str) -> dict:
+    return {**action, "type": "escalate", "amount": None, "description": description, "reason": reason}
+
+
+def _enforce_invariants(action: dict, state: AgentState) -> dict:
+    """Deterministic rules applied after the model speaks, on every path.
+
+    Enforced in code rather than in the prompt, because the prompt is exactly
+    what a prompt injection attacks. Order matters: the injection override
+    runs last so nothing can undo it.
+    """
+    action = dict(action)
+    customer = state.get("customer") or {}
+
+    # 1. Identity comes from validation, never from the model or the SQL rows.
+    if customer.get("id") is not None:
+        action["customer_id"] = customer["id"]
+        action["customer_name"] = customer.get("name")
+    else:
+        action["customer_id"] = None
+        action["customer_name"] = "Unverified"
+        if action.get("type") in MUTATING_TYPES:
+            action = _escalate(
+                action,
+                f"No verified customer — escalating for manual review. Original proposal: {action.get('type')}.",
+                "Account and money actions require a customer verified by ID or exact name.",
+            )
+
+    # 2. Money moves only within what the billing evidence supports.
+    if action.get("type") in ("refund", "credit"):
+        amount = _to_amount(action.get("amount"))
+        ceiling = _max_charge(state.get("sql_result", []), customer.get("id"))
+        if amount is None or amount <= 0:
+            action = _escalate(action, "Proposed amount was missing or invalid — escalating.",
+                               f"The model proposed a {action['type']} without a usable amount.")
+        elif ceiling is None or amount > ceiling:
+            action = _escalate(
+                action,
+                f"Proposed {action['type']} of ${amount:.2f} is not supported by the billing records — escalating.",
+                f"Largest charge on record: {'none found' if ceiling is None else f'${ceiling:.2f}'}.",
+            )
+        else:
+            action["amount"] = round(amount, 2)
+    else:
+        action["amount"] = None
+
+    # 3. Screened tickets always go to a human. The model's text is dropped
+    #    rather than quoted, so complied-with content cannot ride along.
+    risk_flags = state.get("risk_flags") or []
+    if risk_flags and action.get("type") != "escalate":
+        proposed = action.get("type", "unknown")
+        action = _escalate(
+            action,
+            f"Escalated for human review — ticket flagged by input screening ({', '.join(risk_flags)}).",
+            f"Flagged tickets never complete autonomously. The model proposed '{proposed}'; a human decides.",
+        )
+    return action
+
+
+def _parse_action(raw: str) -> dict | None:
+    """Parse the model's JSON action, tolerating markdown fences and prose."""
+    text = raw.strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())  # the pattern only matches {...}
+        except json.JSONDecodeError:
+            return None
     return None
 
 
@@ -81,7 +176,7 @@ def _detect_already_resolved(sql_results: list, user_message: str) -> dict | Non
 # ─────────────────────────────────────────────────────────────
 
 @traceable(name="propose_action")
-async def propose_action(state: AgentState, config: dict | None = None) -> dict:
+async def propose_action(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Synthesize all findings and propose an action.
 
     Uses the SMART model for critical reasoning.
@@ -94,33 +189,21 @@ async def propose_action(state: AgentState, config: dict | None = None) -> dict:
     # Check if we actually found a valid customer in the SQL results
     sql_results = state.get("sql_result", [])
 
-    # ── Pre-check: already resolved? ──
-    already = _detect_already_resolved(sql_results, state["user_message"])
-    if already:
-        return {
-            "proposed_action": already,
-            "active_agent": AGENT_NAME,
-            "thought_log": state.get("thought_log", []) + [
-                f"✓ [{AGENT_NAME}] {already['description']}"
-            ],
-        }
-
-    # The customer validated upstream is the source of truth. Guessing from
-    # the SQL rows is only a fallback: the LLM's query decides which columns
-    # come back, and billing rows carry `customer_id` but no `name`, so a
-    # real, validated customer would otherwise read as "not found".
+    # ── Pre-check: already resolved? (still subject to the invariants) ──
     validated = state.get("customer") or {}
+    already = _detect_already_resolved(sql_results, validated)
+    if already:
+        return _proposal(_enforce_invariants(already, state), state)
+
+    # The customer validated upstream is the only source of identity. Billing
+    # rows carry `customer_id` but no `name`, and the LLM's query decides
+    # which columns come back, so SQL rows are never used to infer identity.
     has_valid_customer = bool(validated.get("id"))
-    if not has_valid_customer and sql_results and isinstance(sql_results, list):
-        for row in sql_results:
-            if isinstance(row, dict) and row.get("id") and row.get("name"):
-                has_valid_customer = True
-                break
 
     customer_guard = ""
     if not has_valid_customer:
         customer_guard = """
-CRITICAL: The SQL investigation found NO matching customer in the database.
+CRITICAL: No customer was verified for this ticket.
 You MUST NOT propose refund, credit, or tier_change actions for non-existent customers.
 Instead, use "escalate" with a description explaining the customer was not found,
 or use "resolve" if the ticket can be closed without action.
@@ -198,75 +281,16 @@ Propose the best action:"""),
             response.usage_metadata.get("output_tokens", 0),
         )
 
-    # Parse the proposed action (with regex fallback for markdown-fenced JSON)
-    action = None
-    raw = (response.content or "").strip()
-    # Try 1: direct parse after stripping markdown fences
-    try:
-        action = json.loads(raw.strip("`").strip("json").strip())
-    except (json.JSONDecodeError, AttributeError):
-        pass
+    action = _parse_action(response.content or "") or {
+        "type": "escalate",
+        "amount": None,
+        "description": "Unable to determine action — escalating to human manager",
+        "reason": "The AI could not confidently parse a resolution.",
+    }
+    return _proposal(_enforce_invariants(action, state), state)
 
-    # Try 2: regex extract first JSON object from response
-    if action is None:
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', raw, re.DOTALL)
-        if json_match:
-            try:
-                action = json.loads(json_match.group())
-            except (json.JSONDecodeError, AttributeError):
-                pass
 
-    # Fallback: escalate
-    if action is None:
-        action = {
-            "type": "escalate",
-            "amount": None,
-            "customer_id": None,
-            "customer_name": "Unknown",
-            "description": "Unable to determine action — escalating to human manager",
-            "reason": "The AI could not confidently parse a resolution.",
-        }
-
-    # ── Deterministic correction: override LLM-hallucinated customer info ──
-    # Extract the real customer_id and customer_name from SQL results
-    real_customer_id = validated.get("id")
-    real_customer_name = validated.get("name")
-    if real_customer_id is None and sql_results and isinstance(sql_results, list):
-        for row in sql_results:
-            if isinstance(row, dict):
-                # Look for customer ID — could be 'id' or 'customer_id'
-                cid = row.get("id") or row.get("customer_id")
-                cname = row.get("name") or row.get("customer_name")
-                if cid and cname:
-                    real_customer_id = cid
-                    real_customer_name = cname
-                    break
-
-    if real_customer_id is not None:
-        action["customer_id"] = real_customer_id
-        action["customer_name"] = real_customer_name
-    elif action.get("type") in ("refund", "credit", "tier_change", "suspend", "reactivate"):
-        # No real customer found but LLM proposed a mutating action — force escalate
-        action["type"] = "escalate"
-        action["customer_id"] = None
-        action["customer_name"] = "Not Found"
-        action["description"] = f"Customer not found in database — escalating for manual review. Original proposal: {action.get('description', '')}"
-        action["reason"] = "Cannot execute actions for unverified customers."
-
-    # ── Deterministic: screened tickets always go to a human ──
-    # Enforced here, not in the prompt, because the prompt is what an
-    # injection attacks. The model's text is dropped rather than quoted, so a
-    # complied-with exfiltration request cannot ride along in the description.
-    risk_flags = state.get("risk_flags") or []
-    if risk_flags and action.get("type") != "escalate":
-        proposed = action.get("type", "unknown")
-        action.update({
-            "type": "escalate",
-            "amount": None,
-            "description": f"Escalated for human review — ticket flagged by input screening ({', '.join(risk_flags)}).",
-            "reason": f"Flagged tickets never complete autonomously. The model proposed '{proposed}'; a human decides.",
-        })
-
+def _proposal(action: dict, state: AgentState) -> dict:
     return {
         "proposed_action": action,
         "active_agent": AGENT_NAME,
@@ -281,10 +305,10 @@ Propose the best action:"""),
 # ─────────────────────────────────────────────────────────────
 
 @traceable(name="await_approval")
-async def await_approval(state: AgentState, config: dict | None = None) -> dict:
+async def await_approval(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Pause the workflow and wait for human approval.
 
-    This is the core HITL mechanism (Flex 1).
+    This is the core HITL mechanism.
     The LangGraph interrupt() function literally pauses execution
     and waits for a resume command with the human's decision.
     """
@@ -355,7 +379,7 @@ def should_execute(state: AgentState) -> str:
 
 
 @traceable(name="execute_action")
-async def execute_action(state: AgentState, config: dict | None = None) -> dict:
+async def execute_action(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Execute the approved action (recommendation-only — no database writes).
 
     Returns a descriptive result string based on the proposed action type.
@@ -364,7 +388,7 @@ async def execute_action(state: AgentState, config: dict | None = None) -> dict:
     action = state.get("proposed_action", {})
     action_type = action.get("type", "unknown")
     customer_name = action.get("customer_name", "Unknown")
-    amount = action.get("amount") or 0
+    amount = _to_amount(action.get("amount")) or 0.0
 
     results = {
         "refund": f"Refund of ${amount:.2f} recommended for {customer_name}. Awaiting finance team processing.",
@@ -404,7 +428,7 @@ def _customer_label(state: AgentState) -> str:
 # ─────────────────────────────────────────────────────────────
 
 @traceable(name="generate_response")
-async def generate_response(state: AgentState, config: dict | None = None) -> dict:
+async def generate_response(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Generate a final human-readable summary response."""
 
     # If validate_customer already set a final_response (not found, mismatch, etc.),
@@ -462,7 +486,7 @@ Internal documentation:
 
 Proposed action: {action.get('type', 'none')} — {action.get('description', 'None')}
 Action reason: {action.get('reason', 'N/A')}
-Action amount: ${action.get('amount', 0) or 0:.2f}
+Action amount: ${_to_amount(action.get('amount')) or 0.0:.2f}
 Action status: {'Approved and executed' if approved else f'Denied by manager — {denied_reason}' if denied_reason else 'Denied by manager'}
 Execution result: {execution if approved else 'N/A'}
 

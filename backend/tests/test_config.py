@@ -74,12 +74,6 @@ class TestSettingsAllEnvFields:
             s = Settings()
             assert s.supabase_key == "anon-key-123"
 
-    def test_supabase_db_url_from_env(self):
-        with patch.dict(os.environ, {"SUPABASE_DB_URL": "postgresql://u:p@host/db"}, clear=False):
-            get_settings.cache_clear()
-            s = Settings()
-            assert s.supabase_db_url == "postgresql://u:p@host/db"
-
     def test_openai_api_key_from_env(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-openai-test"}, clear=False):
             get_settings.cache_clear()

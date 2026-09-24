@@ -399,7 +399,7 @@ class TestWriteSqlAsync:
         state = _make_full_state("Customer #8 billing issue")
         state["intent"] = "billing"
 
-        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
+        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             result = await write_sql(state)
@@ -417,7 +417,7 @@ class TestWriteSqlAsync:
         state["sql_error"] = "relation 'users' does not exist"
         state["sql_query"] = "SELECT * FROM users"
 
-        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
+        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             await write_sql(state)
@@ -576,7 +576,8 @@ class TestProposeActionAsync:
 
         state = _make_full_state("I was double charged")
         state["intent"] = "billing"
-        state["sql_result"] = [{"id": 8, "name": "David Martinez", "amount": 29.99}]
+        state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
+        state["sql_result"] = [{"id": 71, "customer_id": 8, "amount": 29.99, "type": "charge"}]
         state["docs_context"] = "Refund policy..."
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -642,7 +643,8 @@ class TestProposeActionAsync:
 
         state = _make_full_state("refund")
         state["intent"] = "billing"
-        state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
+        state["sql_result"] = [{"id": 71, "customer_id": 8, "amount": 29.99, "type": "charge"}]
         state["docs_context"] = ""
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -660,10 +662,11 @@ class TestProposeActionAsync:
 
         state = _make_full_state("Customer #8 David Martinez says he was charged $49 twice")
         state["intent"] = "billing"
+        state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
         state["sql_result"] = [
-            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "refund", "description": "Duplicate charge refund"},
-            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
-            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
+            {"id": 30, "customer_id": 8, "amount": "49.00", "type": "refund", "status": "pending", "description": "Duplicate charge refund"},
+            {"id": 29, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
+            {"id": 28, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
         ]
         state["docs_context"] = "Refund policy..."
 
@@ -691,9 +694,10 @@ class TestProposeActionAsync:
 
         state = _make_full_state("Customer #8 David Martinez says he was charged $49 twice")
         state["intent"] = "billing"
+        state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
         state["sql_result"] = [
-            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
-            {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
+            {"id": 29, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription (DUPLICATE)"},
+            {"id": 28, "customer_id": 8, "amount": "49.00", "type": "charge", "description": "Pro plan - Monthly subscription"},
         ]
         state["docs_context"] = "Refund policy..."
 
@@ -712,7 +716,7 @@ class TestProposeActionAsync:
         sql_result = [
             {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "refund", "description": "Courtesy credit for downtime"},
         ]
-        result = _detect_already_resolved(sql_result, "I was double charged")
+        result = _detect_already_resolved(sql_result, None)
         assert result is None
 
     @pytest.mark.asyncio
@@ -725,7 +729,8 @@ class TestProposeActionAsync:
 
         state = _make_full_state("I was double charged")
         state["intent"] = "billing"
-        state["sql_result"] = [{"id": 8, "name": "David Martinez"}]
+        state["customer"] = {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"}
+        state["sql_result"] = [{"id": 71, "customer_id": 8, "amount": 29.99, "type": "charge"}]
         state["docs_context"] = ""
 
         with patch("app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm), \
@@ -919,52 +924,22 @@ class TestGenerateResponseAsync:
 
 
 class TestSearchCustomersByName:
-    """Test _search_customers_by_name helper."""
+    """_search_customers_by_name delegates to the parameterized REST search."""
 
     @pytest.mark.asyncio
-    async def test_multi_word_name(self):
-        """Multi-word name → splits into first/last for query."""
+    async def test_multi_word_name_uses_first_and_last(self):
         mock_db = MagicMock()
-        mock_db.execute_sql = AsyncMock(return_value={
-            "success": True,
-            "data": [{"id": 8, "name": "David Martinez"}],
-        })
-        result = await _search_customers_by_name(mock_db, "David Martinez")
-        assert len(result) == 1
-        assert result[0]["name"] == "David Martinez"
-        # Verify the SQL used both first and last name
-        call_sql = mock_db.execute_sql.call_args[0][0]
-        assert "david" in call_sql.lower()
-        assert "martinez" in call_sql.lower()
+        mock_db.search_customers = AsyncMock(return_value=[{"id": 8, "name": "David Martinez"}])
+        result = await _search_customers_by_name(mock_db, "David Alan Martinez")
+        assert result == [{"id": 8, "name": "David Martinez"}]
+        mock_db.search_customers.assert_awaited_once_with(["David", "Martinez"])
 
     @pytest.mark.asyncio
     async def test_single_word_name(self):
-        """Single-word name → LIKE '%name%' query (L131-136)."""
         mock_db = MagicMock()
-        mock_db.execute_sql = AsyncMock(return_value={
-            "success": True,
-            "data": [{"id": 5, "name": "Emily"}],
-        })
-        result = await _search_customers_by_name(mock_db, "Emily")
-        assert len(result) == 1
-        call_sql = mock_db.execute_sql.call_args[0][0]
-        assert "emily" in call_sql.lower()
-
-    @pytest.mark.asyncio
-    async def test_no_results(self):
-        """When execute_sql succeeds but returns empty data (L139-140)."""
-        mock_db = MagicMock()
-        mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": []})
-        result = await _search_customers_by_name(mock_db, "Nobody Here")
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_query_failure_returns_empty(self):
-        """When execute_sql fails, return empty list."""
-        mock_db = MagicMock()
-        mock_db.execute_sql = AsyncMock(return_value={"success": False, "error": "timeout"})
-        result = await _search_customers_by_name(mock_db, "Test User")
-        assert result == []
+        mock_db.search_customers = AsyncMock(return_value=[])
+        assert await _search_customers_by_name(mock_db, "Emily") == []
+        mock_db.search_customers.assert_awaited_once_with(["Emily"])
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1048,7 +1023,7 @@ class TestWriteSqlTokenTracking:
         state["intent"] = "billing"
 
         mock_metrics = MagicMock()
-        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
+        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await write_sql(state)
@@ -1285,7 +1260,7 @@ class TestWriteSqlModelNameFallback:
         state = _make_full_state("Customer #8 billing")
         state["intent"] = "billing"
 
-        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=llm), \
+        with patch("app.agent.agents.investigator.get_model", return_value=llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = mock_metrics
             await write_sql(state)
@@ -1365,10 +1340,10 @@ class TestDetectAlreadyResolvedEdgeCases:
         from app.agent.agents.resolver import _detect_already_resolved
 
         sql_result = [
-            {"id": 8, "name": "David Martinez", "amount": "15.00", "type": "credit",
+            {"id": 44, "customer_id": 8, "amount": "15.00", "type": "credit",
              "description": "Courtesy credit for duplicate billing"},
         ]
-        result = _detect_already_resolved(sql_result, "I was double charged")
+        result = _detect_already_resolved(sql_result, {"id": 8, "name": "David Martinez"})
         assert result is not None
         assert result["type"] == "resolve"
         assert result["customer_id"] == 8
@@ -1379,20 +1354,20 @@ class TestDetectAlreadyResolvedEdgeCases:
         from app.agent.agents.resolver import _detect_already_resolved
 
         sql_result = [
-            {"id": 8, "name": "David Martinez", "type": "refund",
+            {"id": 44, "customer_id": 8, "type": "refund",
              "description": "Duplicate charge refund"},
         ]
-        result = _detect_already_resolved(sql_result, "I was double charged")
+        result = _detect_already_resolved(sql_result, {"id": 8, "name": "David Martinez"})
         assert result is not None
         assert "$0.00" in result["description"]
 
     def test_empty_sql_results_returns_none(self):
         from app.agent.agents.resolver import _detect_already_resolved
-        assert _detect_already_resolved([], "double charge") is None
+        assert _detect_already_resolved([], None) is None
 
     def test_non_list_sql_results_returns_none(self):
         from app.agent.agents.resolver import _detect_already_resolved
-        assert _detect_already_resolved(None, "double charge") is None
+        assert _detect_already_resolved(None, None) is None
 
 
 
@@ -1502,7 +1477,7 @@ class TestValidatedCustomerFlowsDownstream:
         state = _make_full_state("Customer #777 Kevin Lee asks why he was charged")
         state["customer"] = {"id": 12, "name": "Kevin Lee"}
 
-        with patch("app.agent.agents.investigator.get_model_for_intent", return_value=mock_llm), \
+        with patch("app.agent.agents.investigator.get_model", return_value=mock_llm), \
              patch("app.agent.agents.investigator.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             await write_sql(state)
@@ -1647,3 +1622,38 @@ def test_ticket_boilerplate_does_not_pull_unrelated_policies():
     ]
     ranked = rank_docs(docs, "Charged twice. Please investigate and process a refund if confirmed.", "billing")
     assert [d["title"] for d in ranked] == ["Refund Policy"]
+
+
+class TestAlreadyResolvedScope:
+    def test_failed_refunds_do_not_count(self):
+        from app.agent.agents.resolver import _detect_already_resolved
+        rows = [{"id": 5, "customer_id": 8, "type": "refund", "status": "failed",
+                 "amount": 49, "description": "Duplicate charge refund"}]
+        assert _detect_already_resolved(rows, {"id": 8, "name": "D"}) is None
+
+    def test_other_customers_refunds_do_not_count(self):
+        from app.agent.agents.resolver import _detect_already_resolved
+        rows = [{"id": 5, "customer_id": 9, "type": "refund", "amount": 49,
+                 "description": "Duplicate charge refund"}]
+        assert _detect_already_resolved(rows, {"id": 8, "name": "D"}) is None
+
+
+class TestParseAction:
+    def test_invalid_json_object_in_prose_returns_none(self):
+        from app.agent.agents.resolver import _parse_action
+        assert _parse_action("Here you go: {not: valid}") is None
+
+    def test_non_object_json_returns_none(self):
+        from app.agent.agents.resolver import _parse_action
+        assert _parse_action('["refund"]') is None
+
+    def test_trailing_json_keyword_is_not_eaten(self):
+        """Regression: .strip("json") stripped characters, not a prefix."""
+        from app.agent.agents.resolver import _parse_action
+        assert _parse_action('```json\n{"type": "resolve", "note": "sent json"}\n```') == {
+            "type": "resolve", "note": "sent json"}
+
+
+def test_parse_action_extracts_json_from_prose():
+    from app.agent.agents.resolver import _parse_action
+    assert _parse_action('Sure! {"type": "resolve"} Hope that helps.') == {"type": "resolve"}

@@ -11,10 +11,11 @@ This agent produces the raw evidence that downstream agents use for decisions.
 from difflib import SequenceMatcher
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model_for_intent, resolved_model_name
+from app.routing.model_router import get_model, resolved_model_name
 from app.db.supabase import get_supabase
 from app.db.sql_guard import check_sql
 from app.observability.tracker import get_tracker
@@ -86,27 +87,9 @@ _FUZZY_THRESHOLD = 0.75  # "Davd Martinez" vs "David Martinez" ≈ 0.93
 
 
 async def _search_customers_by_name(db, name: str) -> list[dict]:
-    """Search customers by name (case-insensitive partial match)."""
-    # Split into parts for better matching
+    """Search customers by name (case-insensitive; every name part must match)."""
     parts = name.strip().split()
-    if len(parts) >= 2:
-        # Search by first AND last name
-        query = (
-            f"SELECT id, name, email, plan, status FROM customers "
-            f"WHERE LOWER(name) LIKE '%{parts[0].lower()}%' "
-            f"AND LOWER(name) LIKE '%{parts[-1].lower()}%' "
-            f"LIMIT 5"
-        )
-    else:
-        query = (
-            f"SELECT id, name, email, plan, status FROM customers "
-            f"WHERE LOWER(name) LIKE '%{name.lower()}%' "
-            f"LIMIT 5"
-        )
-    result = await db.execute_sql(query)
-    if result["success"] and result.get("data"):
-        return result["data"]
-    return []
+    return await db.search_customers([parts[0], parts[-1]] if len(parts) >= 2 else parts)
 
 
 def _status_warning(customer: dict) -> str | None:
@@ -124,7 +107,7 @@ def _status_warning(customer: dict) -> str | None:
 # ─────────────────────────────────────────────────────────────
 
 @traceable(name="validate_customer")
-async def validate_customer(state: AgentState, config: dict | None = None) -> dict:
+async def validate_customer(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Validate customer identity before investigation.
 
     Handles 8 edge cases:
@@ -323,12 +306,12 @@ def _validated_customer_hint(state: AgentState) -> str:
 # ─────────────────────────────────────────────────────────────
 
 @traceable(name="write_sql")
-async def write_sql(state: AgentState, config: dict | None = None) -> dict:
+async def write_sql(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Generate a SQL query to investigate the user's issue.
 
     Uses the SMART/EXPENSIVE model — SQL generation is complex.
     """
-    llm = get_model_for_intent("write_sql", state.get("intent"))
+    llm = get_model("write_sql")
 
     error_context = ""
     if state.get("sql_error"):
@@ -392,7 +375,7 @@ Respond with ONLY the SQL query, no explanation, no markdown fences."""),
 # ─────────────────────────────────────────────────────────────
 
 @traceable(name="execute_sql")
-async def execute_sql(state: AgentState, config: dict | None = None) -> dict:
+async def execute_sql(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Execute the generated SQL against Supabase.
 
     If it fails, records the error for the self-healing retry loop.
