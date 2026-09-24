@@ -183,7 +183,7 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
 
                         <div>
                             <div className="flex items-center justify-between">
-                                <h3 className="section-label">Semantic cache</h3>
+                                <h3 className="section-label">Response cache</h3>
                                 <div className="flex items-center gap-2">
                                     {clearMsg && <span className="text-[12px] text-2" role="status">{clearMsg}</span>}
                                     <button
@@ -192,7 +192,7 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
                                         onClick={handleClearCache}
                                         disabled={clearing || !cache?.connected}
                                         className="icon-btn"
-                                        aria-label="Clear semantic cache"
+                                        aria-label="Clear response cache"
                                         title="Clear cache"
                                     >
                                         {clearing ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}

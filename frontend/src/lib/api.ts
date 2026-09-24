@@ -182,7 +182,7 @@ export async function getMetrics(): Promise<Metrics> {
     return res.json();
 }
 
-/** Clear semantic cache */
+/** Clear response cache */
 export async function clearCache(): Promise<{ status: string; keys_deleted: number }> {
     const res = await fetch(`${API_URL}/api/cache`, { method: "DELETE" });
     if (!res.ok) throw new Error(`Cache clear failed: ${res.statusText}`);

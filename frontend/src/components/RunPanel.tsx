@@ -271,7 +271,7 @@ export default function RunPanel(props: RunPanelProps) {
                 {props.finalResponse && (status === "completed" || status === "cached") && (
                     <section className="result-card" aria-labelledby="result-title">
                         <p id="result-title" className="eyebrow text-ok flex items-center gap-1.5">
-                            <CircleCheck size={13} aria-hidden="true" /> {status === "cached" ? "Served from semantic cache" : "Reply to the customer"}
+                            <CircleCheck size={13} aria-hidden="true" /> {status === "cached" ? "Served from response cache" : "Reply to the customer"}
                         </p>
                         <p className="text-[14px] text-1 leading-relaxed mt-2 whitespace-pre-line">{props.finalResponse}</p>
                     </section>
