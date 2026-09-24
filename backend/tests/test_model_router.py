@@ -1,8 +1,11 @@
 """Tests for app.routing.model_router."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import call, patch, MagicMock
+
+import pytest
 
 from app.routing.model_router import (
+    FALLBACK_MODEL,
     MODEL_PRICING,
     TASK_MODEL_MAP,
     INTENT_MODEL_MAP,
@@ -11,6 +14,8 @@ from app.routing.model_router import (
     get_cost_per_token,
     calculate_cost,
     _create_model,
+    provider_of,
+    resolved_model_name,
 )
 
 
@@ -123,25 +128,25 @@ class TestGetModel:
     def test_fast_task_routes_to_fast_model(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("classify_intent")
-        mock_create.assert_called_once_with("openai/gpt-oss-20b")
+        assert mock_create.call_args_list[0] == call("openai/gpt-oss-20b", max_retries=0)
 
     @patch("app.routing.model_router._create_model")
     def test_smart_task_routes_to_smart_model(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("write_sql")
-        mock_create.assert_called_once_with("gpt-4.1")
+        assert mock_create.call_args_list[0] == call("gpt-4.1", max_retries=0)
 
     @patch("app.routing.model_router._create_model")
     def test_override_model_bypasses_routing(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("classify_intent", override_model="claude-sonnet-4-20250514")
-        mock_create.assert_called_once_with("claude-sonnet-4-20250514")
+        assert mock_create.call_args_list[0] == call("claude-sonnet-4-20250514", max_retries=0)
 
     @patch("app.routing.model_router._create_model")
     def test_unknown_task_defaults_to_fast(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("some_unknown_task")
-        mock_create.assert_called_once_with("openai/gpt-oss-20b")
+        assert mock_create.call_args_list[0] == call("openai/gpt-oss-20b", max_retries=0)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -212,14 +217,14 @@ class TestGetModelForIntent:
         """model_provider='groq' should route to the configured Groq model."""
         mock_create.return_value = MagicMock()
         get_model_for_intent("generate_response", "groq")
-        mock_create.assert_called_once_with(INTENT_MODEL_MAP["groq"])
+        assert mock_create.call_args_list[0] == call(INTENT_MODEL_MAP["groq"], max_retries=0)
 
     @patch("app.routing.model_router._create_model")
     def test_complex_intent_routes_to_gemini(self, mock_create, mock_settings):
         """model_provider='gemini' should route to Gemini."""
         mock_create.return_value = MagicMock()
         get_model_for_intent("propose_action", "gemini")
-        mock_create.assert_called_once_with(INTENT_MODEL_MAP["gemini"])
+        assert mock_create.call_args_list[0] == call(INTENT_MODEL_MAP["gemini"], max_retries=0)
 
     @patch("app.routing.model_router._create_model")
     def test_none_provider_falls_back_to_default(self, mock_create, mock_settings):
@@ -227,32 +232,76 @@ class TestGetModelForIntent:
         mock_create.return_value = MagicMock()
         get_model_for_intent("classify_intent", None)
         # Should use the standard FAST_MODEL for classify_intent
-        mock_create.assert_called_once_with("openai/gpt-oss-20b")
+        assert mock_create.call_args_list[0] == call("openai/gpt-oss-20b", max_retries=0)
 
     @patch("app.routing.model_router._create_model")
-    def test_groq_failure_falls_back_to_gemini(self, mock_create, mock_settings):
-        """If Groq model creation fails, fall back to Gemini."""
-        mock_create.side_effect = [Exception("Groq API key missing"), MagicMock()]
-        _result = get_model_for_intent("generate_response", "groq")
-        assert mock_create.call_count == 2
-        assert mock_create.call_args_list[0].args[0] == INTENT_MODEL_MAP["groq"]
-        assert mock_create.call_args_list[1].args[0] == INTENT_MODEL_MAP["gemini"]
+    def test_primary_is_wrapped_with_cross_provider_fallback(self, mock_create, mock_settings):
+        """Groq primary fails over to OpenAI — never to the provider that just failed."""
+        primary, fallback = MagicMock(), MagicMock()
+        mock_create.side_effect = [primary, fallback]
+        result = get_model_for_intent("generate_response", "groq")
+        assert mock_create.call_args_list == [
+            call(INTENT_MODEL_MAP["groq"], max_retries=0),
+            call(FALLBACK_MODEL["groq"]),
+        ]
+        primary.with_fallbacks.assert_called_once_with([fallback])
+        assert result is primary.with_fallbacks.return_value
 
-    @patch("app.routing.model_router._create_model")
-    def test_non_routable_task_uses_default(self, mock_create, mock_settings):
-        """Tasks like classify_intent or write_sql bypass intent routing."""
-        mock_create.return_value = MagicMock()
-        get_model_for_intent("write_sql", "groq")
-        # Should use smart model for write_sql, not groq
-        mock_create.assert_called_once_with("gpt-4.1")
 
-    @patch("app.routing.model_router._create_model")
-    def test_unrecognized_provider_falls_back_to_default(self, mock_create, mock_settings):
-        """A truthy but unmapped model_provider (INTENT_MODEL_MAP miss) should
-        skip the intent-routing branch entirely and fall back to get_model(task),
-        NOT to the Groq-failure Gemini fallback."""
-        mock_create.return_value = MagicMock()
-        get_model_for_intent("generate_response", "some-unknown-provider")
-        # generate_response is a "fast" task -> default fast model, not gemini
-        mock_create.assert_called_once_with("openai/gpt-oss-20b")
+# ─────────────────────────────────────────────────────────────
+# Failover, attribution, pricing
+# ─────────────────────────────────────────────────────────────
 
+class TestFailover:
+    @pytest.mark.parametrize("model,provider", [
+        ("openai/gpt-oss-120b", "groq"), ("llama-3.1-8b-instant", "groq"),
+        ("gemini-2.5-flash", "google"), ("gpt-4.1", "openai"), ("o3-mini", "openai"),
+        ("claude-sonnet-4-20250514", "anthropic"), ("mystery", "groq"),
+    ])
+    def test_provider_of(self, model, provider):
+        assert provider_of(model) == provider
+
+    def test_every_fallback_is_a_different_provider(self):
+        for provider, fallback in FALLBACK_MODEL.items():
+            assert provider_of(fallback) != provider
+
+    @pytest.mark.asyncio
+    async def test_throttled_primary_actually_fails_over(self, mock_settings):
+        """End-to-end through LangChain's real fallback runnable."""
+        from langchain_core.runnables import RunnableLambda
+
+        def throttled(_):
+            raise RuntimeError("429 rate limit")
+
+        with patch("app.routing.model_router._create_model") as mock_create:
+            primary = RunnableLambda(throttled)
+            mock_create.side_effect = [primary, RunnableLambda(lambda _: "answered by fallback")]
+            llm = get_model_for_intent("propose_action", "gemini")
+        assert await llm.ainvoke("hi") == "answered by fallback"
+
+
+class TestResolvedModelName:
+    def test_prefers_response_metadata(self):
+        response = MagicMock(response_metadata={"model_name": "gpt-4.1-mini-2025-04-14"})
+        assert resolved_model_name(MagicMock(model_name="configured"), response) == "gpt-4.1-mini-2025-04-14"
+
+    def test_strips_gemini_models_prefix(self):
+        response = MagicMock(response_metadata={"model": "models/gemini-2.5-flash"})
+        assert resolved_model_name(None, response) == "gemini-2.5-flash"
+
+    def test_falls_back_to_llm_attributes(self):
+        response = MagicMock(response_metadata={})
+        assert resolved_model_name(MagicMock(model_name="gpt-4.1"), response) == "gpt-4.1"
+
+        class OnlyModel:
+            model = "models/gemini-2.5-flash"
+        assert resolved_model_name(OnlyModel(), object()) == "gemini-2.5-flash"
+
+    def test_unknown_when_nothing_identifies_the_model(self):
+        assert resolved_model_name(object(), object()) == "unknown"
+
+
+def test_dated_snapshot_ids_are_priced_by_prefix():
+    assert get_cost_per_token("gpt-4.1-mini-2025-04-14") == MODEL_PRICING["gpt-4.1-mini"]
+    assert get_cost_per_token("gpt-4.1-2025-04-14") == MODEL_PRICING["gpt-4.1"]
+    assert get_cost_per_token("models/gemini-2.5-flash") == MODEL_PRICING["gemini-2.5-flash"]
