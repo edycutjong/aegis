@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS internal_docs (
 CREATE OR REPLACE FUNCTION execute_readonly_query(query_text TEXT)
 RETURNS JSON
 LANGUAGE plpgsql
+STABLE            -- PostgREST runs STABLE functions in a READ ONLY transaction
 SECURITY DEFINER
 AS $$
 DECLARE
@@ -95,8 +96,11 @@ ALTER FUNCTION execute_readonly_query(TEXT) OWNER TO aegis_query;
 REVOKE CREATE ON SCHEMA public FROM aegis_query;
 ALTER FUNCTION execute_readonly_query(TEXT) SET search_path = public, pg_catalog;
 ALTER FUNCTION execute_readonly_query(TEXT) SET statement_timeout = '5s';
-REVOKE EXECUTE ON FUNCTION execute_readonly_query(TEXT) FROM PUBLIC, authenticated;
-GRANT EXECUTE ON FUNCTION execute_readonly_query(TEXT) TO anon, service_role;
+-- Only the backend's secret (service_role) key may call it. The publishable
+-- key is public by design; if it could call this function, the app-side guard
+-- could simply be skipped.
+REVOKE EXECUTE ON FUNCTION execute_readonly_query(TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION execute_readonly_query(TEXT) TO service_role;
 
 -- =============================================
 -- IDEMPOTENT RESET: Truncate all data & reset sequences
@@ -277,8 +281,11 @@ ALTER TABLE billing ENABLE ROW LEVEL SECURITY;
 ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE internal_docs ENABLE ROW LEVEL SECURITY;
 
--- Allow the service role to read all data
-CREATE POLICY "Service role can read customers" ON customers FOR SELECT USING (true);
-CREATE POLICY "Service role can read billing" ON billing FOR SELECT USING (true);
-CREATE POLICY "Service role can read support_tickets" ON support_tickets FOR SELECT USING (true);
-CREATE POLICY "Service role can read internal_docs" ON internal_docs FOR SELECT USING (true);
+-- Read access for exactly one role: aegis_query, the owner of the SQL
+-- function. anon and authenticated get no policy, so they read nothing
+-- through PostgREST; service_role bypasses RLS for the backend's own
+-- REST reads (knowledge base, name search).
+CREATE POLICY aegis_query_read ON customers       FOR SELECT TO aegis_query USING (true);
+CREATE POLICY aegis_query_read ON billing         FOR SELECT TO aegis_query USING (true);
+CREATE POLICY aegis_query_read ON support_tickets FOR SELECT TO aegis_query USING (true);
+CREATE POLICY aegis_query_read ON internal_docs   FOR SELECT TO aegis_query USING (true);

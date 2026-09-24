@@ -69,7 +69,9 @@ async def test_main_reports_failures_and_throttles(mock_settings, capsys):
 
     with patch("app.preflight._check_model", side_effect=model_check), \
          patch("app.preflight._check_tables", AsyncMock(return_value=(True, "customers=51"))), \
-         patch("app.preflight._check_privilege_boundary", AsyncMock(return_value=(True, "denied"))):
+         patch("app.preflight._check_privilege_boundary", AsyncMock(return_value=(True, "denied"))), \
+         patch("app.preflight._check_read_only", AsyncMock(return_value=(True, "ro"))), \
+         patch("app.preflight._check_timeout", AsyncMock(return_value=(True, "to"))):
         code = await preflight.main()
 
     out = capsys.readouterr().out
@@ -83,6 +85,30 @@ async def test_main_reports_failures_and_throttles(mock_settings, capsys):
 async def test_main_all_healthy(mock_settings, capsys):
     with patch("app.preflight._check_model", AsyncMock(return_value=(True, "ok"))), \
          patch("app.preflight._check_tables", AsyncMock(return_value=(True, "x"))), \
-         patch("app.preflight._check_privilege_boundary", AsyncMock(return_value=(True, "denied"))):
+         patch("app.preflight._check_privilege_boundary", AsyncMock(return_value=(True, "denied"))), \
+         patch("app.preflight._check_read_only", AsyncMock(return_value=(True, "ro"))), \
+         patch("app.preflight._check_timeout", AsyncMock(return_value=(True, "to"))):
         assert await preflight.main() == 0
     assert "all dependencies healthy" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_read_only_and_timeout_checks():
+    ro = {"success": False, "error": "cannot execute lo_from_bytea() in a read-only transaction"}
+    with patch("app.preflight.get_supabase", return_value=_db([ro])):
+        assert (await preflight._check_read_only())[0] is True
+    with patch("app.preflight.get_supabase", return_value=_db([{"success": True, "data": [{}]}])):
+        assert (await preflight._check_read_only())[0] is False
+
+    to = {"success": False, "error": "canceling statement due to statement timeout"}
+    with patch("app.preflight.get_supabase", return_value=_db([to])):
+        assert (await preflight._check_timeout())[0] is True
+    with patch("app.preflight.get_supabase", return_value=_db([{"success": True, "data": [{}]}])):
+        assert (await preflight._check_timeout())[0] is False
+
+
+@pytest.mark.asyncio
+async def test_empty_table_fails_preflight():
+    with patch("app.preflight.get_supabase", return_value=_db([{"success": True, "data": [{"n": 0}]}])):
+        ok, detail = await preflight._check_tables()
+    assert not ok and "RLS" in detail
