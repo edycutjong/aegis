@@ -24,25 +24,27 @@ customer, writes and runs SQL against Postgres, retrieves the relevant internal 
 **exactly one** action: refund, credit, tier change, suspend, reactivate, escalate, or resolve. Anything
 except `resolve` **pauses** on a LangGraph interrupt until a human approves or denies it.
 
-It is measured, not just demoed: a 40-ticket golden set, including 13 prompt-injection and SQL-exfiltration
+It is measured, not just demoed: a 43-ticket golden set, including 13 prompt-injection and SQL-exfiltration
 attacks, runs three times against the real models and the real database:
 
 <!-- scorecard:start -->
 | | |
 |---|---|
-| **End-to-end pass rate** (120 runs) | **99.2%** (39/40 cases pass every trial) |
+| **End-to-end pass rate** (129 runs) | **96.9%** (41/43 cases pass every trial) |
 | **Safety-invariant violations** | **0** |
 | **Prompt-injection attempts contained** | **100%** |
-| Intent · customer · action accuracy | 100.0% · 100.0% · 99.2% |
+| Intent · customer · action accuracy | 100.0% · 100.0% · 96.9% |
 | Input screen: injections flagged / benign tickets flagged | 69.2% / 0.0% |
-| Latency to the approval gate, p50 / p95 | 5.61s / 7.92s |
-| LLM cost per ticket, median | **$0.0029** |
+| Latency to the approval gate, p50 / p95 | 5.55s / 7.69s |
+| LLM cost per ticket, median | **$0.0028** |
 <!-- scorecard:end -->
 
-Every number is reproducible with `make evals`. The known failures are listed in the
-[scorecard](backend/evals/SCORECARD.md), not hidden. LLM runs vary: the first scheduled CI run of the
-same suite scored 95.8% with 0 safety violations, inside the 5-point regression gate. Safety never varies:
-it is enforced in code, not sampled from the model.
+Read these numbers for what they are. The golden set is also the set the agent was fixed against, so
+treat it as a regression gate, not an accuracy estimate for unseen tickets. Runs vary: pass rates
+have ranged from 95.8% to 99.2% across runs, and the failures are listed in the
+[scorecard](backend/evals/SCORECARD.md). The 0 safety violations and 100% containment hold because code enforces
+them after the model answers (the approval gate, the amount cap, the identity override), not because
+the model always behaves.
 
 ---
 
@@ -89,8 +91,8 @@ free tier throttles under load, so part of that lane is served by the `gpt-4.1-m
 ### ⏸ The human gate is structural, not a prompt
 
 The pause is a LangGraph `interrupt()` with a checkpointer, not an instruction asking the model to wait.
-Only `resolve` completes without a human, and safety-invariant tests enumerating all 293 combinations
-(`test_safety_invariants.py`) pin that for every action type and state combination. On top of that,
+Only `resolve` completes without a human, and `test_safety_invariants.py` pins that for every action
+type. On top of that,
 three rules are enforced in code after the model speaks:
 
 - **Identity comes from validation, not the model.** The verified customer row flows through graph state
@@ -229,7 +231,7 @@ make preflight                          # every model answers, DB answers, privi
 
 | Command | What it does |
 |---|---|
-| `make test` | 481 backend + 265 frontend unit tests, 100% coverage gate on both |
+| `make test` | 497 backend + 265 frontend unit tests, 100% coverage gate on both |
 | `make e2e` | 32 Playwright tests (desktop + mobile), no backend or keys needed |
 | `make evals` | Golden set × 3 against real models → `backend/evals/SCORECARD.md` (~$0.30) |
 | `make ci` | lint → typecheck → test → audit → build |
