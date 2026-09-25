@@ -17,6 +17,9 @@ langchain-google-genai==4.4.0
 langchain-groq==1.1.3
 langsmith==0.14.0
 
+# A2A (Agent2Agent protocol) server
+a2a-sdk[fastapi]==1.1.5
+
 # SQL guard
 sqlglot==30.19.0
 
