@@ -257,7 +257,8 @@ describe("Dashboard", () => {
             await vi.advanceTimersByTimeAsync(900);
         });
         expect(screen.queryByRole("region", { name: "Run receipt" })).not.toBeInTheDocument();
-    });
+        // Three runs with timer loops and clicks: it took 6.1s on a busy CI runner (main, 0aa1b93).
+    }, 15_000);
 
     it("keeps the gate open and explains when the decision fails", async () => {
         vi.mocked(approveAction).mockRejectedValue(new ApiError("x", 500, "resume failed"));
