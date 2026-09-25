@@ -153,7 +153,7 @@ class TestListCustomers:
             get = AsyncMock(return_value=response)
             cls.return_value.__aenter__.return_value.get = get
             assert await client.list_customers() == [{"id": 8, "name": "David Martinez", "email": "d@x.com"}]
-        assert get.call_args.kwargs["params"]["select"] == "id,name,email"
+        assert get.call_args.kwargs["params"]["select"] == "id,name,email,company"
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(self, mock_settings):

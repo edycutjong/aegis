@@ -66,8 +66,8 @@ def _find_customer_in_text(message: str, roster: list[dict]) -> str | None:
     """The roster customer a ticket names, however it is written.
 
     Matches an email address first, then a full name anywhere in the text
-    (any case, any position), then a close typo of a full name. Returns the
-    customer's name as stored, or None.
+    (any case, any position), then a company name, then a close typo of a
+    full name. Returns the customer's name as stored, or None.
     """
     text = message.lower()
     for customer in roster:
@@ -83,6 +83,20 @@ def _find_customer_in_text(message: str, roster: list[dict]) -> str | None:
             found.append((hit.start(), customer["name"]))
     if found:
         return min(found)[1]  # the first one the ticket mentions
+
+    # A company name ("kevin from gamedev studio", "InnovaTech Labs accounts
+    # team", "rob kim @ cloudpeak"). Matched on letters and digits only, so
+    # "E-Com Shop" and "ecomshop" agree; the first word alone counts when it
+    # is distinctive. Companies are unique per customer in this dataset.
+    compact_text = re.sub(r"[^a-z0-9]", "", text)
+    for customer in roster:
+        company = (customer.get("company") or "").lower()
+        compact = re.sub(r"[^a-z0-9]", "", company)
+        first = company.split()[0] if company.split() else ""
+        if (len(compact) >= 6 and compact in compact_text) or (
+            len(first) >= 6 and re.search(rf"\b{re.escape(first)}\b", text)
+        ):
+            return customer["name"]
 
     words = re.findall(r"[a-z]+(?:['-][a-z]+)*", text)
     best, best_name = 0.0, None

@@ -1763,10 +1763,13 @@ class TestBillingEvidence:
 # ─────────────────────────────────────────────────────────────
 
 ROSTER = [
-    {"id": 3, "name": "Maria Garcia", "email": "maria@dataforge.com"},
-    {"id": 4, "name": "Robert Kim", "email": "rkim@cloudpeak.net"},
+    {"id": 3, "name": "Maria Garcia", "email": "maria@dataforge.com", "company": "DataForge Analytics"},
+    {"id": 4, "name": "Robert Kim", "email": "rkim@cloudpeak.net", "company": "CloudPeak Systems"},
     {"id": 8, "name": "David Martinez", "email": "david@example.com"},
     {"id": 10, "name": "Chris Johnson", "email": "chris@ecomshop.com"},
+    {"id": 6, "name": "Michael Brown", "email": "mb@devstartup.co", "company": "DevStartup Co"},
+    {"id": 12, "name": "Kevin Lee", "email": "kevin@gamedev.io", "company": "GameDev Studio"},
+    {"id": 20, "name": "Pat Doe", "email": "pat@shop.com", "company": "Shop"},
 ]
 
 
@@ -1806,6 +1809,26 @@ class TestFindCustomerInText:
     ])
     def test_finds_names_emails_and_typos(self, message, expected):
         assert _find_customer_in_text(message, ROSTER) == expected
+
+    @pytest.mark.parametrize("message,expected", [
+        ("kevin from gamedev studio here, pls reactivate", "Kevin Lee"),
+        ("rob kim @ cloudpeak: enterprise -> pro pls", "Robert Kim"),
+        ("Dashboard takes 15-20s. Michael, DevStartup Co.", "Michael Brown"),
+        ("we are DataForge Analytics, getting 429 at 5000/min", "Maria Garcia"),
+        ("mike @ devstartup, can we get those months back?", "Michael Brown"),
+    ])
+    def test_finds_customers_by_company(self, message, expected):
+        """Regression (blind v3, PR #60): 12 of 15 failures named the customer by
+        first name, nickname or company, and no customer was found."""
+        assert _find_customer_in_text(message, ROSTER) == expected
+
+    @pytest.mark.parametrize("message", [
+        "I bought this at the shop yesterday",   # "Shop" is too short to match on its own
+        "Our cloud peaked at noon",              # not the company "CloudPeak"
+        "Just a general question about studios",
+    ])
+    def test_short_or_partial_company_words_do_not_match(self, message):
+        assert _find_customer_in_text(message, ROSTER) is None
 
     def test_first_mentioned_customer_wins(self):
         message = "Chris Johnson asked me, David Martinez, to write in"
