@@ -21,8 +21,9 @@ const chakra = Chakra_Petch({
 });
 
 const TITLE = "Aegis — support agents that stop for a human";
+// ≤125 chars: social previews truncate around there, search results around 155.
 const DESCRIPTION =
-    "A LangGraph multi-agent support desk: agents triage, investigate a live database and propose one action — then pause at a human approval gate before anything executes.";
+    "AI agents triage support tickets and investigate a live database, then pause for human approval before any action runs.";
 
 const OG_IMAGE = { url: "/og.png", width: 1200, height: 630, alt: "Aegis — the agents do the investigation, you release the action" };
 
