@@ -31,11 +31,15 @@ const OG = `<!doctype html><html><head>${FONTS}<style>
   .eyebrow { margin-top: 56px; font-family: "Chakra Petch"; font-weight: 600; font-size: 20px; letter-spacing: .14em; color: #8ab4ff; text-transform: uppercase; }
   h1 { margin-top: 16px; font-size: 62px; line-height: 1.08; font-weight: 650; letter-spacing: -.03em; max-width: 1000px; }
   h1 span { background: linear-gradient(90deg, #fcd34d, #f59e0b); -webkit-background-clip: text; color: transparent; }
-  .foot { margin-top: auto; display: flex; flex-direction: column; gap: 18px; }
+  .foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; }
+  .foot .left { display: flex; flex-direction: column; gap: 18px; }
+  .cta { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+  .cta .btn { font-weight: 650; font-size: 26px; color: #0a0e17; background: linear-gradient(90deg, #fcd34d, #f59e0b); padding: 16px 28px; border-radius: 14px; box-shadow: 0 10px 30px rgba(245,158,11,.25); white-space: nowrap; }
+  .cta .url { font-family: "JetBrains Mono", monospace; font-size: 20px; color: #8ab4ff; }
   .stats { display: flex; gap: 12px; }
   .pill { font-family: "JetBrains Mono", monospace; font-size: 21px; font-weight: 500; padding: 8px 16px; border-radius: 999px; border: 1px solid #2a3650; background: rgba(17,24,38,.8); color: #eef2f8; }
   .pill.ok { color: #6ee7b7; border-color: rgba(52,211,153,.4); background: rgba(52,211,153,.08); }
-  .sub { font-size: 24px; color: #b3bfd2; display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+  .sub { font-size: 22px; color: #b3bfd2; display: flex; flex-wrap: nowrap; white-space: nowrap; gap: 10px 14px; align-items: center; }
   .sub i { width: 5px; height: 5px; border-radius: 50%; background: #475569; display: inline-block; }
   .rail { position: absolute; right: 72px; top: 76px; width: 330px; height: 40px; }
   .rail .track { position: absolute; left: 0; right: 0; top: 19px; height: 2px; background: #2a3650; }
@@ -48,8 +52,11 @@ const OG = `<!doctype html><html><head>${FONTS}<style>
   <div class="eyebrow">A pause a human releases</div>
   <h1>The agents do the investigation. <span>You release the action.</span></h1>
   <div class="foot">
-    <div class="sub">Multi-agent support engine <i></i> LangGraph <i></i> human approval gate</div>
-    <div class="stats"><span class="pill ok">99.2% eval pass</span><span class="pill">0 safety violations</span></div>
+    <div class="left">
+      <div class="sub">Multi-agent support engine <i></i> LangGraph <i></i> human approval gate</div>
+      <div class="stats"><span class="pill ok">99.2% eval pass</span><span class="pill">0 safety violations</span></div>
+    </div>
+    <div class="cta"><span class="btn">Try the live demo →</span><span class="url">aegis.edycu.dev</span></div>
   </div>
 </div>
 <div class="rail"><div class="track"></div><div class="run"></div><div class="dot"></div><div class="bar"></div><div class="beyond"></div></div>
