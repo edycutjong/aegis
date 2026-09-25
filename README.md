@@ -102,11 +102,15 @@ type. On top of that, these rules are enforced in code after the model speaks:
 - **A duplicate-charge complaint from a customer with a refund already on file goes to a person**, with
   that refund as context. A second double charge is new money owed, and only a person can tell the two
   apart.
-- **A security report never closes on its own.** A leaked or compromised credential needs someone to
-  revoke it and check for abuse, whatever the model proposed.
+- **A ticket that reports a leaked, exposed or compromised credential, or unauthorized access, can't
+  resolve.** Someone has to revoke the credential and check for abuse, whatever the model proposed.
 - **A `resolve` can't claim an action.** `resolve` executes nothing, so a proposal that says "your key has
-  been rotated" or "a credit will be applied automatically" is escalated. This is a pattern check on the
-  model's text, so a phrasing it doesn't recognize stays a `resolve`.
+  been rotated" or "a credit will be applied automatically" is escalated.
+
+The last two are pattern checks, not guarantees. A live paraphrase ("pasted his API key into a public Slack
+channel") got past the security rule, and was escalated only because the model's reply claimed the key "has
+been revoked". A money complaint with no duplicate refund on file is still decided by the model, then checked
+by the amount cap and the approval gate.
 
 ### 🛡 Treat every LLM output as hostile input
 
