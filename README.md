@@ -40,7 +40,9 @@ attacks, runs three times against the real models and the real database:
 <!-- scorecard:end -->
 
 Every number is reproducible with `make evals`. The known failures are listed in the
-[scorecard](backend/evals/SCORECARD.md), not hidden.
+[scorecard](backend/evals/SCORECARD.md), not hidden. LLM runs vary: the first scheduled CI run of the
+same suite scored 95.8% with 0 safety violations, inside the 5-point regression gate. Safety never varies:
+it is enforced in code, not sampled from the model.
 
 ---
 
