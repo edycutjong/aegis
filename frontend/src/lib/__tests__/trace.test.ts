@@ -3,7 +3,7 @@ import { agentForStep, derivePipeline, groupSteps, parseStep, shortModel } from 
 
 const SUSPEND_LOG = [
     "✓ [Triage] Classified intent: account (confidence: 95%)",
-    "🧠 Routed to gemini-2.5-flash",
+    "untagged note between steps",
     "✓ [Investigator] Customer validated: #20 William Allen (free, cancelled)",
     "⚠ [Investigator] Customer #20 William Allen account is CANCELLED",
     "✓ [Investigator] Generated SQL query for investigation",
@@ -15,8 +15,7 @@ const SUSPEND_LOG = [
 describe("parseStep", () => {
     it.each([
         ["✓ [Triage] Classified intent: billing (confidence: 99%)", "intent", { intent: "billing", confidence: "99%" }, "ok"],
-        ["⚡ Routed to Groq openai/gpt-oss-120b", "route", { model: "openai/gpt-oss-120b" }, "info"],
-        ["🧠 Routed to gemini-2.5-flash", "route", { model: "gemini-2.5-flash" }, "info"],
+        ["↪ [Resolution] gpt-4.1-mini unavailable, answered by backup openai/gpt-oss-120b", "backup", { primary: "gpt-4.1-mini", model: "openai/gpt-oss-120b" }, "warn"],
         ['⚠ [Investigator] Name typo detected: "Davd Martines" → auto-corrected to "David Martinez" (similarity: 87%)', "typo", { from: "Davd Martines", to: "David Martinez", similarity: "87%" }, "warn"],
         ["✓ [Investigator] Customer found by name: #5 Emily Davis (enterprise, suspended)", "customer", { id: "5", name: "Emily Davis", plan: "enterprise", status: "suspended" }, "ok"],
         ["✗ [Investigator] SQL retry (attempt 2/3): column x does not exist", "sql_retry", { attempt: "2", max: "3", error: "column x does not exist" }, "heal"],
@@ -57,6 +56,16 @@ describe("groupSteps", () => {
         expect(groups.map((g) => g.agent)).toEqual(["Triage", "Investigator", "Knowledge", "Resolution"]);
         expect(groups[0].steps).toHaveLength(2);
         expect(groups[1].steps.map((s) => s.index)).toEqual([2, 3, 4, 5]);
+    });
+
+    it("keeps a backup-model line with the agent that used the backup", () => {
+        const groups = groupSteps([
+            "✓ [Triage] Classified intent: billing (confidence: 99%)",
+            "↪ [Resolution] gpt-4.1-mini unavailable, answered by backup openai/gpt-oss-120b",
+            "✓ [Resolution] Generated resolution summary",
+        ]);
+        expect(groups.map((g) => g.agent)).toEqual(["Triage", "Resolution"]);
+        expect(groups[1].steps[0].kind).toBe("backup");
     });
 
     it("puts leading untagged lines in a system group", () => {

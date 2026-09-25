@@ -67,8 +67,7 @@ describe("StepLine", () => {
 
     it.each([
         ["✓ [Triage] Classified intent: billing (confidence: 99%)", /99% confidence/],
-        ["⚡ Routed to Groq openai/gpt-oss-120b", /fast, low-cost lane/],
-        ["🧠 Routed to gemini-2.5-flash", /reasoning lane/],
+        ["↪ [Resolution] gpt-4.1-mini unavailable, answered by backup openai/gpt-oss-120b", /was unavailable/],
         ["✓ [Investigator] Customer validated: #8 David Martinez (pro, active)", /David Martinez/],
         ["✓ [Investigator] Customer validated: #5 Emily Davis (enterprise, suspended)", /suspended/],
         ['⚠ [Investigator] Name typo detected: "Davd" → auto-corrected to "David" (similarity: 87%)', /87% match/],

@@ -55,15 +55,13 @@ function StepBody({ step }: { step: ParsedStep }) {
                     Classified as <strong>{d.intent}</strong> <Chip mono>{d.confidence} confidence</Chip>
                 </>
             );
-        case "route": {
-            const fast = step.raw.includes("⚡");
+        case "backup":
             return (
                 <>
-                    Routed to <Chip mono tone="release">{shortModel(d.model)}</Chip>{" "}
-                    <span className="text-3">{fast ? "fast, low-cost lane" : "reasoning lane"}</span>
+                    Answered by backup <Chip mono tone="hold">{shortModel(d.model)}</Chip>{" "}
+                    <span className="text-3">{shortModel(d.primary)} was unavailable</span>
                 </>
             );
-        }
         case "customer":
             return (
                 <>

@@ -8,7 +8,7 @@ Element.prototype.scrollTo = vi.fn();
 
 const LOG = [
     "✓ [Triage] Classified intent: account (confidence: 95%)",
-    "🧠 Routed to gemini-2.5-flash",
+    "untagged note between steps",
     "✓ [Investigator] Customer validated: #20 William Allen (free, cancelled)",
     "plain untagged line",
 ];

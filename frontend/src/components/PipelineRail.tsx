@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import { STAGES, type StageId, type StageState } from "@/lib/trace";
 
 const STAGE_META: Record<StageId, { label: string; short: string; sub: string; Icon: ComponentType<{ size?: number; "aria-hidden"?: boolean }> }> = {
-    Triage: { label: "Triage", short: "Triage", sub: "classify · route", Icon: Split },
+    Triage: { label: "Triage", short: "Triage", sub: "screen · classify", Icon: Split },
     Investigator: { label: "Investigator", short: "Query", sub: "SQL · self-heal", Icon: Search },
     Knowledge: { label: "Knowledge", short: "Docs", sub: "policy docs", Icon: BookOpen },
     Resolution: { label: "Resolution", short: "Propose", sub: "one action", Icon: Gavel },
