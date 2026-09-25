@@ -1,22 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Chakra_Petch, Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const inter = Inter({
-    subsets: ["latin"],
-    weight: ["400", "500", "600", "700", "800"],
+// Self-hosted (see fonts/LICENSES.md): next/font/google downloads at build
+// time, and that download failed CI three times.
+const inter = localFont({
+    src: "./fonts/inter-latin-wght.woff2",
+    weight: "100 900",
     variable: "--font-inter",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-    subsets: ["latin"],
-    weight: ["400", "500"],
+const jetbrainsMono = localFont({
+    src: "./fonts/jetbrains-mono-latin-wght.woff2",
+    weight: "100 800",
     variable: "--font-jetbrains-mono",
 });
 
-const chakra = Chakra_Petch({
-    subsets: ["latin"],
-    weight: ["600", "700"],
+const chakra = localFont({
+    src: [
+        { path: "./fonts/chakra-petch-latin-600.woff2", weight: "600" },
+        { path: "./fonts/chakra-petch-latin-700.woff2", weight: "700" },
+    ],
     variable: "--font-chakra",
 });
 
