@@ -34,10 +34,6 @@ class Settings:
     # CORS
     frontend_url: str = "http://localhost:3000"
 
-    # A2A (see app/a2a_server)
-    public_api_url: str = "http://localhost:8000"  # advertised in the Agent Card
-    a2a_approver_token: str = ""  # when set, A2A approve/deny must present it as a bearer token
-
     # LangSmith (Observability)
     langchain_tracing_v2: bool = False
     langchain_api_key: str = ""
@@ -69,9 +65,6 @@ class Settings:
         self.smart_model = os.getenv("SMART_MODEL", self.smart_model)
 
         self.frontend_url = os.getenv("FRONTEND_URL", self.frontend_url)
-
-        self.public_api_url = os.getenv("PUBLIC_API_URL", self.public_api_url)
-        self.a2a_approver_token = os.getenv("A2A_APPROVER_TOKEN", self.a2a_approver_token)
 
         self.langchain_tracing_v2 = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
         self.langchain_api_key = os.getenv("LANGCHAIN_API_KEY", self.langchain_api_key)

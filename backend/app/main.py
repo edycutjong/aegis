@@ -16,12 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-from app.a2a_server import mount_a2a
 from app.config import get_settings
 from app.agent.graph import agent_graph
 from app.cache.semantic import get_cache
 from app.db.supabase import get_supabase
-from app.errors import public_error
 from app.observability.tracker import get_tracker
 from app.ratelimit import RateLimiter, client_key
 from langgraph.types import Command
@@ -123,9 +121,6 @@ rate_limiter = RateLimiter(
     window_seconds=settings.rate_limit_window_seconds,
     daily_cap=settings.daily_ticket_cap,
 )
-
-
-mount_a2a(app, agent_graph, rate_limiter)
 
 
 def _evict_old_threads() -> None:
@@ -268,6 +263,16 @@ async def _run_agent(thread_id: str, message: str):
         thread_store[thread_id]["error"] = message
         thread_store[thread_id]["thought_log"].append(f"✗ Error: {message}")
         print(f"[Agent Error] {thread_id}: {e}")  # full detail stays in server logs
+
+
+def public_error(error: Exception) -> str:
+    """User-safe error text. Raw provider errors carry account/org ids."""
+    text = f"{type(error).__name__} {error}"
+    if "429" in text or "RateLimit" in text or "ResourceExhausted" in text or "quota" in text.lower():
+        return "The model providers are rate-limiting this demo right now. Please try again in a minute."
+    if "Timeout" in text or "timed out" in text.lower():
+        return "A model provider timed out. Please try again."
+    return f"The agent workflow failed ({type(error).__name__})."
 
 
 def _record_sql(thread: dict, update: dict) -> None:
