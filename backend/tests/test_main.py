@@ -33,7 +33,11 @@ class TestRootEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "Aegis"
-        assert data["version"] == "1.0.0"
+        # release-please bumps the version; the test follows the single
+        # source of truth instead of pinning a literal that breaks every release.
+        from pathlib import Path
+        expected = (Path(__file__).resolve().parents[2] / "version.txt").read_text().strip()
+        assert data["version"] == expected
         assert "docs" in data
 
 
