@@ -257,9 +257,11 @@ class TestValidateCustomerAsync:
 
     @pytest.mark.asyncio
     async def test_case6_no_id_no_name(self):
-        """Case 6: No ID + no name → proceed, let SQL figure it out."""
-        result = await validate_customer(_make_state("My billing is wrong"))
+        """Case 6: No ID + no name → proceed without a customer (policy docs only)."""
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(None)):
+            result = await validate_customer(_make_state("My billing is wrong"))
         assert result["customer_found"] is True
+        assert "customer" not in result
 
     @pytest.mark.asyncio
     async def test_case7_id_not_found_name_fallback(self):
