@@ -24,27 +24,41 @@ customer, writes and runs SQL against Postgres, retrieves the relevant internal 
 **exactly one** action: refund, credit, tier change, suspend, reactivate, escalate, or resolve. Anything
 except `resolve` **pauses** on a LangGraph interrupt until a human approves or denies it.
 
-It is measured, not just demoed: a 43-ticket golden set, including 13 prompt-injection and SQL-exfiltration
-attacks, runs three times against the real models and the real database:
+It is measured, not just demoed. Two ticket sets run three times each against the real models and the
+real database: a **golden** set of 47 tickets the agent was developed against, and a **held-out** set of
+43 tickets written from the seed data without reading the agent's prompts.
 
 <!-- scorecard:start -->
-| | |
-|---|---|
-| **End-to-end pass rate** (129 runs) | **96.9%** (41/43 cases pass every trial) |
-| **Safety-invariant violations** | **0** |
-| **Prompt-injection attempts contained** | **100%** |
-| Intent · customer · action accuracy | 100.0% · 100.0% · 96.9% |
-| Input screen: injections flagged / benign tickets flagged | 69.2% / 0.0% |
-| Latency to the approval gate, p50 / p95 | 5.55s / 7.69s |
-| LLM cost per ticket, median | **$0.0028** |
+| | Golden (141 runs) | Held-out (129 runs) |
+|---|---|---|
+| **End-to-end pass rate** | **95.7%** (45/47 pass every trial) | **92.2%** (39/43) |
+| **Safety-invariant violations** | **0** | **0** |
+| Prompt-injection attempts contained | 100.0% | 100.0% |
+| Intent · customer · action accuracy | 100.0% · 100.0% · 95.7% | 100.0% · 97.7% · 94.6% |
+| Input screen: injections flagged / benign flagged | 69.2% / 0.0% | 10.0% / 0.0% |
+| Prompt Guard unavailable (rules-only screening) | 33 of 141 runs | 42 of 129 runs |
+| Latency to the gate, p50 / p95 | 5.47s / 6.76s | 5.63s / 7.51s |
+| LLM cost per ticket, median | $0.0029 | $0.0029 |
 <!-- scorecard:end -->
 
-Read these numbers for what they are. The golden set is also the set the agent was fixed against, so
-treat it as a regression gate, not an accuracy estimate for unseen tickets. Runs vary: pass rates
-have ranged from 95.8% to 99.2% across runs, and the failures are listed in the
-[scorecard](backend/evals/SCORECARD.md). Of the five safety checks, three are enforced in code after the
-model answers (the approval gate, the amount cap, the identity override). The other two, forbidden
-action types and forbidden phrases, depend on the model, and held in every run so far.
+Read these numbers for what they are.
+
+- **The held-out set is the honest one, and it has been used once to find bugs.** Its first run scored
+  27.1%: the agent only recognized customers written as "Customer #N Name" (customer accuracy 28.7%). Fixing
+  identification, and the cross-customer and "we emailed it" bugs the next run exposed, brought it to
+  92.2%. The typo'd-name fix came after that run and was checked on its own case (3/3). Because these fixes
+  were driven by held-out failures, the set is now partly seen; a fresh one is the next step.
+- **Golden is a regression gate, not an accuracy estimate.** Pass rates have ranged from 95.7% to 99.2%
+  across runs as cases were added and expectations tightened.
+- **Of the five safety checks, three are enforced in code** after the model answers (the approval gate,
+  the amount cap, the identity override). The other two, forbidden action types and forbidden phrases,
+  depend on the model. They caught 5 violations in one run of this change; the fixes are in code, and the
+  final runs above had 0.
+- **Prompt Guard runs on Groq's free tier and was unavailable on about a quarter of eval runs** (throttled
+  at eval concurrency). Those tickets were screened by the rules alone. The screen's own detection is weak
+  on held-out attacks (10%); containment comes from the layers behind it.
+- Remaining failures are listed in the [golden](backend/evals/SCORECARD.md) and
+  [held-out](backend/evals/SCORECARD-holdout.md) scorecards.
 
 ---
 
@@ -244,7 +258,7 @@ make preflight                          # every model answers, DB answers, privi
 
 | Command | What it does |
 |---|---|
-| `make test` | 531 backend + 265 frontend unit tests, 100% coverage gate on both |
+| `make test` | 571 backend + 265 frontend unit tests, 100% coverage gate on both |
 | `make e2e` | 32 Playwright tests (desktop + mobile), no backend or keys needed |
 | `make evals` | Golden set × 3 against real models → `backend/evals/SCORECARD.md` (~$0.30) |
 | `make ci` | lint → typecheck → test → audit → build |

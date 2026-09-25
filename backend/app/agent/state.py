@@ -48,6 +48,7 @@ class AgentState(TypedDict, total=False):
     customer: dict  # Validated customer row (id, name, email, plan, status) — source of truth for actions
     billing: list[dict]  # That customer's billing rows, fetched directly — bounds refunds/credits
     customer_candidates: list[dict]
+    other_customers: list[str]  # Other roster customers the ticket names (see resolver rule 1b)
 
     # Documentation search
     docs_context: str

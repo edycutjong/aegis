@@ -5,6 +5,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
+from app.agent.agents.investigator import _find_customer_in_text
 from app.agent.agents import (
     should_retry_sql,
     should_execute,
@@ -139,14 +140,19 @@ class TestFuzzyNameMatch:
 class TestShouldProceedAfterValidation:
     """Conditional edge after customer validation."""
 
-    def test_customer_found(self):
-        assert should_proceed_after_validation({"customer_found": True}) == "write_sql"
+    def test_validated_customer_gets_sql(self):
+        state = {"customer_found": True, "customer": {"id": 8, "name": "David Martinez"}}
+        assert should_proceed_after_validation(state) == "write_sql"
 
     def test_customer_not_found(self):
         assert should_proceed_after_validation({"customer_found": False}) == "generate_response"
 
-    def test_missing_defaults_to_proceed(self):
-        assert should_proceed_after_validation({}) == "write_sql"
+    @pytest.mark.parametrize("state", [{"customer_found": True}, {}, {"customer_found": True, "customer": {}}])
+    def test_no_identified_customer_skips_sql(self, state):
+        """Regression (held-out ho-inj-aggregate-stats): with no customer, the
+        model's SQL ran across every customer and totals reached an
+        auto-resolve. Unidentified tickets now go straight to policy docs."""
+        assert should_proceed_after_validation(state) == "search_docs"
 
 
 class TestStatusWarning:
@@ -181,6 +187,7 @@ def _mock_db_with_customer(customer: dict | None):
     """Return a mock SupabaseClient whose execute_sql returns the given customer."""
     mock_db = MagicMock()
     mock_db.get_billing = AsyncMock(return_value=[])
+    mock_db.list_customers = AsyncMock(return_value=[])
     if customer:
         mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": [customer]})
     else:
@@ -250,9 +257,11 @@ class TestValidateCustomerAsync:
 
     @pytest.mark.asyncio
     async def test_case6_no_id_no_name(self):
-        """Case 6: No ID + no name → proceed, let SQL figure it out."""
-        result = await validate_customer(_make_state("My billing is wrong"))
+        """Case 6: No ID + no name → proceed without a customer (policy docs only)."""
+        with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(None)):
+            result = await validate_customer(_make_state("My billing is wrong"))
         assert result["customer_found"] is True
+        assert "customer" not in result
 
     @pytest.mark.asyncio
     async def test_case7_id_not_found_name_fallback(self):
@@ -926,6 +935,7 @@ class TestGenerateResponseAsync:
     async def test_zero_records_path(self):
         """When SQL returned 0 records, generate clear message without LLM."""
         state = _make_full_state("Check billing")
+        state["sql_query"] = "SELECT 1"
         state["sql_result"] = []
         state["billing"] = state["sql_result"]
         state["sql_error"] = None
@@ -1457,9 +1467,7 @@ class TestValidatedCustomerIsSourceOfTruth:
     @pytest.mark.asyncio
     async def test_validation_returns_customer_row(self):
         customer = {"id": 8, "name": "David Martinez", "email": "d@x.com", "plan": "pro", "status": "active"}
-        mock_db = MagicMock()
-        mock_db.get_billing = AsyncMock(return_value=[])
-        mock_db.execute_sql = AsyncMock(return_value={"success": True, "data": [customer]})
+        mock_db = _mock_db_with_customer(customer)
         state = _make_full_state("Customer #8 David Martinez wants a refund")
 
         with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
@@ -1524,7 +1532,7 @@ class TestValidatedCustomerFlowsDownstream:
     @pytest.mark.asyncio
     async def test_zero_records_message_names_the_customer_not_the_ticket(self):
         state = _make_full_state("Customer #12 Kevin Lee asks about a charge")
-        state.update({"customer_found": True, "sql_result": [], "sql_error": "",
+        state.update({"customer_found": True, "sql_result": [], "sql_error": "", "sql_query": "SELECT 1",
                       "customer": {"id": 12, "name": "Kevin Lee"}})
         result = await generate_response(state)
         assert "for Customer #12 Kevin Lee." in result["final_response"]
@@ -1533,9 +1541,26 @@ class TestValidatedCustomerFlowsDownstream:
     @pytest.mark.asyncio
     async def test_zero_records_message_without_customer(self):
         state = _make_full_state("What is the refund policy?")
-        state.update({"customer_found": True, "sql_result": [], "sql_error": ""})
+        state.update({"customer_found": True, "sql_result": [], "sql_error": "", "sql_query": "SELECT 1"})
         result = await generate_response(state)
         assert "for this request." in result["final_response"]
+
+    @pytest.mark.asyncio
+    async def test_skipped_sql_still_gets_a_real_answer(self):
+        """An unidentified ticket skips SQL on purpose; it must not get the
+        "0 records found" canned reply."""
+        llm = AsyncMock()
+        llm.ainvoke = AsyncMock(return_value=_mock_llm_response("Refunds are available within 30 days."))
+        state = _make_full_state("What is the refund policy?")
+        state.update({"customer_found": True, "sql_result": [], "sql_error": "",
+                      "proposed_action": {"type": "resolve", "description": "Explain the refund policy"}})
+        with patch("app.agent.agents.resolver.get_model", return_value=llm), \
+             patch("app.agent.agents.resolver.get_tracker"):
+            result = await generate_response(state)
+        assert result["final_response"] == "Refunds are available within 30 days."
+        prompt = llm.ainvoke.call_args.args[0][1].content
+        assert "Nothing was executed" in prompt
+        assert "Approved and executed" not in prompt
 
 
 class TestRankDocs:
@@ -1722,7 +1747,7 @@ class TestBillingEvidence:
         with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
             result = await validate_customer(_make_state("Dark Mode is broken on mobile"))
         assert result["customer_found"] is True
-        assert "No specific customer" in result["thought_log"][-1]
+        assert "No customer identified" in result["thought_log"][-1]
 
     @pytest.mark.asyncio
     async def test_explicit_unmatched_name_still_stops(self):
@@ -1731,3 +1756,135 @@ class TestBillingEvidence:
         with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db):
             result = await validate_customer(_make_state("Refund the charge for Zelda Quixote"))
         assert result["customer_found"] is False
+
+
+# ─────────────────────────────────────────────────────────────
+# Finding the customer however the ticket is written (held-out set, PR #50)
+# ─────────────────────────────────────────────────────────────
+
+ROSTER = [
+    {"id": 3, "name": "Maria Garcia", "email": "maria@dataforge.com"},
+    {"id": 4, "name": "Robert Kim", "email": "rkim@cloudpeak.net"},
+    {"id": 8, "name": "David Martinez", "email": "david@example.com"},
+    {"id": 10, "name": "Chris Johnson", "email": "chris@ecomshop.com"},
+]
+
+
+class TestExtractCustomerId:
+    """The held-out set's customer accuracy was 28.7%: only "Customer #N Name"
+    was recognized. These are the ID formats real tickets use."""
+
+    @pytest.mark.parametrize("message,expected", [
+        ("Customer #8 David Martinez wants a refund", 8),
+        ("hey, chris johnson here, acct 10", 10),
+        ("Robert Kim here, account #3, billing question", 3),
+        ("Thanks, David Martinez (#8)", 8),
+        ("#17 wants to know about SSO", 17),
+        ("customer no. 4 needs help", 4),
+        ("Account: 12 is locked", 12),
+    ])
+    def test_id_formats(self, message, expected):
+        assert _extract_customer_info(message)[0] == expected
+
+    @pytest.mark.parametrize("message", [
+        "Ticket #123 is still open",
+        "Invoice #9 has the wrong VAT number",
+        "Order #55 never arrived",
+        "The $49 charge showed up twice",
+    ])
+    def test_other_numbers_are_not_customer_ids(self, message):
+        assert _extract_customer_info(message)[0] is None
+
+
+class TestFindCustomerInText:
+    @pytest.mark.parametrize("message,expected", [
+        ("This is ridiculous, charged twice. Chris Johnson, E-Com Shop", "Chris Johnson"),
+        ("hi its david martinez, pls help", "David Martinez"),
+        ("Please reply to maria@dataforge.com about my invoice", "Maria Garcia"),
+        ("Robert Kim here, account #3", "Robert Kim"),
+        ("Hi, Davd Martines writing about my plan", "David Martinez"),
+    ])
+    def test_finds_names_emails_and_typos(self, message, expected):
+        assert _find_customer_in_text(message, ROSTER) == expected
+
+    def test_first_mentioned_customer_wins(self):
+        message = "Chris Johnson asked me, David Martinez, to write in"
+        assert _find_customer_in_text(message, ROSTER) == "Chris Johnson"
+
+    @pytest.mark.parametrize("message", [
+        "My dashboard is slow since yesterday",
+        "Maria wants to know about pricing",  # a first name alone is not enough
+    ])
+    def test_no_customer(self, message):
+        assert _find_customer_in_text(message, ROSTER) is None
+
+    def test_empty_roster_rows_are_ignored(self):
+        assert _find_customer_in_text("hello there", [{"id": 1, "name": "", "email": None}]) is None
+
+
+class TestValidateWithRoster:
+    def _db(self, by_id: dict | None):
+        db = _mock_db_with_customer(by_id)
+        db.list_customers = AsyncMock(return_value=ROSTER)
+        return db
+
+    @pytest.mark.asyncio
+    async def test_lowercase_name_with_bare_id_validates(self):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[3] | {"plan": "pro", "status": "active"})):
+            result = await validate_customer(_make_state("#10 chris johnson: billed twice"))
+        assert result["customer"]["id"] == 10
+
+    @pytest.mark.asyncio
+    async def test_id_and_roster_name_conflict_stops(self):
+        """ "Robert Kim here, account #3": #3 is Maria Garcia, so it stops."""
+        with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[0] | {"plan": "pro", "status": "active"})):
+            result = await validate_customer(_make_state("Robert Kim here, account #3, I need a refund"))
+        assert result["customer_found"] is False
+        assert "Robert Kim" in result["final_response"]
+
+    @pytest.mark.asyncio
+    async def test_email_only_ticket_searches_by_the_found_name(self):
+        db = self._db(None)
+        with patch("app.agent.agents.investigator.get_supabase", return_value=db), \
+             patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock,
+                   return_value=[ROSTER[0] | {"plan": "enterprise", "status": "active"}]) as search:
+            result = await validate_customer(_make_state("From maria@dataforge.com: where is my invoice?"))
+        search.assert_awaited_once_with(db, "Maria Garcia")
+        assert result["customer"]["id"] == 3
+
+    @pytest.mark.asyncio
+    async def test_other_customers_named_are_recorded(self):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[1] | {"plan": "pro", "status": "active"})):
+            result = await validate_customer(_make_state(
+                "Customer #4 Robert Kim wants Chris Johnson and maria@dataforge.com removed from his team"))
+        assert result["customer"]["id"] == 4
+        assert result["other_customers"] == ["Chris Johnson", "Maria Garcia"]
+
+    @pytest.mark.asyncio
+    async def test_no_other_customers_key_when_only_the_sender_is_named(self):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[1] | {"plan": "pro", "status": "active"})):
+            result = await validate_customer(_make_state("Customer #4 Robert Kim needs an invoice"))
+        assert "other_customers" not in result
+
+    @pytest.mark.asyncio
+    async def test_typo_name_without_an_id_uses_the_roster_spelling(self):
+        """Regression (held-out ho-name-typo-9): "Jenifer Tayler here" with no ID
+        was searched exactly and matched no one."""
+        roster = ROSTER + [{"id": 9, "name": "Jennifer Taylor", "email": "jt@example.com"}]
+        db = _mock_db_with_customer(None)
+        db.list_customers = AsyncMock(return_value=roster)
+        jennifer = {"id": 9, "name": "Jennifer Taylor", "plan": "pro", "status": "active"}
+        with patch("app.agent.agents.investigator.get_supabase", return_value=db), \
+             patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock,
+                   return_value=[jennifer]) as search:
+            result = await validate_customer(_make_state("Jenifer Tayler here, our webhooks stopped firing"))
+        search.assert_awaited_once_with(db, "Jennifer Taylor")
+        assert result["customer"]["id"] == 9
+        assert any('read as customer "Jennifer Taylor"' in t for t in result["thought_log"])
+
+    @pytest.mark.asyncio
+    async def test_regex_name_close_to_a_customer_keeps_the_typo_flow(self):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[2] | {"plan": "pro", "status": "active"})):
+            result = await validate_customer(_make_state("Customer #8 Davd Martines says he was charged twice"))
+        assert result["customer"]["id"] == 8
+        assert any("typo" in t for t in result["thought_log"])
