@@ -181,6 +181,37 @@ def _max_charge(billing: list, customer_id, kind: str = "refund", now: datetime 
     return max(charges) if charges else None
 
 
+LEDGER_ROWS = 20
+
+
+def _ledger(billing: list, customer_id, now: datetime | None = None) -> str:
+    """The validated customer's billing rows as the model should read them.
+
+    Fetched deterministically at validation, unlike the model's own SQL, and
+    with each row's status spelled out: a reply once called a failed $499
+    charge "the valid subscription" because the model never saw the status.
+    """
+    now = now or datetime.now(timezone.utc)
+    rows = _own_rows(billing, customer_id)
+    if not rows:
+        return "No billing records for this customer."
+    lines = []
+    for r in rows[:LEDGER_ROWS]:
+        age = _age_days(r, now)
+        when = (r.get("created_at") or "")[:10] or "date unknown"
+        ago = f", {int(age)} days ago" if age is not None else ""
+        amount = _to_amount(r.get("amount"))
+        lines.append(
+            f"- {when}{ago}: {r.get('type', '?')} ${amount or 0:.2f}, status {r.get('status', 'unknown')}"
+            f" — {r.get('description') or 'no description'}"
+        )
+    return "\n".join(lines) + (
+        "\nA charge with status failed took no money: never call it valid or paid, and never refund it. "
+        "A pending refund is already on its way to the customer. "
+        f"Refunds apply only to completed charges from the last {REFUND_WINDOW_DAYS} days."
+    )
+
+
 def _money_already_returned(billing: list, customer_id, now: datetime | None = None) -> dict | None:
     """A refund or credit already pending, or completed inside the policy window."""
     now = now or datetime.now(timezone.utc)
@@ -196,6 +227,14 @@ def _money_already_returned(billing: list, customer_id, now: datetime | None = N
 
 def _escalate(action: dict, description: str, reason: str) -> dict:
     return {**action, "type": "escalate", "amount": None, "description": description, "reason": reason}
+
+
+_NEGATION = re.compile(r"\b(no|not|never|nothing|n't|none)\b[^.;,]{0,25}$", re.IGNORECASE)
+
+
+def _claims_an_action(text: str) -> bool:
+    """ACTION_CLAIM, minus negations: "no payment was processed" states a fact."""
+    return any(not _NEGATION.search(text[: m.start()]) for m in ACTION_CLAIM.finditer(text))
 
 
 def _action_status(action: Mapping[str, object], approved: bool, denied_reason: str) -> str:
@@ -286,7 +325,7 @@ def _enforce_invariants(action: dict, state: AgentState, billing: list[dict] | N
         )
 
     # 4. A resolve performs nothing, so it may not say that something was done.
-    if action.get("type") == "resolve" and ACTION_CLAIM.search(
+    if action.get("type") == "resolve" and _claims_an_action(
         f"{action.get('description') or ''} {action.get('reason') or ''}"
     ):
         action = _escalate(
@@ -388,8 +427,8 @@ owed money (an outage credit, a billing error), propose that credit or refund
 with its amount rather than describing it inside a "resolve".
 
 Money moves only on evidence. Propose refund/credit only when the billing
-records show an erroneous charge (duplicate, charged while suspended or
-cancelled, failed-but-charged) or the internal documentation entitles the
+ledger shows an erroneous COMPLETED charge (duplicate, charged while suspended
+or cancelled) or the internal documentation entitles the
 customer to compensation — and compute the amount from those records and that
 policy (e.g. a percentage of the plan price), not from what the ticket asks for.
 
@@ -418,6 +457,9 @@ Respond with a JSON object:
 Intent: {state.get('intent', 'general')}
 
 Validated customer: {json.dumps(validated, default=str) if validated else "none"}
+
+Billing ledger (authoritative, fetched directly):
+{_ledger(billing, validated.get("id")) if validated else "No verified customer, so no billing records."}
 
 SQL Investigation Results:
 {sql_data[:2000]}
@@ -640,6 +682,9 @@ async def generate_response(state: AgentState, config: RunnableConfig | None = N
         HumanMessage(content=f"""Customer: {customer_name} (ID: {customer_id})
 Original issue: {state['user_message']}
 Intent: {state.get('intent', 'general')}
+
+Billing ledger (authoritative, fetched directly):
+{_ledger(state.get("billing") or [], (state.get("customer") or {}).get("id")) if state.get("customer") else "No verified customer, so no billing records."}
 
 Database records:
 {sql_data[:2000]}

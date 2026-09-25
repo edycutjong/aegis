@@ -27,19 +27,19 @@ except `resolve` **pauses** on a LangGraph interrupt until a human approves or d
 It is measured, not just demoed. Three ticket sets run three times each against the real models and the
 real database: a **golden** set of 47 tickets the agent was developed against; a first **held-out** set of 43,
 since used to find and fix bugs; and a **fresh held-out** set of 49 that nothing has been tuned against.
-**The fresh set is the number to trust: 68.7%.**
+**The fresh set is the number to trust: 68.7% on its untouched first run.**
 
 <!-- scorecard:start -->
-| | Golden (141 runs) | Held-out, now seen (129 runs) | **Fresh held-out (147 runs)** |
+| | Golden (141 runs) | Held-out, now seen (129 runs) | Fresh held-out v2: first run → after fixes (147 runs each) |
 |---|---|---|---|
-| **End-to-end pass rate** | **95.7%** (45/47 pass every trial) | **92.2%** (39/43) | **68.7%** (33/49) |
-| **Safety-invariant violations** | **0** | **0** | **12** (refunds of money not owed; all stopped at the gate) |
+| **End-to-end pass rate** | **98.6%** (46/47 pass every trial) | **92.2%** (39/43) | 68.7% → **81.0%** (39/49) |
+| **Safety-invariant violations** | **0** | **0** | 12 → **0** |
 | Prompt-injection attempts contained | 100.0% | 100.0% | 100.0% |
-| Intent · customer · action accuracy | 100.0% · 100.0% · 95.7% | 100.0% · 97.7% · 94.6% | 100.0% · 85.7% · 76.9% |
+| Intent · customer · action accuracy | 100.0% · 100.0% · 98.6% | 100.0% · 97.7% · 94.6% | 100.0% · 85.7% · 89.1% |
 | Input screen: injections flagged / benign flagged | 69.2% / 0.0% | 10.0% / 0.0% | 18.2% / 0.0% |
-| Prompt Guard unavailable (rules-only screening) | 33 of 141 runs | 42 of 129 runs | 22 of 147 runs |
-| Latency to the gate, p50 / p95 | 5.47s / 6.76s | 5.63s / 7.51s | 6.11s / 8.86s |
-| LLM cost per ticket, median | $0.0029 | $0.0029 | $0.0028 |
+| Prompt Guard unavailable (rules-only screening) | 28 of 141 runs | 42 of 129 runs | 45 of 147 runs |
+| Latency to the gate, p50 / p95 | 6.07s / 7.56s | 5.63s / 7.51s | 6.03s / 7.64s |
+| LLM cost per ticket, median | $0.0029 | $0.0029 | $0.0029 |
 <!-- scorecard:end -->
 
 Read these numbers for what they are.
@@ -47,9 +47,11 @@ Read these numbers for what they are.
 - **The fresh held-out set is the honest one.** 49 tickets written from the seed data without reading
   the agent's code or the other sets, run once: **68.7%, 12 safety violations.** Every violation
   is a refund proposed for money that isn't owed (a charge that failed, a duplicate already refunded, a charge
-  outside the 30-day window). All stopped at the approval gate; none was paid. The cause is in code: the
-  amount cap bounds a refund by the largest charge on record, counting failed charges and ignoring refunds
-  already issued. A fix is in progress.
+  outside the 30-day window). All stopped at the approval gate; none was paid. The cause was in code: the
+  amount cap bounded a refund by the largest charge on record, counting failed charges and ignoring refunds
+  already issued. After fixing the cap and showing the model the billing ledger with statuses, the same set
+  scores 81.0% with 0 violations, but it is now partly seen too. Most remaining failures are
+  customers named by first name and company ("Amanda from SocialBoost"), which the agent doesn't recognize.
 - **The first held-out set has been used to find bugs.** Its first run scored
   27.1%: the agent only recognized customers written as "Customer #N Name" (customer accuracy 28.7%). Fixing
   identification, and the cross-customer and "we emailed it" bugs the next run exposed, brought it to
@@ -58,7 +60,7 @@ Read these numbers for what they are.
 - **Golden is a regression gate, not an accuracy estimate.** Pass rates have ranged from 95.7% to 99.2%
   across runs as cases were added and expectations tightened.
 - **Of the five safety checks, three are enforced in code** after the model answers (the approval gate,
-  the amount cap, the identity override). The amount cap is currently too loose (see above). The other two, forbidden action types and forbidden phrases,
+  the amount cap, the identity override). The amount cap was too loose until the fresh set found it (see above). The other two, forbidden action types and forbidden phrases,
   depend on the model. They caught 5 violations in one run of this change; the fixes are in code, and the
   final runs above had 0.
 - **Prompt Guard runs on Groq's free tier and was unavailable on about a quarter of eval runs** (throttled
@@ -265,7 +267,7 @@ make preflight                          # every model answers, DB answers, privi
 
 | Command | What it does |
 |---|---|
-| `make test` | 571 backend + 265 frontend unit tests, 100% coverage gate on both |
+| `make test` | 590 backend + 265 frontend unit tests, 100% coverage gate on both |
 | `make e2e` | 32 Playwright tests (desktop + mobile), no backend or keys needed |
 | `make evals` | Golden set × 3 against real models → `backend/evals/SCORECARD.md` (~$0.30) |
 | `make ci` | lint → typecheck → test → audit → build |
