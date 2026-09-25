@@ -124,7 +124,13 @@ async function main() {
 
     const env = loadEnv();
     const url = env.SUPABASE_URL; // https://xxxx.supabase.co
-    const projectRef = url.replace("https://", "").split(".")[0];
+    // The ref is interpolated into the Management API path, so accept only a
+    // real project ref — a malformed URL must not redirect the request.
+    const projectRef = /^https:\/\/([a-z0-9]{20})\.supabase\.co\/?$/.exec(url ?? "")?.[1];
+    if (!projectRef) {
+        console.error("⚠  SUPABASE_URL in backend/.env must look like https://<20-char-ref>.supabase.co");
+        process.exit(1);
+    }
     const managementKey = env.SUPABASE_MANAGEMENT_KEY;
 
     if (!managementKey) {
