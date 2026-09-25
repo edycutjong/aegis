@@ -59,6 +59,9 @@ class FakeDB:
     async def list_docs(self, limit: int = 100) -> list[dict]:
         return DOCS
 
+    async def list_customers(self, limit: int = 1000) -> list[dict]:
+        return list(CUSTOMERS.values())
+
     async def search_customers(self, name_parts, limit: int = 5) -> list[dict]:
         return []  # pragma: no cover - every ticket here carries an ID
 

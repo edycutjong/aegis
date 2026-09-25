@@ -73,7 +73,9 @@ def check_sql(sql: str) -> GuardResult:
 
     try:
         statements = [s for s in sqlglot.parse(text, read="postgres") if s is not None]
-    except sqlglot.errors.ParseError as e:
+    # TokenError (e.g. an unterminated string) is not a ParseError subclass;
+    # uncaught, it crashed the run instead of going back to the model.
+    except (sqlglot.errors.ParseError, sqlglot.errors.TokenError) as e:
         return _reject(f"could not parse SQL: {str(e).splitlines()[0]}")
 
     if len(statements) != 1:

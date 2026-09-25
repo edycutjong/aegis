@@ -80,6 +80,22 @@ class SupabaseClient:
                 return response.json()
             return []
 
+    async def list_customers(self, limit: int = 1000) -> list[dict]:
+        """Names and emails of every customer, to find who a ticket is about.
+
+        The demo has 51 customers; a real deployment would search (pg_trgm)
+        instead of listing.
+        """
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{self.url}/rest/v1/customers",
+                headers={**self.headers, "Accept": "application/json"},
+                params={"select": "id,name,email", "order": "id", "limit": str(limit)},
+            )
+            if response.status_code == 200:
+                return response.json()
+            return []
+
     async def list_docs(self, limit: int = 100) -> list[dict]:
         """Fetch the internal knowledge base for in-process ranking."""
         async with httpx.AsyncClient(timeout=10.0) as client:

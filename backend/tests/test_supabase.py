@@ -139,6 +139,32 @@ class TestListDocs:
             assert await client.list_docs() == []
 
 
+class TestListCustomers:
+    """list_customers returns the roster used to find who a ticket is about."""
+
+    @pytest.mark.asyncio
+    async def test_returns_roster_on_200(self, mock_settings):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        response = MagicMock(status_code=200)
+        response.json.return_value = [{"id": 8, "name": "David Martinez", "email": "d@x.com"}]
+        with patch("httpx.AsyncClient") as cls:
+            get = AsyncMock(return_value=response)
+            cls.return_value.__aenter__.return_value.get = get
+            assert await client.list_customers() == [{"id": 8, "name": "David Martinez", "email": "d@x.com"}]
+        assert get.call_args.kwargs["params"]["select"] == "id,name,email"
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_error(self, mock_settings):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.db.supabase import SupabaseClient
+        client = SupabaseClient()
+        with patch("httpx.AsyncClient") as cls:
+            cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=MagicMock(status_code=500))
+            assert await client.list_customers() == []
+
+
 class TestSearchCustomers:
     """Name search goes through PostgREST filters, never interpolated SQL."""
 

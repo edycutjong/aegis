@@ -8,6 +8,7 @@ Supabase, and implements a self-healing retry loop for failed queries.
 This agent produces the raw evidence that downstream agents use for decisions.
 """
 
+import re
 from difflib import SequenceMatcher
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -35,6 +36,54 @@ _NOT_A_FIRST_NAME = frozenset(
 )
 
 
+_CUSTOMER_ID = re.compile(
+    r"\b(?:customer|cust|acct|account|client)\b\.?\s*(?:no\.?|number|id)?\s*[:#]?\s*(\d{1,6})\b",
+    re.IGNORECASE,
+)
+_BARE_ID = re.compile(
+    r"(?<![\w#])(?<!ticket )(?<!invoice )(?<!order )(?<!case )(?<!ref )#(\d{1,6})\b",
+    re.IGNORECASE,
+)
+_ROSTER_MATCH_THRESHOLD = 0.85  # a typo'd full name ("Jenifer Tayler"), not two random words
+
+
+def _find_customer_in_text(message: str, roster: list[dict]) -> str | None:
+    """The roster customer a ticket names, however it is written.
+
+    Matches an email address first, then a full name anywhere in the text
+    (any case, any position), then a close typo of a full name. Returns the
+    customer's name as stored, or None.
+    """
+    text = message.lower()
+    for customer in roster:
+        email = (customer.get("email") or "").lower()
+        if email and email in text:
+            return customer["name"]
+
+    found = []
+    for customer in roster:
+        name = (customer.get("name") or "").lower()
+        hit = re.search(rf"\b{re.escape(name)}\b", text) if name else None
+        if hit:
+            found.append((hit.start(), customer["name"]))
+    if found:
+        return min(found)[1]  # the first one the ticket mentions
+
+    words = re.findall(r"[a-z]+(?:['-][a-z]+)*", text)
+    best, best_name = 0.0, None
+    for first, last in zip(words, words[1:]):
+        window = f"{first} {last}"
+        for customer in roster:
+            ratio = _fuzzy_name_match(window, customer.get("name") or "")
+            if ratio > best:
+                best, best_name = ratio, customer["name"]
+    return best_name if best >= _ROSTER_MATCH_THRESHOLD else None
+
+
+def _close_to_a_customer(name: str, roster: list[dict]) -> bool:
+    return any(_fuzzy_name_match(name, c.get("name") or "") >= _FUZZY_THRESHOLD for c in roster)
+
+
 def _extract_customer_info(message: str) -> tuple[int | None, str | None]:
     """Extract customer ID and name from a support ticket message.
 
@@ -42,8 +91,10 @@ def _extract_customer_info(message: str) -> tuple[int | None, str | None]:
     """
     import re
 
-    # Extract ID: "Customer #8", "customer 8", "Customer#8"
-    id_match = re.search(r'[Cc]ustomer\s*#?(\d+)', message)
+    # Extract ID: "Customer #8", "customer 8", "acct 10", "account #3",
+    # "customer no. 4", "(#8)", "#17". A bare "#N" counts unless it names
+    # something else ("ticket #123", "invoice #9").
+    id_match = _CUSTOMER_ID.search(message) or _BARE_ID.search(message)
     customer_id = int(id_match.group(1)) if id_match else None
 
     # Extract name after customer ID: "Customer #8 David Martinez"
@@ -152,6 +203,15 @@ async def _validate_identity(state: AgentState) -> dict:
     user_msg = state["user_message"]
     customer_id, mentioned_name = _extract_customer_info(user_msg)
     db = get_supabase()
+
+    # The regex only sees "Customer #N First Last". The roster finds names
+    # written any other way ("chris johnson, acct 10", "Robert Kim here",
+    # an email address). A regex name that is close to a real customer is
+    # kept, so the typo and mismatch cases below still see what was written.
+    roster = await db.list_customers()
+    roster_name = _find_customer_in_text(user_msg, roster)
+    if roster_name and (mentioned_name is None or not _close_to_a_customer(mentioned_name, roster)):
+        mentioned_name = roster_name
     thoughts = state.get("thought_log", [])
 
     # ── Case 6: No ID and no name → let SQL figure it out ──
@@ -160,7 +220,7 @@ async def _validate_identity(state: AgentState) -> dict:
             "customer_found": True,
             "active_agent": AGENT_NAME,
             "thought_log": thoughts + [
-                f"✓ [{AGENT_NAME}] No specific customer ID or name in message — proceeding with investigation"
+                f"✓ [{AGENT_NAME}] No customer identified — skipping account lookups, answering from policy docs only"
             ],
         }
 
@@ -293,7 +353,7 @@ async def _validate_identity(state: AgentState) -> dict:
                 "customer_found": True,
                 "active_agent": AGENT_NAME,
                 "thought_log": thoughts + [
-                    f"✓ [{AGENT_NAME}] No specific customer ID or name in message — proceeding with investigation"
+                    f"✓ [{AGENT_NAME}] No customer identified — skipping account lookups, answering from policy docs only"
                 ],
             }
 
@@ -320,10 +380,18 @@ async def _validate_identity(state: AgentState) -> dict:
 
 
 def should_proceed_after_validation(state: AgentState) -> str:
-    """Conditional edge: only proceed if customer exists."""
-    if state.get("customer_found", True):
-        return "write_sql"
-    return "generate_response"
+    """Conditional edge after validation.
+
+    Model-written SQL only runs for a validated customer. With no customer
+    identified, the ticket is answered from policy docs alone: an open query
+    across every customer is how an unverified "auditor" got totals of all
+    customers and revenue into an auto-resolve.
+    """
+    if not state.get("customer_found", True):
+        return "generate_response"
+    if (state.get("customer") or {}).get("id") is None:
+        return "search_docs"
+    return "write_sql"
 
 
 def _validated_customer_hint(state: AgentState) -> str:

@@ -143,3 +143,11 @@ def test_function_allowlist_blocks_audit_escapes(sql):
 def test_realistic_investigation_queries_still_pass(sql):
     result = check_sql(sql)
     assert result.ok, result.reason
+
+
+def test_unterminated_string_is_rejected_not_raised():
+    """Regression (held-out ho-inj-prompt-leak): sqlglot raises TokenError,
+    not ParseError, on an unterminated string, and it crashed the run."""
+    result = check_sql("SELECT 'unterminated AS instructions FROM customers")
+    assert not result.ok
+    assert result.reason

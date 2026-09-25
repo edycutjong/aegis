@@ -39,6 +39,7 @@ def build_agent_graph():
     0. screen_input          → Prompt Guard 2 + deterministic injection rules
     1. classify_intent       → Determine ticket category (fast model)
     2. validate_customer     → Check customer exists in DB
+       ↳ none identified    → search_docs (no SQL across customers)
        ↳ not found          → generate_response → END (short-circuit)
     3. write_sql             → Generate investigation query (smart model)
     4. execute_sql           → Run query on Supabase
@@ -74,7 +75,8 @@ def build_agent_graph():
         "validate_customer",
         should_proceed_after_validation,
         {
-            "write_sql": "write_sql",               # Customer found → investigate
+            "write_sql": "write_sql",               # Customer validated → investigate
+            "search_docs": "search_docs",            # No customer identified → policy docs only, no SQL
             "generate_response": "generate_response", # Not found → short-circuit
         },
     )
