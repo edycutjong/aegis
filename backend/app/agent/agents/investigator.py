@@ -66,8 +66,8 @@ def _find_customer_in_text(message: str, roster: list[dict]) -> str | None:
     """The roster customer a ticket names, however it is written.
 
     Matches an email address first, then a full name anywhere in the text
-    (any case, any position), then a close typo of a full name. Returns the
-    customer's name as stored, or None.
+    (any case, any position), then a company name, then a close typo of a
+    full name. Returns the customer's name as stored, or None.
     """
     text = message.lower()
     for customer in roster:
@@ -83,6 +83,23 @@ def _find_customer_in_text(message: str, roster: list[dict]) -> str | None:
             found.append((hit.start(), customer["name"]))
     if found:
         return min(found)[1]  # the first one the ticket mentions
+
+    # A company name ("kevin from gamedev studio", "InnovaTech Labs accounts
+    # team", "rob kim @ cloudpeak"). Matched on letters and digits only, so
+    # "E-Com Shop" and "ecomshop" agree. The first word alone counts only when
+    # it is a coined name (CloudPeak, DataForge): "Logistics" from "Logistics
+    # Hub" once matched "Blue Harbor Logistics", a company that isn't a
+    # customer, and answered her with another customer's billing.
+    compact_text = re.sub(r"[^a-z0-9]", "", text)
+    for customer in roster:
+        company = customer.get("company") or ""
+        compact = re.sub(r"[^a-z0-9]", "", company.lower())
+        first = company.split()[0] if company.split() else ""
+        coined = len(first) >= 6 and re.search(r"[a-z][A-Z]|\d", first)
+        if (len(compact) >= 6 and compact in compact_text) or (
+            coined and re.search(rf"\b{re.escape(first.lower())}\b", text)
+        ):
+            return customer["name"]
 
     words = re.findall(r"[a-z]+(?:['-][a-z]+)*", text)
     best, best_name = 0.0, None

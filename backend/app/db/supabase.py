@@ -90,7 +90,7 @@ class SupabaseClient:
             response = await client.get(
                 f"{self.url}/rest/v1/customers",
                 headers={**self.headers, "Accept": "application/json"},
-                params={"select": "id,name,email", "order": "id", "limit": str(limit)},
+                params={"select": "id,name,email,company", "order": "id", "limit": str(limit)},
             )
             if response.status_code == 200:
                 return response.json()
