@@ -3,12 +3,12 @@
 Two independent limits, both in-process (the demo runs as one instance):
 
 - Per-client sliding window — keeps one visitor from monopolising the demo.
-- Global daily cap — the hard ceiling on LLM spend. Client identity comes from
-  proxy headers and can be spoofed, so the per-client window is a courtesy;
-  this cap is the guarantee.
+- Global daily cap — the hard ceiling on LLM spend, whatever a client does
+  with its identity (see client_key).
 
-Only POST /api/chat is limited: it is the only endpoint that starts LLM work.
-Approvals resume an already-paid-for thread.
+POST /api/chat is limited because it starts LLM work, and DELETE /api/cache
+shares the limit because clearing the cache forces fresh, paid runs.
+Approvals resume an already-paid-for thread and are not counted.
 """
 
 import time
@@ -56,11 +56,17 @@ class RateLimiter:
 
 
 def client_key(headers, fallback: str | None) -> str:
-    """Best-effort client identity behind a reverse proxy."""
+    """Client identity behind the Railway edge.
+
+    X-Real-IP is trusted because Railway's edge overwrites it with the real
+    peer address: a spoofed value is replaced (verified against the live
+    deployment, where ten requests with ten different X-Real-IP values were
+    all counted as one client). X-Forwarded-For is not used: its leftmost
+    entry is whatever the client sent. Behind a proxy that doesn't overwrite
+    X-Real-IP, this per-client window is spoofable, and the global daily cap
+    remains the real ceiling.
+    """
     real = headers.get("x-real-ip")
     if real:
         return real.strip()
-    forwarded = headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
     return fallback or "unknown"
