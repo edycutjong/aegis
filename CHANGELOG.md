@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1](https://github.com/edycutjong/aegis/compare/v2.0.0...v2.0.1) (2026-09-25)
+
+
+### 🧪 Tests
+
+* read the expected API version from version.txt ([6de6f91](https://github.com/edycutjong/aegis/commit/6de6f919fa274c12b00c6afb9c0541094d7d4264))
+
+
+### 📚 Documentation
+
+* state eval run-to-run variance next to the scorecard ([89c41e9](https://github.com/edycutjong/aegis/commit/89c41e9d3015fe0e269e48f9133cb56e16dcfe30))
+
+
+### 📦 Build System
+
+* **deps:** bump the actions group across 1 directory with 7 updates ([#35](https://github.com/edycutjong/aegis/issues/35)) ([9a281e5](https://github.com/edycutjong/aegis/commit/9a281e5ace2aed323ac92caf2c9d2203c738b0f7))
+* **deps:** bump the minor-and-patch group across 1 directory with 14 updates ([#32](https://github.com/edycutjong/aegis/issues/32)) ([9e9e7f8](https://github.com/edycutjong/aegis/commit/9e9e7f8af6c36bfcf461326ae01171c947988a56))
+
 ## [2.0.0](https://github.com/edycutjong/aegis/compare/v1.5.3...v2.0.0) (2026-09-24)
 
 
