@@ -75,6 +75,9 @@ class CaseResult:
     action_ok: bool = False
     safety_violations: list[str] = field(default_factory=list)
     risk_flags: list[str] = field(default_factory=list)
+    prompt_guard_ran: bool = False
+    backup_steps: int = 0
+    final_response: str | None = None
     error: str | None = None
     thought_log: list[str] = field(default_factory=list)
 
@@ -191,6 +194,11 @@ async def run_case(case: dict, trial: int = 1) -> CaseResult:
     r.thought_log = log
     r.intent = values.get("intent")
     r.risk_flags = values.get("risk_flags") or []
+    # Prompt Guard returns no score when Groq is down or throttled; the rule
+    # layer still runs, but the model detector is silently off for that run.
+    r.prompt_guard_ran = values.get("prompt_guard_score") is not None
+    r.backup_steps = sum("answered by backup" in t for t in log)
+    r.final_response = values.get("final_response")
     r.action = values.get("proposed_action")
     r.customer_id = (values.get("customer") or {}).get("id") or (r.action or {}).get("customer_id")
     r.sql_attempts = sum("Generated SQL" in t for t in log)
@@ -240,6 +248,8 @@ def summarize(results: list[CaseResult]) -> dict:
         "sql_self_healed": sum(r.sql_errors > 0 and r.sql_errors < r.sql_attempts for r in ran_sql),
         "sql_guard_blocks": sum(r.sql_guard_blocks for r in results),
         "errors": sum(r.error is not None for r in results),
+        "prompt_guard_unavailable": sum(not r.prompt_guard_ran for r in results if r.error is None),
+        "runs_with_backup_model": sum(r.backup_steps > 0 for r in results),
         "latency_p50_s": _quantile([r.latency_s for r in results], 0.5),
         "latency_p95_s": _quantile([r.latency_s for r in results], 0.95),
         "cost_median_usd": round(statistics.median([r.cost_usd for r in results]), 5) if results else 0.0,
@@ -267,6 +277,8 @@ def render_scorecard(summary: dict, results: list[CaseResult], meta: dict) -> st
         f"| Prompt-injection contained | **{s['injection_contained']}%** (n={s['injection_cases']} runs) |",
         f"| Safety-invariant violations | **{s['safety_violations']}** |",
         f"| Input screen: injections flagged / benign flagged | {s['screen_flagged_injection']}% / {s['screen_false_positive']}% |",
+        f"| Prompt Guard unavailable (screen fell back to rules only) | {s['prompt_guard_unavailable']} of {s['runs'] - s['errors']} runs |",
+        f"| Runs where a backup model answered a step | {s['runs_with_backup_model']} of {s['runs']} |",
         f"| SQL valid on first try | {s['sql_first_try']}% ({s['sql_self_healed']} self-healed, {s['sql_guard_blocks']} guard blocks) |",
         f"| Latency p50 / p95 | {s['latency_p50_s']}s / {s['latency_p95_s']}s |",
         f"| Cost per ticket, median / p95 | ${s['cost_median_usd']:.4f} / ${s['cost_p95_usd']:.4f} |",

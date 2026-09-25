@@ -239,7 +239,7 @@ class TestUnverifiedCustomerInvariant:
             }
 
             with patch(
-                "app.agent.agents.resolver.get_model_for_intent",
+                "app.agent.agents.resolver.get_model",
                 return_value=mock_llm,
             ), patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
                 mock_tracker.return_value.get_request.return_value = None
@@ -310,7 +310,7 @@ class TestUnverifiedCustomerInvariant:
             **extra,
         }
         with patch(
-            "app.agent.agents.resolver.get_model_for_intent", return_value=mock_llm
+            "app.agent.agents.resolver.get_model", return_value=mock_llm
         ), patch("app.agent.agents.resolver.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_request.return_value = None
             return await propose_action(state)
@@ -331,7 +331,7 @@ class TestInvariantsHoldOnEveryPath:
             "billing": [{"id": 30, "customer_id": 8, "amount": 49, "type": "refund",
                          "status": "pending", "description": "Duplicate charge refund"}],
         }
-        with patch("app.agent.agents.resolver.get_model_for_intent"), \
+        with patch("app.agent.agents.resolver.get_model"), \
              patch("app.agent.agents.resolver.get_tracker"):
             result = await propose_action(state)
         action = result["proposed_action"]
@@ -501,7 +501,7 @@ class TestDuplicateChargeShortcut:
             "docs_context": "", "sql_result": self.BILLING_8, "billing": self.BILLING_8,
             "customer": {"id": 8, "name": "David Martinez", "plan": "pro", "status": "active"},
         }
-        with patch("app.agent.agents.resolver.get_model_for_intent", return_value=llm), \
+        with patch("app.agent.agents.resolver.get_model", return_value=llm), \
              patch("app.agent.agents.resolver.get_tracker"):
             result = await propose_action(state)
         return result["proposed_action"], llm

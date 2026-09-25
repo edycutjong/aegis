@@ -8,9 +8,9 @@ from app.routing.model_router import (
     FALLBACK_MODEL,
     MODEL_PRICING,
     TASK_MODEL_MAP,
-    INTENT_MODEL_MAP,
+    failover_note,
     get_model,
-    get_model_for_intent,
+    primary_model_name,
     get_cost_per_token,
     calculate_cost,
     _create_model,
@@ -100,11 +100,11 @@ class TestCalculateCost:
 
 class TestTaskModelMap:
     def test_fast_tasks(self):
-        for task in ["classify_intent", "search_docs", "generate_response"]:
+        for task in ["classify_intent", "propose_action", "generate_response"]:
             assert TASK_MODEL_MAP[task] == "fast", f"{task} should route to 'fast'"
 
     def test_smart_tasks(self):
-        for task in ["write_sql", "propose_action"]:
+        for task in ["write_sql"]:
             assert TASK_MODEL_MAP[task] == "smart", f"{task} should route to 'smart'"
 
     def test_covers_all_llm_node_names(self):
@@ -112,7 +112,6 @@ class TestTaskModelMap:
         expected_llm_nodes = {
             "classify_intent",
             "write_sql",
-            "search_docs",
             "propose_action",
             "generate_response",
         }
@@ -128,7 +127,7 @@ class TestGetModel:
     def test_fast_task_routes_to_fast_model(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("classify_intent")
-        assert mock_create.call_args_list[0] == call("openai/gpt-oss-20b", max_retries=0)
+        assert mock_create.call_args_list[0] == call("gpt-4.1-mini", max_retries=0)
 
     @patch("app.routing.model_router._create_model")
     def test_smart_task_routes_to_smart_model(self, mock_create, mock_settings):
@@ -146,7 +145,7 @@ class TestGetModel:
     def test_unknown_task_defaults_to_fast(self, mock_create, mock_settings):
         mock_create.return_value = MagicMock()
         get_model("some_unknown_task")
-        assert mock_create.call_args_list[0] == call("openai/gpt-oss-20b", max_retries=0)
+        assert mock_create.call_args_list[0] == call("gpt-4.1-mini", max_retries=0)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -206,46 +205,46 @@ class TestCreateModel:
 
 
 # ─────────────────────────────────────────────────────────────
-# get_model_for_intent (intent-based routing)
+# Primary models and the failover note
 # ─────────────────────────────────────────────────────────────
 
-class TestGetModelForIntent:
-    """Test intent-aware model routing with Groq/Gemini split."""
+class TestPrimaryAndFailoverNote:
+    @pytest.mark.parametrize("task,model", [
+        ("classify_intent", "gpt-4.1-mini"), ("propose_action", "gpt-4.1-mini"),
+        ("generate_response", "gpt-4.1-mini"), ("write_sql", "gpt-4.1"), ("unknown", "gpt-4.1-mini"),
+    ])
+    def test_primary_model_name(self, task, model, mock_settings):
+        assert primary_model_name(task) == model
 
     @patch("app.routing.model_router._create_model")
-    def test_simple_intent_routes_to_groq(self, mock_create, mock_settings):
-        """model_provider='groq' should route to the configured Groq model."""
-        mock_create.return_value = MagicMock()
-        get_model_for_intent("generate_response", "groq")
-        assert mock_create.call_args_list[0] == call(INTENT_MODEL_MAP["groq"], max_retries=0)
-
-    @patch("app.routing.model_router._create_model")
-    def test_complex_intent_routes_to_gemini(self, mock_create, mock_settings):
-        """model_provider='gemini' should route to Gemini."""
-        mock_create.return_value = MagicMock()
-        get_model_for_intent("propose_action", "gemini")
-        assert mock_create.call_args_list[0] == call(INTENT_MODEL_MAP["gemini"], max_retries=0)
-
-    @patch("app.routing.model_router._create_model")
-    def test_none_provider_falls_back_to_default(self, mock_create, mock_settings):
-        """When model_provider is None, falls back to standard get_model routing."""
-        mock_create.return_value = MagicMock()
-        get_model_for_intent("classify_intent", None)
-        # Should use the standard FAST_MODEL for classify_intent
-        assert mock_create.call_args_list[0] == call("openai/gpt-oss-20b", max_retries=0)
-
-    @patch("app.routing.model_router._create_model")
-    def test_primary_is_wrapped_with_cross_provider_fallback(self, mock_create, mock_settings):
-        """Groq primary fails over to OpenAI — never to the provider that just failed."""
+    def test_chat_steps_run_on_openai_with_a_groq_backup(self, mock_create, mock_settings):
         primary, fallback = MagicMock(), MagicMock()
         mock_create.side_effect = [primary, fallback]
-        result = get_model_for_intent("generate_response", "groq")
-        assert mock_create.call_args_list == [
-            call(INTENT_MODEL_MAP["groq"], max_retries=0),
-            call(FALLBACK_MODEL["groq"]),
-        ]
+        result = get_model("propose_action")
+        assert mock_create.call_args_list == [call("gpt-4.1-mini", max_retries=0), call("openai/gpt-oss-120b")]
         primary.with_fallbacks.assert_called_once_with([fallback])
         assert result is primary.with_fallbacks.return_value
+
+    @pytest.mark.parametrize("answered,noted", [
+        ("gpt-4.1-mini", False),
+        ("gpt-4.1-mini-2025-04-14", False),
+        ("openai/gpt-oss-120b", True),
+        ("gpt-4.1-mini-preview", True),
+    ])
+    def test_note_only_when_a_backup_answered(self, answered, noted, mock_settings):
+        response = MagicMock(response_metadata={"model_name": answered})
+        note = failover_note("generate_response", "Resolution", None, response)
+        assert bool(note) is noted
+        if noted:
+            assert note == [f"↪ [Resolution] gpt-4.1-mini unavailable, answered by backup {answered}"]
+
+    def test_bigger_model_never_passes_for_its_mini_sibling(self, mock_settings):
+        """gpt-4.1-mini answering for gpt-4.1 is a failover, not a match."""
+        response = MagicMock(response_metadata={"model_name": "gpt-4.1-mini-2025-04-14"})
+        assert failover_note("write_sql", "Investigator", None, response)
+
+    def test_unknown_model_adds_no_note(self, mock_settings):
+        assert failover_note("write_sql", "Investigator", None, object()) == []
 
 
 # ─────────────────────────────────────────────────────────────
@@ -276,7 +275,7 @@ class TestFailover:
         with patch("app.routing.model_router._create_model") as mock_create:
             primary = RunnableLambda(throttled)
             mock_create.side_effect = [primary, RunnableLambda(lambda _: "answered by fallback")]
-            llm = get_model_for_intent("propose_action", "gemini")
+            llm = get_model("propose_action")
         assert await llm.ainvoke("hi") == "answered by fallback"
 
 

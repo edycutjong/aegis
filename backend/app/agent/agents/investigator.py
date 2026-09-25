@@ -15,7 +15,7 @@ from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model, resolved_model_name
+from app.routing.model_router import failover_note, get_model, resolved_model_name
 from app.db.supabase import get_supabase
 from app.db.sql_guard import check_sql
 from app.observability.tracker import get_tracker
@@ -404,7 +404,7 @@ Respond with ONLY the SQL query, no explanation, no markdown fences."""),
     return {
         "sql_query": sql,
         "active_agent": AGENT_NAME,
-        "thought_log": state.get("thought_log", []) + [
+        "thought_log": state.get("thought_log", []) + failover_note("write_sql", AGENT_NAME, llm, response) + [
             f"✓ [{AGENT_NAME}] Generated SQL query for investigation"
         ],
     }

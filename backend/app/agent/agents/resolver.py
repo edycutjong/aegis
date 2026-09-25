@@ -19,7 +19,7 @@ from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import get_model_for_intent, resolved_model_name
+from app.routing.model_router import failover_note, get_model, resolved_model_name
 from app.observability.tracker import get_tracker
 
 import re
@@ -256,7 +256,7 @@ async def propose_action(state: AgentState, config: RunnableConfig | None = None
     Uses the intent lane's model (see model_router); the invariants below
     hold whatever it proposes.
     """
-    llm = get_model_for_intent("propose_action", state.get("model_provider"))
+    llm = get_model("propose_action")
 
     sql_data = json.dumps(state.get("sql_result", []), indent=2, default=str)
     docs = state.get("docs_context", "None")
@@ -364,14 +364,15 @@ Propose the best action:"""),
         "description": "Unable to determine action — escalating to human manager",
         "reason": "The AI could not confidently parse a resolution.",
     }
-    return _proposal(_enforce_invariants(action, state, billing), state)
+    notes = failover_note("propose_action", AGENT_NAME, llm, response)
+    return _proposal(_enforce_invariants(action, state, billing), state, notes)
 
 
-def _proposal(action: dict, state: AgentState) -> dict:
+def _proposal(action: dict, state: AgentState, notes: list[str] | None = None) -> dict:
     return {
         "proposed_action": action,
         "active_agent": AGENT_NAME,
-        "thought_log": state.get("thought_log", []) + [
+        "thought_log": state.get("thought_log", []) + (notes or []) + [
             f"✓ [{AGENT_NAME}] Proposed action: {action.get('type', 'unknown')} — {action.get('description', '')}"
         ],
     }
@@ -531,7 +532,7 @@ async def generate_response(state: AgentState, config: RunnableConfig | None = N
             ],
         }
 
-    llm = get_model_for_intent("generate_response", state.get("model_provider"))
+    llm = get_model("generate_response")
 
     action = state.get("proposed_action", {})
     approved = state.get("approval_status") == "approved"
@@ -586,7 +587,7 @@ Write a brief resolution summary using the real data above:"""),
     return {
         "final_response": response.content,
         "active_agent": AGENT_NAME,
-        "thought_log": state.get("thought_log", []) + [
+        "thought_log": state.get("thought_log", []) + failover_note("generate_response", AGENT_NAME, llm, response) + [
             f"✓ [{AGENT_NAME}] Generated resolution summary"
         ],
     }
