@@ -19,16 +19,16 @@ triage. Please give us a reasonable window to patch before public disclosure.
 
 ## Security Model
 
-Aegis lets an LLM generate SQL and propose account-mutating actions. Two
-boundaries carry that risk, and both are covered by tests in
+Aegis lets an LLM generate SQL and propose account-mutating actions. The
+defenses are described in the README (*Treat every LLM output as hostile
+input*). The two boundaries below are covered by tests in
 `backend/tests/test_safety_invariants.py`:
 
 **1. The HITL approval gate.** Destructive actions (`refund`, `credit`,
 `tier_change`, `suspend`, `reactivate`) never execute without an explicit human approval
 resuming the LangGraph interrupt. The routing function `should_execute` is
-verified exhaustively — every combination of approval state and action type is
-enumerated, and the invariant *"no unapproved state ever reaches
-`execute_action`"* is asserted across all of them.
+tested for every action type and approval state: nothing unapproved reaches
+`execute_action`.
 
 **2. The table allowlist.** `GET /api/tables/{name}` serves only the four
 seed-data tables in `ALLOWED_TABLES`. A permission-boundary test asserts that
@@ -39,15 +39,17 @@ with HTTP 400 before any query is built.
 
 Disclosed deliberately — see `README.md` → *Production Gaps*:
 
-- **LLM-generated SQL is validated by a keyword blocklist, not a parser.** The
-  Postgres function `execute_readonly_query` (`seed.sql`) blocks non-`SELECT`
-  statements and a list of DDL/DML keywords, but does not stop `UNION SELECT`
-  or subqueries reading other tables. It also runs `SECURITY DEFINER`. Hardening
-  this to a `sqlglot`-parsed, table-allowlisted, low-privilege-role execution
-  path is tracked as planned work.
+- **LLM-generated SQL can still be expensive.** `backend/app/db/sql_guard.py`
+  parses every query with sqlglot (one `SELECT`, allowlisted tables and
+  functions, no OID casts, rows capped), and the database runs it read-only as
+  the `NOLOGIN` role `aegis_query` behind RLS. A recursive CTE or a large
+  `string_agg` join is only bounded by the 5-second `statement_timeout`.
 - **No authentication.** Every endpoint is unauthenticated. Aegis is a
   demonstration system; do not expose it to untrusted networks with real
   customer data.
+- **"Verified customer" means matched, not authenticated.** The ID and name in
+  the ticket text must match the database; nothing proves who wrote the
+  ticket. The human approver is the real control.
 - **Approval state is in-process.** `thread_store` and LangGraph's `MemorySaver`
   are per-process and non-durable; a restart loses pending approvals.
 

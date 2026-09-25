@@ -29,7 +29,6 @@ def mock_settings():
         "FAST_MODEL": "openai/gpt-oss-20b",
         "SMART_MODEL": "gpt-4.1",
         "FRONTEND_URL": "http://localhost:3000",
-        "DEBUG": "false",
     }, clear=False):
         get_settings.cache_clear()
         settings = get_settings()
@@ -46,7 +45,7 @@ def reset_singletons():
     get_settings.cache_clear()
 
     # Reset cache singleton
-    import app.cache.semantic as cache_mod
+    import app.cache.response as cache_mod
     cache_mod._cache = None
 
     # Reset db singleton

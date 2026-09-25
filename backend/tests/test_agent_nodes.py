@@ -1,11 +1,11 @@
-"""Tests for pure-logic functions in app.agent.nodes."""
+"""Tests for the agent node functions in app.agent.agents."""
 
 import json
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.agent.nodes import (
+from app.agent.agents import (
     should_retry_sql,
     should_execute,
     _extract_customer_info,
@@ -938,7 +938,7 @@ class TestGenerateResponseAsync:
 
 
 # ─────────────────────────────────────────────────────────────
-# _search_customers_by_name (L122-140)
+# _search_customers_by_name
 # ─────────────────────────────────────────────────────────────
 
 
@@ -964,16 +964,16 @@ class TestSearchCustomersByName:
 
 
 # ─────────────────────────────────────────────────────────────
-# validate_customer edge cases for status warnings (L197, L223)
+# validate_customer edge cases for status warnings
 # ─────────────────────────────────────────────────────────────
 
 
 class TestValidateCustomerSuspendedCases:
-    """Cover warning branches that weren't exercised."""
+    """Warning branches that weren't exercised."""
 
     @pytest.mark.asyncio
     async def test_case4_id_only_suspended(self):
-        """Case 4 + suspended: ID only, no name, suspended customer (L197)."""
+        """Case 4 + suspended: ID only, no name, suspended customer."""
         suspended_david = {**DAVID, "status": "suspended"}
         with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
             result = await validate_customer(_make_state("Customer #8 has a billing issue"))
@@ -982,7 +982,7 @@ class TestValidateCustomerSuspendedCases:
 
     @pytest.mark.asyncio
     async def test_case3_fuzzy_typo_suspended(self):
-        """Case 3 + suspended: Fuzzy match with status warning (L223)."""
+        """Case 3 + suspended: Fuzzy match with status warning."""
         suspended_david = {**DAVID, "status": "suspended"}
         with patch("app.agent.agents.investigator.get_supabase", return_value=_mock_db_with_customer(suspended_david)):
             result = await validate_customer(_make_state("Customer #8 Davd Martines was charged twice"))
@@ -992,7 +992,7 @@ class TestValidateCustomerSuspendedCases:
 
     @pytest.mark.asyncio
     async def test_case5_name_only_no_matches(self):
-        """Case 5 name-only → 0 matches → customer not found (L294-306)."""
+        """Case 5 name-only → 0 matches → customer not found."""
         mock_db = _mock_db_with_customer(None)
         with patch("app.agent.agents.investigator.get_supabase", return_value=mock_db), \
              patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock, return_value=[]):
@@ -1002,16 +1002,16 @@ class TestValidateCustomerSuspendedCases:
 
 
 # ─────────────────────────────────────────────────────────────
-# execute_sql — non-string/non-dict error type (L431)
+# execute_sql — non-string/non-dict error type
 # ─────────────────────────────────────────────────────────────
 
 
 class TestExecuteSqlNonStringError:
-    """Cover the else branch for error types that aren't str or dict."""
+    """Else branch for error types that aren't str or dict."""
 
     @pytest.mark.asyncio
     async def test_error_non_string_type(self):
-        """Error is an int → falls through to str(raw_error)[:100] (L431)."""
+        """Error is an int → falls through to str(raw_error)[:100]."""
         mock_db = MagicMock()
         mock_db.get_billing = AsyncMock(return_value=[])
         mock_db.execute_sql = AsyncMock(return_value={
@@ -1032,7 +1032,7 @@ class TestExecuteSqlNonStringError:
 
 
 class TestWriteSqlTokenTracking:
-    """Cover L366: write_sql token tracking branch."""
+    """write_sql token tracking branch."""
 
     @pytest.mark.asyncio
     async def test_tracks_tokens(self):
@@ -1054,7 +1054,7 @@ class TestWriteSqlTokenTracking:
 
 
 class TestProposeActionTokenTracking:
-    """Cover L561: propose_action token tracking branch."""
+    """propose_action token tracking branch."""
 
     @pytest.mark.asyncio
     async def test_tracks_tokens(self):
@@ -1084,7 +1084,7 @@ class TestProposeActionTokenTracking:
 
 
 class TestGenerateResponseTokenTracking:
-    """Cover L763: generate_response token tracking branch."""
+    """generate_response token tracking branch."""
 
     @pytest.mark.asyncio
     async def test_tracks_tokens(self):
@@ -1114,7 +1114,7 @@ class TestGenerateResponseTokenTracking:
 
 
 # ─────────────────────────────────────────────────────────────
-# await_approval (L627-656)
+# await_approval
 # ─────────────────────────────────────────────────────────────
 
 
@@ -1218,7 +1218,7 @@ class TestAwaitApprovalAsync:
     @pytest.mark.asyncio
     async def test_hitl_requested_at_not_overwritten_if_already_set(self):
         """If hitl_requested_at was already set (e.g. by a prior interrupt cycle on
-        resume), await_approval must NOT clobber it with a new timestamp (L263)."""
+        resume), await_approval must NOT clobber it with a new timestamp."""
         state = _make_full_state("refund")
         state["proposed_action"] = {"type": "refund", "description": "Refund $50"}
 
@@ -1254,7 +1254,7 @@ class _LLMWithoutModelNameAttr:
 
 
 class TestClassifyIntentModelNameFallback:
-    """Cover the `else str(llm.model)` branch in classify_intent (L55)."""
+    """`else str(llm.model)` branch in classify_intent."""
 
     @pytest.mark.asyncio
     async def test_falls_back_to_str_model_when_no_model_name_attr(self):
@@ -1273,7 +1273,7 @@ class TestClassifyIntentModelNameFallback:
 
 
 class TestWriteSqlModelNameFallback:
-    """Cover the `else str(llm.model)` branch in write_sql (L335)."""
+    """`else str(llm.model)` branch in write_sql."""
 
     @pytest.mark.asyncio
     async def test_falls_back_to_str_model_when_no_model_name_attr(self):
@@ -1295,7 +1295,7 @@ class TestWriteSqlModelNameFallback:
 
 
 class TestProposeActionModelNameFallback:
-    """Cover the `else str(llm.model)` branch in propose_action (L165)."""
+    """`else str(llm.model)` branch in propose_action."""
 
     @pytest.mark.asyncio
     async def test_falls_back_to_str_model_when_no_model_name_attr(self):
@@ -1325,7 +1325,7 @@ class TestProposeActionModelNameFallback:
 
 
 class TestGenerateResponseModelNameFallback:
-    """Cover the `else str(llm.model)` branch in generate_response (L423)."""
+    """`else str(llm.model)` branch in generate_response."""
 
     @pytest.mark.asyncio
     async def test_falls_back_to_str_model_when_no_model_name_attr(self):

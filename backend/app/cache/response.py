@@ -3,9 +3,8 @@
 If the exact same ticket (after whitespace/case normalization) arrives again
 within the TTL, the cached answer is served in ~50ms at zero LLM cost.
 
-Naming note: the module and class keep their historical "semantic" name, but
-matching is exact (SHA-256 of the normalized text), not embedding similarity.
-Semantic matching would need an embedding model and a tuned threshold — a
+Matching is exact (SHA-256 of the normalized text), not embedding similarity.
+Semantic matching would need an embedding model and a tuned threshold, and a
 wrong near-match here would serve another customer's resolution.
 """
 
@@ -16,7 +15,7 @@ import redis.asyncio as redis
 from app.config import get_settings
 
 
-class SemanticCache:
+class ResponseCache:
     """Redis-backed exact-match response cache (see module docstring)."""
 
     def __init__(self):
@@ -124,12 +123,12 @@ class SemanticCache:
 
 
 # Singleton
-_cache: SemanticCache | None = None
+_cache: ResponseCache | None = None
 
-async def get_cache() -> SemanticCache:
+async def get_cache() -> ResponseCache:
     """Get or create the cache singleton."""
     global _cache
     if _cache is None:
-        _cache = SemanticCache()
+        _cache = ResponseCache()
         await _cache.connect()
     return _cache

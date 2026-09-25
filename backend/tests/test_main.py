@@ -130,7 +130,7 @@ class TestTracingStatusEndpoint:
                 assert data["project"] == "test-project"
 
     def test_enabled_connected(self):
-        """Cover L375-377: LangSmith enabled and client.info returns data."""
+        """LangSmith enabled and client.info returns data."""
         with patch.dict(os.environ, {
             "LANGCHAIN_TRACING_V2": "true",
             "LANGCHAIN_API_KEY": "lsv2_pt_test",
@@ -155,7 +155,7 @@ class TestTracingStatusEndpoint:
                     assert data["connected"] is True
 
     def test_lifespan_tracing_disabled(self):
-        """Cover lifespan else branch (L45) when tracing is disabled."""
+        """Lifespan else branch when tracing is disabled."""
         with patch.dict(os.environ, {
             "LANGCHAIN_TRACING_V2": "false",
             "LANGCHAIN_API_KEY": "",
@@ -174,7 +174,7 @@ class TestTracingStatusEndpoint:
                 assert data["enabled"] is False
 
     def test_enabled_but_connection_fails(self):
-        """Cover L376-377: LangSmith enabled but Client() raises."""
+        """LangSmith enabled but Client() raises."""
         with patch.dict(os.environ, {
             "LANGCHAIN_TRACING_V2": "true",
             "LANGCHAIN_API_KEY": "lsv2_pt_test",
@@ -255,7 +255,7 @@ class TestChatEndpoint:
         assert response.status_code == 422
 
     def test_cache_hit_returns_cached(self, client):
-        """Cover L130-136: cache hit returns early with cached thread_id."""
+        """Cache hit returns early with cached thread_id."""
         mock_cache = AsyncMock()
         mock_cache.get = AsyncMock(return_value={
             "response": "Cached response",
@@ -303,7 +303,7 @@ class TestApproveEndpoint:
         del thread_store["test-thread-2"]
 
     def test_approve_resumes_workflow(self, client):
-        """Cover L295-334: Successful approval resume."""
+        """Successful approval resume."""
         from app.main import thread_store
 
         thread_store["approval-test"] = {
@@ -383,7 +383,7 @@ class TestApproveEndpoint:
         del thread_store["deny-cache-test"]
 
     def test_approve_exception_returns_500(self, client):
-        """Cover L336-337: Exception during approval raises 500."""
+        """Exception during approval raises 500."""
         from app.main import thread_store
 
         thread_store["error-approval"] = {
@@ -411,7 +411,7 @@ class TestApproveEndpoint:
         del thread_store["error-approval"]
 
     def test_approve_no_metrics_skips_approved_assignment(self, client):
-        """Cover L347-348: when tracker.get_request returns None (metrics were
+        """When tracker.get_request returns None (metrics were
         never started, e.g. server restarted mid-flow), approve_action must
         not crash trying to set `.approved` on None — it should just skip it."""
         from app.main import thread_store
@@ -452,7 +452,7 @@ class TestApproveEndpoint:
 
 
 # ─────────────────────────────────────────────────────────────
-# _run_agent tests (L166-212)
+# _run_agent tests
 # ─────────────────────────────────────────────────────────────
 
 
@@ -461,7 +461,7 @@ class TestRunAgent:
 
     @pytest.mark.asyncio
     async def test_run_agent_completes(self):
-        """Cover L166-207: Full successful _run_agent flow."""
+        """Full successful _run_agent flow."""
         from app.main import _run_agent, thread_store
 
         thread_store["agent-test"] = {
@@ -503,7 +503,7 @@ class TestRunAgent:
 
     @pytest.mark.asyncio
     async def test_run_agent_interrupt(self):
-        """Cover L194-195: Agent hits HITL interrupt."""
+        """Agent hits HITL interrupt."""
         from app.main import _run_agent, thread_store
 
         thread_store["interrupt-test"] = {
@@ -535,7 +535,7 @@ class TestRunAgent:
 
     @pytest.mark.asyncio
     async def test_run_agent_error(self):
-        """Cover L209-212: Agent workflow throws exception."""
+        """Agent workflow throws exception."""
         from app.main import _run_agent, thread_store
 
         thread_store["error-test"] = {
@@ -562,7 +562,7 @@ class TestRunAgent:
 
     @pytest.mark.asyncio
     async def test_run_agent_updates_customer_candidates(self):
-        """Cover L189-190: customer_candidates update in thread store."""
+        """customer_candidates update in thread store."""
         from app.main import _run_agent, thread_store
 
         thread_store["candidates-test"] = {
@@ -601,7 +601,7 @@ class TestRunAgent:
 
     @pytest.mark.asyncio
     async def test_run_agent_skips_cache_when_thought_log_has_failure(self):
-        """Cover L213-214: has_failure=True should skip caching even though
+        """has_failure=True should skip caching even though
         final_response is set — a 'not found'/'✗' entry means the result
         shouldn't be served to future identical queries."""
         from app.main import _run_agent, thread_store
@@ -644,7 +644,7 @@ class TestRunAgent:
 
     @pytest.mark.asyncio
     async def test_run_agent_skips_cache_when_no_final_response(self):
-        """Cover L214: final_resp falsy should skip caching, but observability
+        """final_resp falsy should skip caching, but observability
         tracking must still complete regardless."""
         from app.main import _run_agent, thread_store
 
@@ -683,7 +683,7 @@ class TestRunAgent:
 
 
 # ─────────────────────────────────────────────────────────────
-# SSE streaming tests (L223-279)
+# SSE streaming tests
 # ─────────────────────────────────────────────────────────────
 
 
@@ -691,14 +691,14 @@ class TestStreamEndpoint:
     """GET /api/stream/{thread_id} should return SSE events."""
 
     def test_stream_not_found(self, client):
-        """Cover L229-234: thread not found."""
+        """Thread not found."""
         response = client.get("/api/stream/nonexistent-id")
         assert response.status_code == 200
         text = response.text
         assert "error" in text
 
     def test_stream_completed(self, client):
-        """Cover L259-268: completed thread streams final event."""
+        """Completed thread streams final event."""
         from app.main import thread_store
         thread_store["stream-done"] = {
             "message": "test",
@@ -715,7 +715,7 @@ class TestStreamEndpoint:
         del thread_store["stream-done"]
 
     def test_stream_error(self, client):
-        """Cover L270-275: errored thread streams error event."""
+        """Errored thread streams error event."""
         from app.main import thread_store
         thread_store["stream-error"] = {
             "message": "test",
@@ -731,7 +731,7 @@ class TestStreamEndpoint:
         del thread_store["stream-error"]
 
     def test_stream_awaiting_approval(self, client):
-        """Cover L249-257: thread awaiting approval streams approval_required."""
+        """Thread awaiting approval streams approval_required."""
         from app.main import thread_store
         thread_store["stream-approval"] = {
             "message": "test",
@@ -748,7 +748,7 @@ class TestStreamEndpoint:
 
 
 # ─────────────────────────────────────────────────────────────
-# db-status & table-data endpoint tests (L399-447)
+# db-status & table-data endpoint tests
 # ─────────────────────────────────────────────────────────────
 
 
@@ -756,7 +756,7 @@ class TestDbStatusEndpoint:
     """GET /api/db-status should return record counts and freshness."""
 
     def test_returns_counts_with_list_data(self, client):
-        """Cover L399-415: success path where data is a list."""
+        """Success path where data is a list."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(return_value={
             "success": True,
@@ -776,7 +776,7 @@ class TestDbStatusEndpoint:
             assert data["customers"]["latest"] == "2026-03-01T08:00:00Z"
 
     def test_returns_counts_with_dict_data(self, client):
-        """Cover L411: success path where data is a dict (not a list)."""
+        """Success path where data is a dict (not a list)."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(return_value={
             "success": True,
@@ -790,7 +790,7 @@ class TestDbStatusEndpoint:
             assert data["customers"]["count"] == 5
 
     def test_handles_query_failure(self, client):
-        """Cover L416-417: success=False returns error info."""
+        """Success=False returns error info."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(return_value={
             "success": False,
@@ -805,7 +805,7 @@ class TestDbStatusEndpoint:
             assert data["customers"]["error"] == "Query failed"  # raw DB text stays in logs
 
     def test_handles_exception(self, client):
-        """Cover L418-419: execute_sql throws exception."""
+        """execute_sql throws exception."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(side_effect=Exception("Connection refused"))
 
@@ -817,7 +817,7 @@ class TestDbStatusEndpoint:
             assert data["customers"]["error"] == "Database unreachable"
 
     def test_handles_empty_data(self, client):
-        """Cover L410: success=True but empty data."""
+        """Success=True but empty data."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(return_value={
             "success": True,
@@ -835,7 +835,7 @@ class TestGetTableDataEndpoint:
     """GET /api/tables/{name} should return rows from a seed table."""
 
     def test_returns_rows_on_success(self, client):
-        """Cover L436-441: successful query returns rows."""
+        """Successful query returns rows."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(return_value={
             "success": True,
@@ -853,7 +853,7 @@ class TestGetTableDataEndpoint:
             assert len(data["rows"]) == 2
 
     def test_returns_empty_rows_when_data_is_none(self, client):
-        """Cover L441: data is None, should return empty list."""
+        """Data is None, should return empty list."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(return_value={
             "success": True,
@@ -885,13 +885,13 @@ class TestGetTableDataEndpoint:
         assert rows[0]["name"] == "Sarah Chen"
 
     def test_unknown_table_returns_400(self, client):
-        """Cover L433-434: unknown table name returns 400."""
+        """Unknown table name returns 400."""
         response = client.get("/api/tables/secret_table")
         assert response.status_code == 400
         assert "Unknown table" in response.json()["detail"]
 
     def test_query_failure_returns_500(self, client):
-        """Cover L442-443: query returns success=False."""
+        """Query returns success=False."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(return_value={
             "success": False,
@@ -904,7 +904,7 @@ class TestGetTableDataEndpoint:
             assert response.json()["detail"] == "Query failed"
 
     def test_reraises_http_exception(self, client):
-        """Cover L444-445: HTTPException is re-raised without wrapping."""
+        """HTTPException is re-raised without wrapping."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(side_effect=HTTPException(
             status_code=503, detail="Service unavailable"
@@ -916,7 +916,7 @@ class TestGetTableDataEndpoint:
             assert "Service unavailable" in response.json()["detail"]
 
     def test_general_exception_returns_500(self, client):
-        """Cover L446-447: general Exception is caught and returns 500."""
+        """General Exception is caught and returns 500."""
         mock_db = AsyncMock()
         mock_db.execute_sql = AsyncMock(side_effect=RuntimeError("Database crashed"))
 
@@ -955,7 +955,7 @@ class TestTracesEndpoint:
                 assert data["error"] is None
 
     def test_traces_returns_data(self):
-        """Cover the full success path with mocked LangSmith client."""
+        """Full success path with mocked LangSmith client."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {
@@ -1044,7 +1044,7 @@ class TestTracesEndpoint:
                     assert child2["model"] == "supabase/postgres"
 
     def test_traces_with_token_usage_fallback(self):
-        """Cover token_usage dict fallback when total_tokens is None."""
+        """token_usage dict fallback when total_tokens is None."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {
@@ -1103,7 +1103,7 @@ class TestTracesEndpoint:
                     assert child["total_tokens"] == 892
 
     def test_traces_handles_exception(self):
-        """Cover exception handling — should return error string."""
+        """Exception handling — should return error string."""
         with patch.dict(os.environ, {
             "LANGCHAIN_TRACING_V2": "true",
             "LANGCHAIN_API_KEY": "lsv2_pt_test",
@@ -1129,7 +1129,7 @@ class TestTracesEndpoint:
                     assert data["error"] == "Could not load traces from LangSmith."
 
     def test_traces_returns_cached_data(self):
-        """Cover L478: TTL cache hit returns cached data without calling LangSmith."""
+        """TTL cache hit returns cached data without calling LangSmith."""
         import time
 
         with patch.dict(os.environ, {
@@ -1164,7 +1164,7 @@ class TestTracesEndpoint:
             _traces_cache["ts"] = 0.0
 
     def test_traces_invocation_params_model_name(self):
-        """Cover model extraction from invocation_params.model_name fallback."""
+        """Model extraction from invocation_params.model_name fallback."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {
@@ -1220,7 +1220,7 @@ class TestTracesEndpoint:
                     assert child["model"] == "gpt-4.1"
 
     def test_traces_grandchild_model_extraction(self):
-        """Cover model extraction from grandchild LLM runs when child has none."""
+        """Model extraction from grandchild LLM runs when child has none."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {
@@ -1326,7 +1326,7 @@ class TestTracesEndpoint:
                     assert child2["name"] == "generate_response"
 
     def test_traces_child_run_fetch_failure(self):
-        """Cover L512-513: child-run fetch exception falls back to empty list."""
+        """Child-run fetch exception falls back to empty list."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {
@@ -1372,7 +1372,7 @@ class TestTracesEndpoint:
                     assert data["error"] is None
 
     def test_traces_429_retry_then_success(self):
-        """Cover L581-584: 429 rate limit triggers retry with backoff."""
+        """429 rate limit triggers retry with backoff."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {
@@ -1431,7 +1431,7 @@ class TestTracesEndpoint:
                     mock_sleep.assert_called_once_with(5)
 
     def test_traces_grandchild_orphan_parent(self):
-        """Cover L526: LLM grandchild references unknown parent — get_top_level_child returns None."""
+        """LLM grandchild references unknown parent — get_top_level_child returns None."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {
@@ -1489,7 +1489,7 @@ class TestTracesEndpoint:
                     assert data["traces"][0]["child_runs"] == []
 
     def test_traces_grandchild_cycle_detection(self):
-        """Cover L530: LLM grandchild parent chain forms a cycle — get_top_level_child returns None."""
+        """LLM grandchild parent chain forms a cycle — get_top_level_child returns None."""
         from datetime import datetime, timezone
 
         with patch.dict(os.environ, {

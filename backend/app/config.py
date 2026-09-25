@@ -39,9 +39,6 @@ class Settings:
     langchain_api_key: str = ""
     langchain_project: str = "aegis"
 
-    # App
-    debug: bool = False
-
     # Public-demo spend protection (see app/ratelimit.py)
     rate_limit_per_client: int = 8
     rate_limit_window_seconds: int = 600
@@ -69,8 +66,6 @@ class Settings:
         self.langchain_tracing_v2 = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
         self.langchain_api_key = os.getenv("LANGCHAIN_API_KEY", self.langchain_api_key)
         self.langchain_project = os.getenv("LANGCHAIN_PROJECT", self.langchain_project)
-
-        self.debug = os.getenv("DEBUG", "false").lower() == "true"
 
         self.rate_limit_per_client = int(os.getenv("RATE_LIMIT_PER_CLIENT", self.rate_limit_per_client))
         self.rate_limit_window_seconds = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", self.rate_limit_window_seconds))

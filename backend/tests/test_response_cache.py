@@ -1,16 +1,16 @@
-"""Tests for app.cache.semantic."""
+"""Tests for app.cache.response."""
 
 import json
 from unittest.mock import AsyncMock, patch
 
-from app.cache.semantic import SemanticCache
+from app.cache.response import ResponseCache
 
 
 class TestMakeKey:
     """Verify deterministic, case-insensitive cache key generation."""
 
     def test_deterministic(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 0, "misses": 0}
 
@@ -19,7 +19,7 @@ class TestMakeKey:
         assert key1 == key2
 
     def test_case_insensitive(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 0, "misses": 0}
 
@@ -28,7 +28,7 @@ class TestMakeKey:
         assert key_upper == key_lower
 
     def test_key_prefix(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 0, "misses": 0}
 
@@ -38,11 +38,11 @@ class TestMakeKey:
         assert len(key) == len("aegis:cache:") + 16
 
 
-class TestSemanticCacheGracefulDegradation:
+class TestResponseCacheGracefulDegradation:
     """Cache should work gracefully without Redis."""
 
     async def test_get_returns_none_without_redis(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 0, "misses": 0}
 
@@ -51,7 +51,7 @@ class TestSemanticCacheGracefulDegradation:
         assert cache.stats["misses"] == 1
 
     async def test_set_noops_without_redis(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 0, "misses": 0}
 
@@ -59,7 +59,7 @@ class TestSemanticCacheGracefulDegradation:
         await cache.set("some query", {"response": "cached"})
 
     def test_get_stats_initial_state(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 0, "misses": 0}
 
@@ -71,7 +71,7 @@ class TestSemanticCacheGracefulDegradation:
         assert stats["connected"] is False
 
     def test_get_stats_after_misses(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 3, "misses": 7}
 
@@ -80,11 +80,11 @@ class TestSemanticCacheGracefulDegradation:
         assert stats["hit_rate_percent"] == 30.0
 
 
-class TestSemanticCacheWithMockedRedis:
+class TestResponseCacheWithMockedRedis:
     """Test cache operations with a mocked Redis client."""
 
     async def test_get_cache_hit(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 0, "misses": 0}
         cache.redis = AsyncMock()
         cached_data = {"final_response": "Your balance is $100"}
@@ -95,7 +95,7 @@ class TestSemanticCacheWithMockedRedis:
         assert cache.stats["hits"] == 1
 
     async def test_get_cache_miss(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 0, "misses": 0}
         cache.redis = AsyncMock()
         cache.redis.get = AsyncMock(return_value=None)
@@ -105,7 +105,7 @@ class TestSemanticCacheWithMockedRedis:
         assert cache.stats["misses"] == 1
 
     async def test_get_redis_error_graceful(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 0, "misses": 0}
         cache.redis = AsyncMock()
         cache.redis.get = AsyncMock(side_effect=Exception("Connection lost"))
@@ -115,7 +115,7 @@ class TestSemanticCacheWithMockedRedis:
         assert cache.stats["misses"] == 1
 
     async def test_set_stores_data(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 0, "misses": 0}
         cache.ttl = 3600
         cache.redis = AsyncMock()
@@ -125,7 +125,7 @@ class TestSemanticCacheWithMockedRedis:
         cache.redis.set.assert_called_once()
 
     async def test_set_redis_error_graceful(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 0, "misses": 0}
         cache.ttl = 3600
         cache.redis = AsyncMock()
@@ -135,30 +135,30 @@ class TestSemanticCacheWithMockedRedis:
         await cache.set("query", {"response": "answer"})
 
 
-class TestSemanticCacheConnectClose:
+class TestResponseCacheConnectClose:
     """Test connect and close methods."""
 
     async def test_connect_success(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis_url = "redis://localhost:6379"
 
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
 
-        with patch("app.cache.semantic.redis.from_url", return_value=mock_redis):
+        with patch("app.cache.response.redis.from_url", return_value=mock_redis):
             await cache.connect()
         assert cache.redis is mock_redis
 
     async def test_connect_failure(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis_url = "redis://nonexistent:6379"
 
-        with patch("app.cache.semantic.redis.from_url", side_effect=Exception("Connection refused")):
+        with patch("app.cache.response.redis.from_url", side_effect=Exception("Connection refused")):
             await cache.connect()
         assert cache.redis is None
 
     async def test_close_with_redis(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = AsyncMock()
         cache.redis.close = AsyncMock()
 
@@ -166,14 +166,14 @@ class TestSemanticCacheConnectClose:
         cache.redis.close.assert_called_once()
 
     async def test_close_without_redis(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
 
         # Should not raise
         await cache.close()
 
     def test_get_stats_connected(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = AsyncMock()  # Non-None means connected
         cache.stats = {"hits": 5, "misses": 5}
 
@@ -186,10 +186,10 @@ class TestGetCacheSingleton:
     """get_cache() should return the same instance."""
 
     async def test_returns_singleton(self):
-        from app.cache import semantic as cache_mod
+        from app.cache import response as cache_mod
         cache_mod._cache = None
 
-        with patch.object(SemanticCache, "connect", new_callable=AsyncMock):
+        with patch.object(ResponseCache, "connect", new_callable=AsyncMock):
             c1 = await cache_mod.get_cache()
             c2 = await cache_mod.get_cache()
             assert c1 is c2
@@ -197,11 +197,11 @@ class TestGetCacheSingleton:
         cache_mod._cache = None
 
 
-class TestSemanticCacheClear:
+class TestResponseCacheClear:
     """Tests for the clear() method."""
 
     async def test_clear_with_keys(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 5, "misses": 3}
         cache.redis = AsyncMock()
         # Simulate scan returning 3 keys then done
@@ -216,8 +216,8 @@ class TestSemanticCacheClear:
         cache.redis.delete.assert_called_once()
 
     async def test_clear_multi_page_scan(self):
-        """Cursor iterates through multiple non-'0' pages before terminating (L94-101 loop)."""
-        cache = SemanticCache.__new__(SemanticCache)
+        """Cursor iterates through multiple non-'0' pages before terminating."""
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 4, "misses": 2}
         cache.redis = AsyncMock()
         # Page 1: cursor "17" with 2 keys, Page 2: cursor "0" (done) with 1 key
@@ -236,7 +236,7 @@ class TestSemanticCacheClear:
         assert cache.redis.delete.call_count == 2
 
     async def test_clear_no_keys(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 2, "misses": 1}
         cache.redis = AsyncMock()
         cache.redis.scan = AsyncMock(return_value=("0", []))
@@ -246,7 +246,7 @@ class TestSemanticCacheClear:
         assert cache.stats == {"hits": 0, "misses": 0}
 
     async def test_clear_without_redis(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.redis = None
         cache.stats = {"hits": 10, "misses": 5}
 
@@ -255,7 +255,7 @@ class TestSemanticCacheClear:
         assert cache.stats == {"hits": 0, "misses": 0}
 
     async def test_clear_redis_error(self):
-        cache = SemanticCache.__new__(SemanticCache)
+        cache = ResponseCache.__new__(ResponseCache)
         cache.stats = {"hits": 1, "misses": 1}
         cache.redis = AsyncMock()
         cache.redis.scan = AsyncMock(side_effect=Exception("Connection lost"))

@@ -23,10 +23,6 @@ from app.db.supabase import get_supabase
 
 
 AGENT_NAME = "Knowledge"
-AGENT_DESCRIPTION = (
-    "Searches internal documentation for relevant policies, procedures, "
-    "and guidelines to support action proposals."
-)
 
 TOP_K = 4
 _STOPWORDS = frozenset(

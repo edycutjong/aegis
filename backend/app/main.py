@@ -1,6 +1,6 @@
 """Aegis — FastAPI server with SSE streaming and HITL endpoints.
 
-The main entry point for the Autonomous Enterprise Action Engine.
+The main entry point for the Aegis support engine.
 """
 
 import asyncio
@@ -18,7 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import get_settings
 from app.agent.graph import agent_graph
-from app.cache.semantic import get_cache
+from app.cache.response import get_cache
 from app.db.supabase import get_supabase
 from app.observability.tracker import get_tracker
 from app.ratelimit import RateLimiter, client_key
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
 # ─────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Aegis — Autonomous Enterprise Action Engine",
+    title="Aegis — Support Engine with Human Approval",
     description="Multi-agent AI system with Human-in-the-Loop approval",
     version="2.0.1",  # x-release-please-version
     lifespan=lifespan,
@@ -141,7 +141,7 @@ def _evict_old_threads() -> None:
 async def root():
     return {
         "name": "Aegis",
-        "description": "Autonomous Enterprise Action Engine",
+        "description": "Multi-agent support engine with a human approval gate",
         "version": "2.0.1",  # x-release-please-version
         "docs": "/docs",
     }
