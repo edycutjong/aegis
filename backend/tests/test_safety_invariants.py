@@ -732,3 +732,73 @@ class TestRefundOnlyMoneyActuallyOwed:
         from app.agent.agents.resolver import _age_days
         age = _age_days({"created_at": created_at}, datetime(2026, 9, 11, tzinfo=timezone.utc))
         assert age == (10.0 if created_at == "2026-09-01T00:00:00" else None)
+
+
+class TestModelSeesTheLedger:
+    """Regression (live, 2026-09-26): the reply called Emily's failed $499
+    charge "the valid subscription". The model only saw its own SQL, never the
+    billing rows validation fetched, with their statuses."""
+
+    EMILY_BILLING = [
+        {"customer_id": 5, "type": "charge", "amount": "499.00", "status": "failed", "created_at": _ago(6),
+         "description": "Enterprise plan - Monthly subscription"},
+        {"customer_id": 5, "type": "refund", "amount": "100.00", "status": "completed", "created_at": _ago(16),
+         "description": "Service outage compensation"},
+    ]
+
+    def test_ledger_spells_out_statuses_and_their_meaning(self):
+        from app.agent.agents.resolver import _ledger
+        text = _ledger(self.EMILY_BILLING, 5)
+        assert "charge $499.00, status failed" in text
+        assert "6 days ago" in text
+        assert "status failed took no money" in text
+        assert "A pending refund is already on its way" in text
+
+    def test_ledger_without_rows_or_dates(self):
+        from app.agent.agents.resolver import _ledger
+        assert _ledger([], 5) == "No billing records for this customer."
+        text = _ledger([{"customer_id": 5, "type": "charge", "amount": "49"}], 5)
+        assert "date unknown" in text and "status unknown" in text
+
+    def test_ledger_is_capped(self):
+        from app.agent.agents.resolver import LEDGER_ROWS, _ledger
+        rows = [{"customer_id": 1, "type": "charge", "amount": "1", "status": "completed"}] * (LEDGER_ROWS + 5)
+        assert _ledger(rows, 1).count("\n- ") == LEDGER_ROWS - 1
+
+    @pytest.mark.asyncio
+    async def test_proposal_and_reply_prompts_include_the_ledger(self):
+        from app.agent.agents.resolver import generate_response
+        llm = AsyncMock()
+        llm.ainvoke = AsyncMock(return_value=MagicMock(
+            content='{"type": "resolve", "description": "Explain the failed payment", "reason": "r"}',
+            usage_metadata=None, response_metadata={}))
+        state = {
+            "user_message": "Refund the $499 you charged us", "thread_id": "t", "thought_log": [],
+            "intent": "billing", "docs_context": "", "customer": {"id": 5, "name": "Emily Davis"},
+            "billing": self.EMILY_BILLING, "sql_result": [{"x": 1}], "sql_query": "SELECT 1",
+        }
+        with patch("app.agent.agents.resolver.get_model", return_value=llm), \
+             patch("app.agent.agents.resolver.get_tracker"):
+            proposal = await propose_action(state)
+            await generate_response({**state, **proposal})
+        for call in llm.ainvoke.call_args_list:
+            prompt = call.args[0][1].content
+            assert "Billing ledger (authoritative" in prompt
+            assert "charge $499.00, status failed" in prompt
+
+
+class TestNegatedClaimsAreNotClaims:
+    """Regression (real-model check, 2026-09-26): "no payment was processed"
+    matched the action-claim pattern and escalated a correct plain answer."""
+
+    @pytest.mark.parametrize("text,claims", [
+        ("Kevin was not charged: the charge failed and no payment was processed.", False),
+        ("The charge was never processed.", False),
+        ("Nothing has been refunded because nothing was collected.", False),
+        ("Your refund has been processed.", True),
+        ("No refund is due. Your plan was upgraded yesterday.", True),
+        ("We didn't charge you, but your key has been rotated.", True),
+    ])
+    def test_negation(self, text, claims):
+        from app.agent.agents.resolver import _claims_an_action
+        assert _claims_an_action(text) is claims
