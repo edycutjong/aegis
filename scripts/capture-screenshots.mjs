@@ -6,7 +6,7 @@
  *
  * Usage:
  *   node scripts/capture-screenshots.mjs                       # http://localhost:3000
- *   BASE_URL=https://aegis-pi-five.vercel.app make screenshots # the live demo
+ *   BASE_URL=https://aegis.edycu.dev make screenshots # the live demo
  *
  * Needs Playwright's Chromium (installed by `cd frontend && npx playwright install chromium`).
  */
