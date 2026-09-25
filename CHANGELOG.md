@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0](https://github.com/edycutjong/aegis/compare/v2.0.1...v2.1.0) (2026-09-25)
+
+
+### ✨ Features
+
+* expose Aegis as an A2A agent ([#46](https://github.com/edycutjong/aegis/issues/46)) ([1adbe39](https://github.com/edycutjong/aegis/commit/1adbe39f081362153145fc2100ac6995357d0a09))
+* **frontend:** show backup-model answers in the trace; add the demo GIF ([#64](https://github.com/edycutjong/aegis/issues/64)) ([fbeaf13](https://github.com/edycutjong/aegis/commit/fbeaf131b418b9648c9e793eccf1997ce535bdad))
+* **router:** run the chat steps on OpenAI, keep Groq for Prompt Guard and backup ([#53](https://github.com/edycutjong/aegis/issues/53)) ([0aa1b93](https://github.com/edycutjong/aegis/commit/0aa1b939cf562cf6016a5dbbbf8a7e2830c1ac77))
+
+
+### 🐛 Bug Fixes
+
+* address the external audit's day-1 findings ([#47](https://github.com/edycutjong/aegis/issues/47)) ([71c1bc3](https://github.com/edycutjong/aegis/commit/71c1bc3dc95f10f4daabf6c0e77da600e151db4d))
+* **agent:** identify customers by company, flag hidden markup, never put emails in replies ([#62](https://github.com/edycutjong/aegis/issues/62)) ([68e8268](https://github.com/edycutjong/aegis/commit/68e826840a7189ff770fda01b9d2f5a5d9329aa6))
+* **agent:** identify customers however the ticket names them; skip SQL for unidentified senders ([#55](https://github.com/edycutjong/aegis/issues/55)) ([dd1ed92](https://github.com/edycutjong/aegis/commit/dd1ed92adec667f6cd100f698c47b19b7fe09af7))
+* **agent:** refunds only for money actually collected, inside the window, and not already returned ([#57](https://github.com/edycutjong/aegis/issues/57)) ([487799b](https://github.com/edycutjong/aegis/commit/487799b1e22a9de5ac351b3aa7e89e617ca37e63))
+* **agent:** send duplicate-charge, security and "we did it" tickets to a person ([#51](https://github.com/edycutjong/aegis/issues/51)) ([a464911](https://github.com/edycutjong/aegis/commit/a4649119125cd94e13b0a1939169c655f6180dd5))
+* **agent:** show the model the billing ledger with statuses; negated claims are not claims ([#58](https://github.com/edycutjong/aegis/issues/58)) ([ea9185c](https://github.com/edycutjong/aegis/commit/ea9185c81f11b315ff89439115f273d7237e4490))
+* complete errored runs, derive test counts, remove the broken trace proxy ([#59](https://github.com/edycutjong/aegis/issues/59)) ([17ea46f](https://github.com/edycutjong/aegis/commit/17ea46f1bf7b18d3d4e9af3570a149dd9c2162d8))
+* **frontend:** keep list semantics on the example-ticket panel ([#45](https://github.com/edycutjong/aegis/issues/45)) ([4b1e785](https://github.com/edycutjong/aegis/commit/4b1e78521d40b8c7a20e32153edd99b4630a0076))
+* **frontend:** self-host fonts so builds never download them ([#63](https://github.com/edycutjong/aegis/issues/63)) ([18afc3c](https://github.com/edycutjong/aegis/commit/18afc3c3e8622e47e370b4fe1cf24c7aef1c49ed))
+* **frontend:** shorten the meta description and add a CTA to the social card ([#44](https://github.com/edycutjong/aegis/issues/44)) ([7ba6003](https://github.com/edycutjong/aegis/commit/7ba6003a7d5b0d9081ca2f205e140f8c162decf1))
+* resolve security and code-scanning alerts ([#39](https://github.com/edycutjong/aegis/issues/39)) ([89b675a](https://github.com/edycutjong/aegis/commit/89b675ac9cc79da22a484eada2c589b8377f05ce))
+* **security:** mask public emails, stop trusting X-Forwarded-For, gate CI on security ([#48](https://github.com/edycutjong/aegis/issues/48)) ([3a322ea](https://github.com/edycutjong/aegis/commit/3a322ea2913026c92ae165849107f4dff471ddb4))
+
+
+### ♻️ Refactoring
+
+* make docs and comments match the code, delete dead code ([#49](https://github.com/edycutjong/aegis/issues/49)) ([44988ba](https://github.com/edycutjong/aegis/commit/44988ba7b19bb07b9d79d961ea6a696f5f65dc16))
+
+
+### 🧪 Tests
+
+* **evals:** add a blind held-out set v3, 72.8% with 2 safety violations ([#60](https://github.com/edycutjong/aegis/issues/60)) ([ec84fe9](https://github.com/edycutjong/aegis/commit/ec84fe905caa576c82dd1bdc636f18e70697a4c3))
+* **evals:** add a fresh held-out set v2, 68.7% with 12 safety violations ([#56](https://github.com/edycutjong/aegis/issues/56)) ([c852ffb](https://github.com/edycutjong/aegis/commit/c852ffb391512b1ca19e4844866ad012b30091b6))
+* **evals:** add a held-out ticket set and tighten loose expectations ([#50](https://github.com/edycutjong/aegis/issues/50)) ([98c861c](https://github.com/edycutjong/aegis/commit/98c861cdbb96a9e9fef30013215ac20af57920dd))
+* **frontend:** give the receipt-retry test room on slow runners ([#54](https://github.com/edycutjong/aegis/issues/54)) ([6d1c106](https://github.com/edycutjong/aegis/commit/6d1c10660fab55adb690497f50b82d27976b9cdc))
+
+
+### 📚 Documentation
+
+* link the API docs at api.aegis.edycu.dev ([#42](https://github.com/edycutjong/aegis/issues/42)) ([b249dfe](https://github.com/edycutjong/aegis/commit/b249dfea2aaac1951784f0ff271191689656ce4b))
+* move the live demo to aegis.edycu.dev ([#41](https://github.com/edycutjong/aegis/issues/41)) ([214b171](https://github.com/edycutjong/aegis/commit/214b1719fa59d51b4aa08631e181c7497cf3733d))
+* state the new safety rules as pattern checks, allow the evals scope ([#52](https://github.com/edycutjong/aegis/issues/52)) ([f0d46e3](https://github.com/edycutjong/aegis/commit/f0d46e3557b4fe0845921556181348c067284854))
+
+
+### 🔁 CI/CD
+
+* let release-please tag releases on merge ([#43](https://github.com/edycutjong/aegis/issues/43)) ([6691bf0](https://github.com/edycutjong/aegis/commit/6691bf0fc80d0fb85608c206feb91b90ed7165e5))
+
 ## [2.0.1](https://github.com/edycutjong/aegis/compare/v2.0.0...v2.0.1) (2026-09-25)
 
 
