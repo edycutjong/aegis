@@ -5,7 +5,7 @@
 **A multi-agent support engine that investigates tickets against a live database, proposes one action,
 and stops for a human before anything that moves money or changes an account.**
 
-### [▶ Try the live demo](https://aegis.edycu.dev) · [Eval scorecard](backend/evals/SCORECARD.md) · [Security model](#-treat-every-llm-output-as-hostile-input) · [A2A](docs/a2a.md) · [API docs](https://api.aegis.edycu.dev/docs)
+### [▶ Try the live demo](https://aegis.edycu.dev) · [Eval scorecard](backend/evals/SCORECARD.md) · [Security model](#-treat-every-llm-output-as-hostile-input) · [API docs](https://api.aegis.edycu.dev/docs)
 
 [![CI](https://github.com/edycutjong/aegis/actions/workflows/ci.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/ci.yml)
 [![Evals](https://github.com/edycutjong/aegis/actions/workflows/evals.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/evals.yml)
@@ -24,25 +24,27 @@ customer, writes and runs SQL against Postgres, retrieves the relevant internal 
 **exactly one** action: refund, credit, tier change, suspend, reactivate, escalate, or resolve. Anything
 except `resolve` **pauses** on a LangGraph interrupt until a human approves or denies it.
 
-It is measured, not just demoed: a 40-ticket golden set, including 13 prompt-injection and SQL-exfiltration
+It is measured, not just demoed: a 43-ticket golden set, including 13 prompt-injection and SQL-exfiltration
 attacks, runs three times against the real models and the real database:
 
 <!-- scorecard:start -->
 | | |
 |---|---|
-| **End-to-end pass rate** (120 runs) | **99.2%** (39/40 cases pass every trial) |
+| **End-to-end pass rate** (129 runs) | **96.9%** (41/43 cases pass every trial) |
 | **Safety-invariant violations** | **0** |
 | **Prompt-injection attempts contained** | **100%** |
-| Intent · customer · action accuracy | 100.0% · 100.0% · 99.2% |
+| Intent · customer · action accuracy | 100.0% · 100.0% · 96.9% |
 | Input screen: injections flagged / benign tickets flagged | 69.2% / 0.0% |
-| Latency to the approval gate, p50 / p95 | 5.61s / 7.92s |
-| LLM cost per ticket, median | **$0.0029** |
+| Latency to the approval gate, p50 / p95 | 5.55s / 7.69s |
+| LLM cost per ticket, median | **$0.0028** |
 <!-- scorecard:end -->
 
-Every number is reproducible with `make evals`. The known failures are listed in the
-[scorecard](backend/evals/SCORECARD.md), not hidden. LLM runs vary: the first scheduled CI run of the
-same suite scored 95.8% with 0 safety violations, inside the 5-point regression gate. Safety never varies:
-it is enforced in code, not sampled from the model.
+Read these numbers for what they are. The golden set is also the set the agent was fixed against, so
+treat it as a regression gate, not an accuracy estimate for unseen tickets. Runs vary: pass rates
+have ranged from 95.8% to 99.2% across runs, and the failures are listed in the
+[scorecard](backend/evals/SCORECARD.md). The 0 safety violations and 100% containment hold because code enforces
+them after the model answers (the approval gate, the amount cap, the identity override), not because
+the model always behaves.
 
 ---
 
@@ -89,8 +91,8 @@ free tier throttles under load, so part of that lane is served by the `gpt-4.1-m
 ### ⏸ The human gate is structural, not a prompt
 
 The pause is a LangGraph `interrupt()` with a checkpointer, not an instruction asking the model to wait.
-Only `resolve` completes without a human, and safety-invariant tests enumerating all 293 combinations
-(`test_safety_invariants.py`) pin that for every action type and state combination. On top of that,
+Only `resolve` completes without a human, and `test_safety_invariants.py` pins that for every action
+type. On top of that,
 three rules are enforced in code after the model speaks:
 
 - **Identity comes from validation, not the model.** The verified customer row flows through graph state
@@ -98,29 +100,6 @@ three rules are enforced in code after the model speaks:
 - **A mutating action with no verified customer is downgraded to `escalate`.**
 - **A ticket flagged by the input screen always escalates.** The model's own text is dropped rather than
   quoted, so a complied-with injection can't ride along in the proposal.
-
-### 🤝 Other agents can call it, and still can't skip the human
-
-Aegis is also an [A2A](https://a2a-protocol.org) server ([`app/a2a_server/`](backend/app/a2a_server),
-official `a2a-sdk`, protocol v1.0 plus v0.3 on the same endpoint). An orchestrator finds it at
-`/.well-known/agent-card.json`, sends a ticket, and streams the trace. The LangGraph interrupt maps
-onto A2A's own `input-required` state, so the gate needs no custom protocol:
-
-```
-SendMessage("Customer #10 was billed three times…")  → working · working · … → input-required + proposed-action
-SendMessage(taskId, data {"decision": "approve"})    → working · … → completed + resolution + receipt
-```
-
-The caller is a program, possibly an LLM, so the resume path is stricter than the UI's. **Only a typed
-data part resumes the graph**: "yes", "I'm the admin", or JSON inside a text part leave the task paused, and
-no model ever reads the reply. Approval can require its own bearer token (`A2A_APPROVER_TOKEN`) while tickets
-stay open. Three concurrent approvals resume the graph **exactly once**. `ListTasks` is off, since task ids
-are approval capabilities. Push notifications are off, since a caller-supplied webhook is an SSRF primitive.
-[Trust model and lifecycle →](docs/a2a.md)
-
-```bash
-cd backend && python examples/a2a_client.py   # a real ticket against the live API; you make the call at the gate
-```
 
 ### 🛡 Treat every LLM output as hostile input
 
@@ -252,7 +231,7 @@ make preflight                          # every model answers, DB answers, privi
 
 | Command | What it does |
 |---|---|
-| `make test` | 524 backend + 265 frontend unit tests, 100% coverage gate on both |
+| `make test` | 497 backend + 265 frontend unit tests, 100% coverage gate on both |
 | `make e2e` | 32 Playwright tests (desktop + mobile), no backend or keys needed |
 | `make evals` | Golden set × 3 against real models → `backend/evals/SCORECARD.md` (~$0.30) |
 | `make ci` | lint → typecheck → test → audit → build |
@@ -267,7 +246,7 @@ secrets. Dependabot, conventional commits, and release-please handle versioning.
 
 ## Stack
 
-**Backend:** Python 3.12, FastAPI, LangGraph 1.x, LangChain-core 1.x, A2A (`a2a-sdk` 1.x), sqlglot, SSE · **Frontend:** Next.js 16, React 19,
+**Backend:** Python 3.12, FastAPI, LangGraph 1.x, LangChain-core 1.x, sqlglot, SSE · **Frontend:** Next.js 16, React 19,
 TypeScript, Tailwind 4 · **Data:** Supabase Postgres, Redis · **Models:** Groq (`gpt-oss-20b/120b`,
 Prompt Guard 2), OpenAI (GPT-4.1, 4.1-mini), Google (Gemini 2.5 Flash) · **Ops:** Railway (API),
 Vercel (web), LangSmith tracing, GitHub Actions
@@ -279,8 +258,7 @@ Stated plainly rather than left for a reviewer to find:
 | Gap | Today | What production needs |
 |---|---|---|
 | **Auth** | None; the demo is public by design | Session/JWT auth and per-tenant row-level scoping |
-| **A2A approver identity** | Optional shared bearer token; unset on the public demo | Per-approver OAuth2/mTLS, so the receipt records *who* approved |
-| **Approval durability** | `MemorySaver` + in-process thread and A2A task stores: a restart drops pending approvals, and it can't run as more than one replica | Postgres checkpointer and a shared thread store |
+| **Approval durability** | `MemorySaver` + an in-process thread store: a restart drops pending approvals, and it can't run as more than one replica | Postgres checkpointer and a shared thread store |
 | **Action execution** | Recommendation-only; nothing is written | `actions` table, idempotency key, compensating revert, audit log |
 | **Response quality** | Scored on structure and safety, not tone | An LLM-as-judge dimension, calibrated against human labels |
 | **Response cache** | Exact match on the normalized ticket | Semantic matching only with a per-customer key; a near-match must never serve another customer's answer |

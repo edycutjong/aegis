@@ -108,6 +108,10 @@ AUDIT_ESCAPES = [
     "SELECT inet_server_addr()",
     "SELECT repeat('a', 1000000000)",
     "SELECT 'customers'::regclass FROM customers",
+    # Schema-qualified OID casts (external audit: the prefix check missed these)
+    "SELECT 'customers'::pg_catalog.regclass FROM customers",
+    "SELECT CAST('f' AS pg_catalog.regproc) FROM customers",
+    "SELECT 'x'::public.anything FROM customers",
     "SELECT pg_get_functiondef('f'::regproc)",
     "SELECT * FROM customers WHERE name = pg_read_file('x')",
     "SELECT CASE WHEN true THEN lo_from_bytea(0, 'x') END FROM customers",

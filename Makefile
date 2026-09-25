@@ -62,15 +62,12 @@ typecheck: ## 🔎 Type check backend (mypy) + frontend (tsc)
 
 # ── Live checks (real models + real DB; need backend/.env) ─
 
-.PHONY: preflight a2a-demo evals evals-check
+.PHONY: preflight evals evals-check
 
 preflight: ## 🩺 One real call per model + DB + privilege boundary (~$0.001)
 	cd backend && python -W ignore -m app.preflight
 
-a2a-demo: ## 🤝 Drive the live API as another agent would, over A2A (URL=… for local; ~$0.003)
-	cd backend && python examples/a2a_client.py $(if $(URL),--url $(URL),)
-
-evals: ## 📊 Run the 40-case golden set x3 against real models → evals/SCORECARD.md (~$0.30)
+evals: ## 📊 Run the 43-case golden set x3 against real models → evals/SCORECARD.md (~$0.30)
 	cd backend && python -W ignore -m evals.run --trials 3 --concurrency 3
 
 evals-check: ## 🚦 Evals + fail on safety violation or >5pt regression vs baseline

@@ -32,6 +32,21 @@ AGENT_DESCRIPTION = (
 )
 
 
+# The shortcut below answers exactly one question: "was I double-charged?".
+# Any other ticket for a customer who happens to have a past duplicate refund
+# (an upgrade, a leaked key, a ToS report) must go to the model and the gate.
+DUPLICATE_CHARGE_TICKET = re.compile(
+    r"\b(duplicate|twice|double[- ]?(charged?|billed|billing)|two (identical )?charges|(charged|billed) again)\b",
+    re.IGNORECASE,
+)
+
+
+def _asks_about_duplicate_charge(state: AgentState) -> bool:
+    return state.get("intent") == "billing" and bool(
+        DUPLICATE_CHARGE_TICKET.search(state.get("user_message") or "")
+    )
+
+
 def _detect_already_resolved(sql_results: list, customer: dict | None) -> dict | None:
     """Check if billing data shows the issue was already resolved.
 
@@ -195,7 +210,7 @@ async def propose_action(state: AgentState, config: RunnableConfig | None = None
     billing = state.get("billing") or []
 
     # ── Pre-check: already resolved? (still subject to the invariants) ──
-    already = _detect_already_resolved(billing, validated)
+    already = _detect_already_resolved(billing, validated) if _asks_about_duplicate_charge(state) else None
     if already:
         return _proposal(_enforce_invariants(already, state, billing), state)
 

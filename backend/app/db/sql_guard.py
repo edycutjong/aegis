@@ -111,9 +111,12 @@ def check_sql(sql: str) -> GuardResult:
         if fname not in ALLOWED_FUNCTIONS:
             return _reject(f"function '{fname}' is not allowed")
 
-    # Casts to OID types (::regclass, ::regproc) resolve arbitrary catalog objects.
+    # Casts to OID types (::regclass, ::regproc) resolve arbitrary catalog
+    # objects. Check the bare type name so `pg_catalog.regclass` can't slip
+    # past, and refuse schema-qualified types outright: none are needed.
     for cast in tree.find_all(exp.Cast):
-        if cast.to.sql().lower().startswith("reg"):
+        type_sql = cast.to.sql().lower()
+        if "." in type_sql or type_sql.strip('"').startswith("reg"):
             return _reject(f"cast to {cast.to.sql()} is not allowed")
 
     # Bound the result size at the outermost level.

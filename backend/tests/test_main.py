@@ -92,6 +92,16 @@ class TestClearCacheEndpoint:
 class TestTracingStatusEndpoint:
     """GET /api/tracing-status should return LangSmith status."""
 
+    def test_result_is_cached(self, client):
+        first = client.get("/api/tracing-status").json()
+        with patch("app.main.get_settings", side_effect=AssertionError("cache missed")):
+            assert client.get("/api/tracing-status").json() == first
+
+    def test_handler_does_not_block_the_event_loop(self):
+        import inspect
+        from app.main import tracing_status
+        assert not inspect.iscoroutinefunction(tracing_status)
+
     def test_disabled_by_default(self, client):
         response = client.get("/api/tracing-status")
         assert response.status_code == 200
