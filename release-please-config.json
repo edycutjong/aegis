@@ -8,7 +8,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "aegis",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         {
