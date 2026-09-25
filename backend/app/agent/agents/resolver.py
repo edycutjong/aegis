@@ -11,6 +11,7 @@ that affect real customer accounts.
 """
 
 import json
+import math
 import time
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
@@ -77,7 +78,7 @@ def _to_amount(value) -> float | None:
         amount = float(str(value).replace("$", "").replace(",", "").strip())
     except ValueError:
         return None
-    return amount if amount == amount and amount not in (float("inf"), float("-inf")) else None
+    return amount if math.isfinite(amount) else None
 
 
 def _max_charge(sql_results: list, customer_id) -> float | None:

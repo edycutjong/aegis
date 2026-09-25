@@ -18,7 +18,7 @@ class TestSupabaseClientInit:
             from app.config import get_settings
             get_settings.cache_clear()
 
-            import app.db.supabase as db_mod
+            from app.db import supabase as db_mod
             db_mod._client = None
             client = db_mod.get_supabase()
 
@@ -107,7 +107,7 @@ class TestGetSupabaseSingleton:
     """get_supabase() should return the same instance."""
 
     def test_returns_singleton(self):
-        import app.db.supabase as db_mod
+        from app.db import supabase as db_mod
         db_mod._client = None
         c1 = db_mod.get_supabase()
         c2 = db_mod.get_supabase()
