@@ -26,7 +26,7 @@ def mock_settings():
         "GOOGLE_API_KEY": "AIza-test",
         "GROQ_API_KEY": "gsk_test-groq",
         "REDIS_URL": "redis://localhost:6379",
-        "FAST_MODEL": "openai/gpt-oss-20b",
+        "FAST_MODEL": "gpt-4.1-mini",
         "SMART_MODEL": "gpt-4.1",
         "FRONTEND_URL": "http://localhost:3000",
     }, clear=False):

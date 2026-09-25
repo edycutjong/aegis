@@ -53,7 +53,7 @@ action types and forbidden phrases, depend on the model, and held in every run s
 ```mermaid
 flowchart LR
     T([Ticket]) --> S["🛡 screen_input<br/><sub>Prompt Guard 2 + rules</sub>"]
-    S --> C["classify_intent<br/><sub>fast model · routes the lane</sub>"]
+    S --> C["classify_intent<br/><sub>gpt-4.1-mini</sub>"]
     C --> V{"validate_customer<br/><sub>8 identity edge cases</sub>"}
     V -- not found / mismatch --> R
     V -- verified --> W["write_sql<br/><sub>frontier model</sub>"]
@@ -72,17 +72,19 @@ flowchart LR
     style X fill:#231a3a,stroke:#8b5cf6,color:#fff
 ```
 
-| Agent | Nodes | Model lane |
+| Agent | Nodes | Model |
 |---|---|---|
-| **Triage** | `screen_input`, `classify_intent` | Groq `gpt-oss-20b` + Llama Prompt Guard 2 |
+| **Triage** | `screen_input`, `classify_intent` | `gpt-4.1-mini` + Llama Prompt Guard 2 (Groq) |
 | **Investigator** | `validate_customer`, `write_sql`, `execute_sql` | GPT-4.1 (SQL is where being wrong is expensive) |
 | **Knowledge** | `search_docs` | none: deterministic ranked retrieval |
-| **Resolution** | `propose_action`, `await_approval`, `execute_action`, `generate_response` | Groq `gpt-oss-120b` (billing/general) or Gemini 2.5 Flash (technical/account) |
+| **Resolution** | `propose_action`, `await_approval`, `execute_action`, `generate_response` | `gpt-4.1-mini` |
 
-Every primary model fails over to a **different vendor** with a 30s timeout. Cost is attributed from the
-provider's response metadata, so a failed-over call is priced as the model that actually answered. (Gemini's
-free tier throttles under load, so part of that lane is served by the `gpt-4.1-mini` fallback; the
-[scorecard](backend/evals/SCORECARD.md) lists every model that actually ran.)
+Every model fails over to a **different vendor** with a 30s timeout: OpenAI to Groq `gpt-oss-120b`. When a
+backup answers, the trace says so, and cost is priced as the model that actually answered. The chat steps
+used to run on Groq's and Gemini's free tiers, split by intent. Under eval load most of those calls failed
+over, so the scorecards were mostly measuring the backup. Groq now runs only Prompt Guard and the backup,
+and the [scorecard](backend/evals/SCORECARD.md) counts both backup answers and runs where Prompt Guard was
+unavailable (the screen then falls back to its rules alone).
 
 ---
 
@@ -234,7 +236,7 @@ Locally:
 
 ```bash
 git clone https://github.com/edycutjong/aegis.git && cd aegis
-cp backend/.env.example backend/.env    # Supabase + Groq + OpenAI keys; Gemini optional
+cp backend/.env.example backend/.env    # Supabase + OpenAI + Groq keys
 make db-reset                           # schema, seed data, least-privilege role
 make up                                 # backend :8000 · frontend :3000 · redis
 make preflight                          # every model answers, DB answers, privilege boundary holds
@@ -242,7 +244,7 @@ make preflight                          # every model answers, DB answers, privi
 
 | Command | What it does |
 |---|---|
-| `make test` | 521 backend + 265 frontend unit tests, 100% coverage gate on both |
+| `make test` | 531 backend + 265 frontend unit tests, 100% coverage gate on both |
 | `make e2e` | 32 Playwright tests (desktop + mobile), no backend or keys needed |
 | `make evals` | Golden set × 3 against real models → `backend/evals/SCORECARD.md` (~$0.30) |
 | `make ci` | lint → typecheck → test → audit → build |
@@ -258,8 +260,8 @@ secrets. Dependabot, conventional commits, and release-please handle versioning.
 ## Stack
 
 **Backend:** Python 3.12, FastAPI, LangGraph 1.x, LangChain-core 1.x, sqlglot, SSE · **Frontend:** Next.js 16, React 19,
-TypeScript, Tailwind 4 · **Data:** Supabase Postgres, Redis · **Models:** Groq (`gpt-oss-20b/120b`,
-Prompt Guard 2), OpenAI (GPT-4.1, 4.1-mini), Google (Gemini 2.5 Flash) · **Ops:** Railway (API),
+TypeScript, Tailwind 4 · **Data:** Supabase Postgres, Redis · **Models:** OpenAI (GPT-4.1, 4.1-mini), Groq
+(Prompt Guard 2, `gpt-oss-120b` as backup) · **Ops:** Railway (API),
 Vercel (web), LangSmith tracing, GitHub Actions
 
 ## Production gaps

@@ -61,7 +61,7 @@ def test_is_throttle():
 @pytest.mark.asyncio
 async def test_main_reports_failures_and_throttles(mock_settings, capsys):
     async def model_check(name):
-        if name == "gemini-2.5-flash":
+        if name == "openai/gpt-oss-120b":
             raise Exception("429 quota")
         if name == "gpt-4.1":
             raise Exception("404 model not found")
@@ -71,7 +71,8 @@ async def test_main_reports_failures_and_throttles(mock_settings, capsys):
          patch("app.preflight._check_tables", AsyncMock(return_value=(True, "customers=51"))), \
          patch("app.preflight._check_privilege_boundary", AsyncMock(return_value=(True, "denied"))), \
          patch("app.preflight._check_read_only", AsyncMock(return_value=(True, "ro"))), \
-         patch("app.preflight._check_timeout", AsyncMock(return_value=(True, "to"))):
+         patch("app.preflight._check_timeout", AsyncMock(return_value=(True, "to"))), \
+         patch("app.preflight._check_prompt_guard", AsyncMock(return_value=(True, "pg"))):
         code = await preflight.main()
 
     out = capsys.readouterr().out
@@ -87,7 +88,8 @@ async def test_main_all_healthy(mock_settings, capsys):
          patch("app.preflight._check_tables", AsyncMock(return_value=(True, "x"))), \
          patch("app.preflight._check_privilege_boundary", AsyncMock(return_value=(True, "denied"))), \
          patch("app.preflight._check_read_only", AsyncMock(return_value=(True, "ro"))), \
-         patch("app.preflight._check_timeout", AsyncMock(return_value=(True, "to"))):
+         patch("app.preflight._check_timeout", AsyncMock(return_value=(True, "to"))), \
+         patch("app.preflight._check_prompt_guard", AsyncMock(return_value=(True, "pg"))):
         assert await preflight.main() == 0
     assert "all dependencies healthy" in capsys.readouterr().out
 
@@ -112,3 +114,12 @@ async def test_empty_table_fails_preflight():
     with patch("app.preflight.get_supabase", return_value=_db([{"success": True, "data": [{"n": 0}]}])):
         ok, detail = await preflight._check_tables()
     assert not ok and "RLS" in detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("score,ok", [(0.998, True), (None, False)])
+async def test_prompt_guard_check(score, ok):
+    with patch("app.preflight.prompt_guard_score", AsyncMock(return_value=score)):
+        passed, detail = await preflight._check_prompt_guard()
+    assert passed is ok
+    assert ("UNAVAILABLE" in detail) is (not ok)

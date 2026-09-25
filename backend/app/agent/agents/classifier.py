@@ -13,7 +13,7 @@ from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.agent.state import AgentState
-from app.routing.model_router import INTENT_MODEL_MAP, get_model, resolved_model_name
+from app.routing.model_router import failover_note, get_model, resolved_model_name
 from app.observability.tracker import get_tracker
 from app.agent.screen import screen
 
@@ -82,24 +82,11 @@ Respond with ONLY a JSON object: {"intent": "<category>", "confidence": <0.0-1.0
         intent = "general"
         confidence = 0.3
 
-    # Intent-based model routing: simple → Groq, complex → Gemini
-    SIMPLE_INTENTS = {"billing", "general"}
-    is_simple = intent in SIMPLE_INTENTS
-    model_provider = "groq" if is_simple else "gemini"
-    # Label is derived from the routing table, not hardcoded — a stale literal
-    # here silently misreports which model actually ran.
-    model_label = (
-        f"⚡ Routed to Groq {INTENT_MODEL_MAP['groq']}" if is_simple
-        else f"🧠 Routed to {INTENT_MODEL_MAP['gemini']}"
-    )
-
     return {
         "intent": intent,
         "intent_confidence": confidence,
-        "model_provider": model_provider,
         "active_agent": AGENT_NAME,
-        "thought_log": state.get("thought_log", []) + [
+        "thought_log": state.get("thought_log", []) + failover_note("classify_intent", AGENT_NAME, llm, response) + [
             f"✓ [{AGENT_NAME}] Classified intent: {intent} (confidence: {confidence:.0%})",
-            model_label,
         ],
     }

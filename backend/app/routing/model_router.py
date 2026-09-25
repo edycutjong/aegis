@@ -1,12 +1,19 @@
-"""Dynamic model routing for cost optimization.
+"""Model routing.
 
-Classification runs on a fast model and SQL generation on the frontier model
-(GPT-4.1), since a wrong query is the expensive mistake. Action proposal and
-the reply use the intent lane chosen by the classifier: gpt-oss-120b on Groq
-for billing and general, Gemini 2.5 Flash for technical and account. The
-amount cap, identity override and approval gate are enforced in code after
-the model answers, whichever model that was.
+SQL generation runs on the frontier model (SMART_MODEL, GPT-4.1), since a
+wrong query is the expensive mistake. Classification, action proposal and the
+reply run on FAST_MODEL (gpt-4.1-mini). Each primary fails over to a model
+from a different vendor, and `failover_note` puts that on the trace, so the
+log never names a model that didn't answer.
+
+Groq's free tier used to serve the chat steps, but it throttled under eval
+load and most calls failed over: the scorecards were measuring the backup.
+Groq now serves only Llama Prompt Guard 2 (app/agent/screen.py) and the
+backup for OpenAI. The amount cap, identity override and approval gate are
+enforced in code after the model answers, whichever model that was.
 """
+
+import re
 
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -41,17 +48,10 @@ MODEL_PRICING = {
 
 # Task → Model complexity mapping
 TASK_MODEL_MAP = {
-    "classify_intent": "fast",      # Classification → FAST_MODEL (Groq gpt-oss-20b)
-    "write_sql": "smart",           # SQL generation → SMART_MODEL (GPT-4.1)
-    "search_docs": "fast",          # (retrieval is deterministic; kept for completeness)
-    "propose_action": "smart",      # Default when no intent lane is set → SMART_MODEL
-    "generate_response": "fast",    # Default when no intent lane is set → FAST_MODEL
-}
-
-# Intent → Model provider routing (set by classifier)
-INTENT_MODEL_MAP = {
-    "groq": "openai/gpt-oss-120b",   # Simple intents (billing, general)
-    "gemini": "gemini-2.5-flash",     # Complex intents (technical, account)
+    "classify_intent": "fast",      # FAST_MODEL (gpt-4.1-mini)
+    "write_sql": "smart",           # SMART_MODEL (GPT-4.1)
+    "propose_action": "fast",       # FAST_MODEL; the invariants hold whatever it proposes
+    "generate_response": "fast",    # FAST_MODEL
 }
 
 
@@ -59,14 +59,14 @@ INTENT_MODEL_MAP = {
 # which also triggers the cross-provider fallback below.
 REQUEST_TIMEOUT_S = 30.0
 
-# Cross-provider failover. Evals showed both free-tier providers throttle under
-# modest concurrency (Gemini: 5 req/min; Groq gpt-oss-120b: 8K tokens/min), and
-# the old "fallback" pointed at the same provider that had just failed. Each
-# primary now fails fast (no retry sleep) and hands off to a different vendor.
+# Cross-provider failover: each primary fails fast (no retry sleep) and hands
+# off to a different vendor, so one provider's outage or throttling can't
+# stop a run. Groq is the OpenAI backup: free-tier limits make it a poor
+# primary but a usable second chance.
 FALLBACK_MODEL = {
     "groq": "gpt-4.1-mini",
     "google": "gpt-4.1-mini",
-    "openai": "gemini-2.5-flash",
+    "openai": "openai/gpt-oss-120b",
     "anthropic": "gpt-4.1-mini",
 }
 
@@ -109,49 +109,29 @@ def resolved_model_name(llm, response) -> str:
     return "unknown"
 
 
-def get_model(task: str, override_model: str | None = None):
-    """Get the appropriate LLM for a given task.
-
-    Args:
-        task: The agent task name (e.g., 'classify_intent', 'write_sql')
-        override_model: Optional specific model to use
-
-    Returns:
-        A LangChain chat model instance
-    """
+def primary_model_name(task: str) -> str:
+    """The configured primary for a task (before any failover)."""
     settings = get_settings()
-
-    if override_model:
-        model_name = override_model
-    else:
-        complexity = TASK_MODEL_MAP.get(task, "fast")
-        model_name = settings.smart_model if complexity == "smart" else settings.fast_model
-
-    return _with_fallback(model_name)
+    return settings.smart_model if TASK_MODEL_MAP.get(task, "fast") == "smart" else settings.fast_model
 
 
-def get_model_for_intent(task: str, model_provider: str | None = None):
-    """Get the appropriate LLM for a task, routed by intent classification.
+def get_model(task: str, override_model: str | None = None):
+    """The task's primary model, wrapped with a different-vendor fallback."""
+    return _with_fallback(override_model or primary_model_name(task))
 
-    For tasks like 'propose_action' and 'generate_response', uses the
-    model_provider set by the classifier (groq for simple intents,
-    gemini for complex). Each primary fails over to a different vendor
-    (see FALLBACK_MODEL).
 
-    Args:
-        task: The agent task name
-        model_provider: 'groq' or 'gemini', set by classify_intent
+def failover_note(task: str, agent: str, llm, response) -> list[str]:
+    """A trace line when a backup answered instead of the task's primary.
+
+    Providers report dated snapshots (gpt-4.1-mini-2025-04-14), so the primary
+    matches with or without a date suffix, but gpt-4.1-mini never passes for
+    gpt-4.1.
     """
-    # Only route downstream agents; classification/SQL keep their defaults
-    routable_tasks = {"propose_action", "generate_response"}
-
-    if model_provider and task in routable_tasks:
-        model_name = INTENT_MODEL_MAP.get(model_provider)
-        if model_name:
-            return _with_fallback(model_name)
-
-    # Default: use standard task→model routing
-    return get_model(task)
+    primary = primary_model_name(task)
+    answered = resolved_model_name(llm, response)
+    if answered == "unknown" or re.fullmatch(rf"{re.escape(primary)}(-\d{{4}}-\d{{2}}-\d{{2}})?", answered):
+        return []
+    return [f"↪ [{agent}] {primary} unavailable, answered by backup {answered}"]
 
 
 def _create_model(model_name: str, max_retries: int = 2):

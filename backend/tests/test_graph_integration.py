@@ -94,7 +94,7 @@ async def drive(graph, graph_input, thread_id: str, customer_id: int, canned: di
          patch("app.agent.agents.researcher.get_supabase", return_value=db), \
          patch("app.agent.agents.classifier.get_model", model_for("classify_intent")), \
          patch("app.agent.agents.investigator.get_model", model_for("write_sql")), \
-         patch("app.agent.agents.resolver.get_model_for_intent",
+         patch("app.agent.agents.resolver.get_model",
                side_effect=lambda task, *_: FakeLLM(task, canned, calls)):
         async for _ in graph.astream(graph_input, config, stream_mode="updates"):
             pass

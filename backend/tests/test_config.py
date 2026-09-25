@@ -13,7 +13,7 @@ class TestSettingsDefaults:
         with patch.dict(os.environ, {}, clear=True):
             get_settings.cache_clear()
             s = Settings()
-            assert s.fast_model == "openai/gpt-oss-20b"
+            assert s.fast_model == "gpt-4.1-mini"
 
     def test_default_smart_model(self):
         with patch.dict(os.environ, {}, clear=True):

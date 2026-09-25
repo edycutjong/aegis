@@ -28,7 +28,7 @@ class Settings:
     cache_ttl_seconds: int = 3600  # 1 hour
 
     # Model routing defaults
-    fast_model: str = "openai/gpt-oss-20b"
+    fast_model: str = "gpt-4.1-mini"
     smart_model: str = "gpt-4.1"
 
     # CORS
