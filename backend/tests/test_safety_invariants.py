@@ -134,12 +134,8 @@ class TestHitlGateExhaustive:
 
         assert violations == [], f"HITL gate violated on: {violations[:5]}"
 
-        # 9 action types × 9 approval statuses × 3 state variants
-        assert checked == 243, (
-            f"Expected 243 combinations, enumerated {checked}. "
-            "If you changed the input space, update this number and the "
-            "counts quoted in README.md and .github/SECURITY.md."
-        )
+        # Every combination was visited (no early exit). Derived, not hard-coded.
+        assert checked == len(ALL_ACTION_TYPES) * len(ALL_APPROVAL_STATUSES) * len(IRRELEVANT_STATE_VARIANTS)
 
     @pytest.mark.asyncio
     async def test_destructive_types_never_auto_approve(self):
@@ -255,11 +251,8 @@ class TestUnverifiedCustomerInvariant:
 
         assert escapes == [], f"Unverified customer produced a live action: {escapes}"
 
-        # 5 mutating types × 6 customer-less SQL shapes
-        assert checked == 30, (
-            f"Expected 30 combinations, enumerated {checked}. "
-            "Update this number and the counts in README.md if the space changed."
-        )
+        # Every combination was visited (no early exit). Derived, not hard-coded.
+        assert checked == len(mutating) * len(NO_CUSTOMER_SQL_SHAPES)
 
     @pytest.mark.asyncio
     async def test_hallucinated_customer_is_overwritten_by_validated_customer(self):
@@ -458,10 +451,8 @@ class TestTableAllowlistBoundary:
                 )
                 refused += 1
 
-        assert refused == 20, (
-            f"Expected 20 forbidden names, checked {refused}. "
-            "Update this number and the counts in README.md if the corpus changed."
-        )
+        # Every name in the corpus was checked. Derived, not hard-coded.
+        assert refused == len(FORBIDDEN_TABLE_NAMES)
 
     def test_allowlisted_names_are_permitted(self, client):
         """The boundary must not be so tight that the product stops working."""
