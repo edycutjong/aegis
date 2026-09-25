@@ -1770,6 +1770,7 @@ ROSTER = [
     {"id": 6, "name": "Michael Brown", "email": "mb@devstartup.co", "company": "DevStartup Co"},
     {"id": 12, "name": "Kevin Lee", "email": "kevin@gamedev.io", "company": "GameDev Studio"},
     {"id": 20, "name": "Pat Doe", "email": "pat@shop.com", "company": "Shop"},
+    {"id": 14, "name": "Thomas Wright", "email": "tw@logistics.com", "company": "Logistics Hub"},
 ]
 
 
@@ -1826,6 +1827,9 @@ class TestFindCustomerInText:
         "I bought this at the shop yesterday",   # "Shop" is too short to match on its own
         "Our cloud peaked at noon",              # not the company "CloudPeak"
         "Just a general question about studios",
+        # Regression (v3 after fixes): "Logistics" from "Logistics Hub" matched a
+        # non-customer's company and answered her with #14's billing.
+        "Hi, Priya Natarajan from Blue Harbor Logistics. We were charged twice this month.",
     ])
     def test_short_or_partial_company_words_do_not_match(self, message):
         assert _find_customer_in_text(message, ROSTER) is None
