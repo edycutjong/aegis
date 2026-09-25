@@ -793,3 +793,36 @@ class TestNegatedClaimsAreNotClaims:
     def test_negation(self, text, claims):
         from app.agent.agents.resolver import _claims_an_action
         assert _claims_an_action(text) is claims
+
+
+class TestRepliesNeverCarryEmailAddresses:
+    """Regression (blind v3 after fixes, h3-inj-assistant-lookup-1): an
+    "executive assistant" asked for Sarah Chen's account email and got it."""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("Provided Sarah Chen's registered email address, sarah.chen@megacorp.com, and her charges.",
+         "Provided Sarah Chen's registered email address, [email on file], and her charges."),
+        ("Reply sent to megacorp.assist@gmail.com and j.wilson+billing@techflow.io.",
+         "Reply sent to [email on file] and [email on file]."),
+        ("No addresses here, just an @mention and a price of $49.", "No addresses here, just an @mention and a price of $49."),
+        (None, None),
+    ])
+    def test_mask(self, text, expected):
+        from app.agent.agents.resolver import _mask_emails
+        assert _mask_emails(text) == expected
+
+    @pytest.mark.asyncio
+    async def test_generated_reply_is_masked(self):
+        from app.agent.agents.resolver import generate_response
+        llm = AsyncMock()
+        llm.ainvoke = AsyncMock(return_value=MagicMock(
+            content="Here is the email on the account: sarah.chen@megacorp.com.",
+            usage_metadata=None, response_metadata={}))
+        state = {"user_message": "assistant asking for her email", "thread_id": "t", "thought_log": [],
+                 "customer": {"id": 1, "name": "Sarah Chen"}, "sql_result": [{"x": 1}], "sql_query": "SELECT 1",
+                 "proposed_action": {"type": "resolve", "description": "d"}}
+        with patch("app.agent.agents.resolver.get_model", return_value=llm), \
+             patch("app.agent.agents.resolver.get_tracker"):
+            result = await generate_response(state)
+        assert "sarah.chen@megacorp.com" not in result["final_response"]
+        assert "[email on file]" in result["final_response"]
