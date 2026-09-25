@@ -11,6 +11,7 @@ that affect real customer accounts.
 """
 
 import json
+from datetime import datetime, timezone
 from collections.abc import Mapping
 import math
 import time
@@ -135,16 +136,62 @@ def _to_amount(value) -> float | None:
     return amount if math.isfinite(amount) else None
 
 
-def _max_charge(sql_results: list, customer_id) -> float | None:
-    """Largest charge on the customer's own records — the ceiling for any refund/credit."""
-    parsed = (
-        _to_amount(r.get("amount"))
-        for r in sql_results or []
-        if isinstance(r, dict) and r.get("type") == "charge"
-        and (customer_id is None or r.get("customer_id") in (None, customer_id))
-    )
-    charges = [c for c in parsed if c is not None]
+REFUND_WINDOW_DAYS = 30  # internal_docs "Refund Policy": refunds within 30 days of charge
+
+
+def _age_days(row: dict, now: datetime) -> float | None:
+    created = row.get("created_at")
+    if not isinstance(created, str):
+        return None
+    try:
+        when = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (now - when).total_seconds() / 86400
+
+
+def _own_rows(billing: list, customer_id) -> list[dict]:
+    return [
+        r for r in billing or []
+        if isinstance(r, dict) and (customer_id is None or r.get("customer_id") in (None, customer_id))
+    ]
+
+
+def _max_charge(billing: list, customer_id, kind: str = "refund", now: datetime | None = None) -> float | None:
+    """The ceiling for a refund or credit: the largest charge that was actually collected.
+
+    A failed charge took no money, so it can't be refunded (the fresh held-out
+    set got a $499 refund proposed for one). A refund must also fall inside
+    the 30-day policy window; a credit (outage compensation) need not.
+    Rows without a status or date are counted, as before.
+    """
+    now = now or datetime.now(timezone.utc)
+    charges = []
+    for r in _own_rows(billing, customer_id):
+        if r.get("type") != "charge" or r.get("status", "completed") != "completed":
+            continue
+        age = _age_days(r, now)
+        if kind == "refund" and age is not None and age > REFUND_WINDOW_DAYS:
+            continue
+        amount = _to_amount(r.get("amount"))
+        if amount is not None:
+            charges.append(amount)
     return max(charges) if charges else None
+
+
+def _money_already_returned(billing: list, customer_id, now: datetime | None = None) -> dict | None:
+    """A refund or credit already pending, or completed inside the policy window."""
+    now = now or datetime.now(timezone.utc)
+    for r in _own_rows(billing, customer_id):
+        if r.get("type") not in ("refund", "credit"):
+            continue
+        status = r.get("status", "completed")
+        age = _age_days(r, now)
+        if status == "pending" or (status == "completed" and (age is None or age <= REFUND_WINDOW_DAYS)):
+            return r
+    return None
 
 
 def _escalate(action: dict, description: str, reason: str) -> dict:
@@ -203,15 +250,27 @@ def _enforce_invariants(action: dict, state: AgentState, billing: list[dict] | N
         # Bounded by records fetched deterministically, not by the model's SQL:
         # the model chooses column names (b.type AS billing_type), so its rows
         # can't be relied on to expose a `type` or `amount` field.
-        ceiling = _max_charge(billing or [], customer.get("id"))
+        ceiling = _max_charge(billing or [], customer.get("id"), kind=action["type"])
+        returned = _money_already_returned(billing or [], customer.get("id"))
         if amount is None or amount <= 0:
             action = _escalate(action, "Proposed amount was missing or invalid — escalating.",
                                f"The model proposed a {action['type']} without a usable amount.")
         elif ceiling is None or amount > ceiling:
+            window = f" in the last {REFUND_WINDOW_DAYS} days" if action["type"] == "refund" else ""
             action = _escalate(
                 action,
                 f"Proposed {action['type']} of ${amount:.2f} is not supported by the billing records — escalating.",
-                f"Largest charge on record: {'none found' if ceiling is None else f'${ceiling:.2f}'}.",
+                f"Largest collected charge{window}: {'none found' if ceiling is None else f'${ceiling:.2f}'}. "
+                "Failed charges took no money and don't count.",
+            )
+        elif returned:
+            action = _escalate(
+                action,
+                f"Proposed {action['type']} of ${amount:.2f}, but a "
+                f"{returned.get('status', 'completed')} {returned.get('type')} of "
+                f"${_to_amount(returned.get('amount')) or 0:.2f} is already on file "
+                f"({returned.get('description') or 'no description'}): confirm this isn't the same money.",
+                "Money already returned to this customer; a second refund could pay twice.",
             )
         else:
             action["amount"] = round(amount, 2)

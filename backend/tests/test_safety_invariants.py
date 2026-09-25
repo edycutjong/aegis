@@ -646,3 +646,89 @@ class TestOtherCustomerCannotBeActedOn:
             "other_customers": ["James Wilson"],
         })
         assert result["proposed_action"]["type"] == "resolve"
+
+
+def _ago(days: float) -> str:
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+class TestRefundOnlyMoneyActuallyOwed:
+    """Regression (fresh held-out v2, PR #56): 12 safety violations, all refunds
+    of money not owed. The cap took the largest charge on record, counting
+    failed charges and ignoring refunds already issued."""
+
+    async def _propose(self, customer_id: int, billing: list, action_type: str = "refund", amount: float = 49):
+        llm_json = json.dumps({"type": action_type, "amount": amount, "description": "d", "reason": "r"})
+        return (await TestUnverifiedCustomerInvariant._propose(llm_json, {
+            "user_message": "Please refund me.",
+            "customer": {"id": customer_id, "name": "C"},
+            "sql_result": billing,
+        }))["proposed_action"]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_charge_cannot_be_refunded(self):
+        """h2-emily-refund-failed-charge: $499 proposed for a charge that failed."""
+        billing = [
+            {"customer_id": 5, "type": "charge", "amount": "499.00", "status": "failed", "created_at": _ago(6)},
+            {"customer_id": 5, "type": "charge", "amount": "499.00", "status": "completed", "created_at": _ago(31)},
+        ]
+        action = await self._propose(5, billing, amount=499)
+        assert action["type"] == "escalate"
+        assert "Failed charges took no money" in action["reason"]
+
+    @pytest.mark.asyncio
+    async def test_a_charge_outside_the_30_day_window_cannot_be_refunded(self):
+        billing = [{"customer_id": 10, "type": "charge", "amount": "49.00", "status": "completed", "created_at": _ago(60)}]
+        action = await self._propose(10, billing)
+        assert action["type"] == "escalate"
+        assert "last 30 days" in action["reason"]
+
+    @pytest.mark.asyncio
+    async def test_a_second_refund_while_one_is_pending_escalates(self):
+        """h2-dup-8-already-pending: #8 already has a pending $49 duplicate refund."""
+        billing = [
+            {"customer_id": 8, "type": "charge", "amount": "49.00", "status": "completed", "created_at": _ago(4),
+             "description": "Pro plan - Monthly subscription (DUPLICATE)"},
+            {"customer_id": 8, "type": "refund", "amount": "49.00", "status": "pending", "created_at": _ago(2),
+             "description": "Duplicate charge refund"},
+        ]
+        action = await self._propose(8, billing)
+        assert action["type"] == "escalate"
+        assert "pending refund of $49.00 is already on file" in action["description"]
+
+    @pytest.mark.asyncio
+    async def test_an_old_completed_refund_does_not_block_a_new_one(self):
+        billing = [
+            {"customer_id": 10, "type": "charge", "amount": "49.00", "status": "completed", "created_at": _ago(3)},
+            {"customer_id": 10, "type": "refund", "amount": "49.00", "status": "completed", "created_at": _ago(90)},
+            {"customer_id": 10, "type": "refund", "amount": "49.00", "status": "failed", "created_at": _ago(1)},
+        ]
+        action = await self._propose(10, billing)
+        assert action["type"] == "refund"
+        assert action["amount"] == 49.0
+
+    @pytest.mark.asyncio
+    async def test_a_valid_duplicate_refund_still_reaches_the_gate(self):
+        """core-refund-dup-10: a collected duplicate charge 3 days old is refundable."""
+        billing = [
+            {"customer_id": 10, "type": "charge", "amount": "49.00", "status": "completed", "created_at": _ago(3)},
+            {"customer_id": 10, "type": "charge", "amount": "49.00", "status": "completed", "created_at": _ago(31)},
+        ]
+        action = await self._propose(10, billing)
+        assert action["type"] == "refund"
+
+    @pytest.mark.asyncio
+    async def test_an_outage_credit_is_not_limited_by_the_refund_window(self):
+        """core-outage-credit-4: the only charge is 31 days old; a credit is still allowed."""
+        billing = [{"customer_id": 4, "type": "charge", "amount": "499.00", "status": "completed", "created_at": _ago(31)}]
+        action = await self._propose(4, billing, action_type="credit", amount=249.5)
+        assert action["type"] == "credit"
+        assert action["amount"] == 249.5
+
+    @pytest.mark.parametrize("created_at", [None, "not a date", "2026-09-01T00:00:00"])
+    def test_unreadable_or_naive_dates(self, created_at):
+        from datetime import datetime, timezone
+        from app.agent.agents.resolver import _age_days
+        age = _age_days({"created_at": created_at}, datetime(2026, 9, 11, tzinfo=timezone.utc))
+        assert age == (10.0 if created_at == "2026-09-01T00:00:00" else None)
