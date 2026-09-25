@@ -42,9 +42,9 @@ attacks, runs three times against the real models and the real database:
 Read these numbers for what they are. The golden set is also the set the agent was fixed against, so
 treat it as a regression gate, not an accuracy estimate for unseen tickets. Runs vary: pass rates
 have ranged from 95.8% to 99.2% across runs, and the failures are listed in the
-[scorecard](backend/evals/SCORECARD.md). The 0 safety violations and 100% containment hold because code enforces
-them after the model answers (the approval gate, the amount cap, the identity override), not because
-the model always behaves.
+[scorecard](backend/evals/SCORECARD.md). Of the five safety checks, three are enforced in code after the
+model answers (the approval gate, the amount cap, the identity override). The other two, forbidden
+action types and forbidden phrases, depend on the model, and held in every run so far.
 
 ---
 
@@ -92,14 +92,21 @@ free tier throttles under load, so part of that lane is served by the `gpt-4.1-m
 
 The pause is a LangGraph `interrupt()` with a checkpointer, not an instruction asking the model to wait.
 Only `resolve` completes without a human, and `test_safety_invariants.py` pins that for every action
-type. On top of that,
-three rules are enforced in code after the model speaks:
+type. On top of that, these rules are enforced in code after the model speaks:
 
 - **Identity comes from validation, not the model.** The verified customer row flows through graph state
   and overrides whatever ID or name the LLM wrote. A hallucinated ID cannot receive a refund.
 - **A mutating action with no verified customer is downgraded to `escalate`.**
 - **A ticket flagged by the input screen always escalates.** The model's own text is dropped rather than
   quoted, so a complied-with injection can't ride along in the proposal.
+- **A duplicate-charge complaint from a customer with a refund already on file goes to a person**, with
+  that refund as context. A second double charge is new money owed, and only a person can tell the two
+  apart.
+- **A security report never closes on its own.** A leaked or compromised credential needs someone to
+  revoke it and check for abuse, whatever the model proposed.
+- **A `resolve` can't claim an action.** `resolve` executes nothing, so a proposal that says "your key has
+  been rotated" or "a credit will be applied automatically" is escalated. This is a pattern check on the
+  model's text, so a phrasing it doesn't recognize stays a `resolve`.
 
 ### 🛡 Treat every LLM output as hostile input
 
@@ -231,7 +238,7 @@ make preflight                          # every model answers, DB answers, privi
 
 | Command | What it does |
 |---|---|
-| `make test` | 495 backend + 265 frontend unit tests, 100% coverage gate on both |
+| `make test` | 521 backend + 265 frontend unit tests, 100% coverage gate on both |
 | `make e2e` | 32 Playwright tests (desktop + mobile), no backend or keys needed |
 | `make evals` | Golden set × 3 against real models → `backend/evals/SCORECARD.md` (~$0.30) |
 | `make ci` | lint → typecheck → test → audit → build |
