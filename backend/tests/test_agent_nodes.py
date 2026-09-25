@@ -933,6 +933,7 @@ class TestGenerateResponseAsync:
     async def test_zero_records_path(self):
         """When SQL returned 0 records, generate clear message without LLM."""
         state = _make_full_state("Check billing")
+        state["sql_query"] = "SELECT 1"
         state["sql_result"] = []
         state["billing"] = state["sql_result"]
         state["sql_error"] = None
@@ -1529,7 +1530,7 @@ class TestValidatedCustomerFlowsDownstream:
     @pytest.mark.asyncio
     async def test_zero_records_message_names_the_customer_not_the_ticket(self):
         state = _make_full_state("Customer #12 Kevin Lee asks about a charge")
-        state.update({"customer_found": True, "sql_result": [], "sql_error": "",
+        state.update({"customer_found": True, "sql_result": [], "sql_error": "", "sql_query": "SELECT 1",
                       "customer": {"id": 12, "name": "Kevin Lee"}})
         result = await generate_response(state)
         assert "for Customer #12 Kevin Lee." in result["final_response"]
@@ -1538,9 +1539,26 @@ class TestValidatedCustomerFlowsDownstream:
     @pytest.mark.asyncio
     async def test_zero_records_message_without_customer(self):
         state = _make_full_state("What is the refund policy?")
-        state.update({"customer_found": True, "sql_result": [], "sql_error": ""})
+        state.update({"customer_found": True, "sql_result": [], "sql_error": "", "sql_query": "SELECT 1"})
         result = await generate_response(state)
         assert "for this request." in result["final_response"]
+
+    @pytest.mark.asyncio
+    async def test_skipped_sql_still_gets_a_real_answer(self):
+        """An unidentified ticket skips SQL on purpose; it must not get the
+        "0 records found" canned reply."""
+        llm = AsyncMock()
+        llm.ainvoke = AsyncMock(return_value=_mock_llm_response("Refunds are available within 30 days."))
+        state = _make_full_state("What is the refund policy?")
+        state.update({"customer_found": True, "sql_result": [], "sql_error": "",
+                      "proposed_action": {"type": "resolve", "description": "Explain the refund policy"}})
+        with patch("app.agent.agents.resolver.get_model", return_value=llm), \
+             patch("app.agent.agents.resolver.get_tracker"):
+            result = await generate_response(state)
+        assert result["final_response"] == "Refunds are available within 30 days."
+        prompt = llm.ainvoke.call_args.args[0][1].content
+        assert "Nothing was executed" in prompt
+        assert "Approved and executed" not in prompt
 
 
 class TestRankDocs:
@@ -1831,6 +1849,20 @@ class TestValidateWithRoster:
             result = await validate_customer(_make_state("From maria@dataforge.com: where is my invoice?"))
         search.assert_awaited_once_with(db, "Maria Garcia")
         assert result["customer"]["id"] == 3
+
+    @pytest.mark.asyncio
+    async def test_other_customers_named_are_recorded(self):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[1] | {"plan": "pro", "status": "active"})):
+            result = await validate_customer(_make_state(
+                "Customer #4 Robert Kim wants Chris Johnson and maria@dataforge.com removed from his team"))
+        assert result["customer"]["id"] == 4
+        assert result["other_customers"] == ["Chris Johnson", "Maria Garcia"]
+
+    @pytest.mark.asyncio
+    async def test_no_other_customers_key_when_only_the_sender_is_named(self):
+        with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[1] | {"plan": "pro", "status": "active"})):
+            result = await validate_customer(_make_state("Customer #4 Robert Kim needs an invoice"))
+        assert "other_customers" not in result
 
     @pytest.mark.asyncio
     async def test_regex_name_close_to_a_customer_keeps_the_typo_flow(self):

@@ -11,6 +11,7 @@ that affect real customer accounts.
 """
 
 import json
+from collections.abc import Mapping
 import math
 import time
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -66,6 +67,7 @@ _DO = (r"rotate|revoke|reset|regenerate|reissue|cancel|refund|credit|reimburse|i
 ACTION_CLAIM = re.compile(
     rf"\b(has|have|had)\s+(now\s+|already\s+)?been\s+({_DONE})\b"
     rf"|\bwill\s+(now\s+|soon\s+)?be\s+(automatically\s+)?({_DONE})\b"
+    rf"|\b(was|were)\s+(now\s+|already\s+|just\s+)?({_DONE}|provided)\b"
     rf"|\b(we|i)\s*('ve|'ll|\s+have|\s+will)\s+(now\s+|already\s+)?({_DONE}|{_DO})\b"
     r"|\bapplied automatically\b",
     re.IGNORECASE,
@@ -149,6 +151,17 @@ def _escalate(action: dict, description: str, reason: str) -> dict:
     return {**action, "type": "escalate", "amount": None, "description": description, "reason": reason}
 
 
+def _action_status(action: Mapping[str, object], approved: bool, denied_reason: str) -> str:
+    """What the reply may say happened. A resolve executes nothing, and
+    "Approved and executed" led the model to write "the invoice was emailed"."""
+    if action.get("type") == "resolve":
+        return ("Answered directly. Nothing was executed: do not say that anything was sent, emailed, "
+                "changed, processed or scheduled.")
+    if approved:
+        return "Approved and executed"
+    return f"Denied by manager — {denied_reason}" if denied_reason else "Denied by manager"
+
+
 def _enforce_invariants(action: dict, state: AgentState, billing: list[dict] | None = None) -> dict:
     """Deterministic rules applied after the model speaks, on every path.
 
@@ -172,6 +185,17 @@ def _enforce_invariants(action: dict, state: AgentState, billing: list[dict] | N
                 f"No verified customer — escalating for manual review. Original proposal: {action.get('type')}.",
                 "Account and money actions require a customer verified by ID or exact name.",
             )
+
+    # 1b. A ticket that names another customer ("suspend James Wilson's
+    #     account") can't mutate anything: identity is pinned to the sender,
+    #     so approving would act on the sender's account, not the one named.
+    others = state.get("other_customers") or []
+    if action.get("type") in MUTATING_TYPES and others:
+        action = _escalate(
+            action,
+            f"The ticket names another customer ({', '.join(others)}): a person decides whose account, if anyone's, changes.",
+            f"The model proposed {action.get('type')}, but actions are pinned to the validated sender.",
+        )
 
     # 2. Money moves only within what the billing evidence supports.
     if action.get("type") in ("refund", "credit"):
@@ -521,7 +545,9 @@ async def generate_response(state: AgentState, config: RunnableConfig | None = N
 
     # If SQL returned 0 records, generate a clear "not found" response without LLM
     sql_result = state.get("sql_result", [])
-    if not state.get("sql_error") and len(sql_result) == 0 and state.get("customer_found") is True:
+    # Only when a query ran: an unidentified ticket skips SQL on purpose and
+    # still needs a real answer.
+    if state.get("sql_query") and not state.get("sql_error") and len(sql_result) == 0 and state.get("customer_found") is True:
         return {
             "final_response": f"No matching billing or transaction records were found for {_customer_label(state)}. "
                               f"The database query returned 0 results. This could mean the reported issue doesn't have a matching record, "
@@ -565,8 +591,8 @@ Internal documentation:
 Proposed action: {action.get('type', 'none')} — {action.get('description', 'None')}
 Action reason: {action.get('reason', 'N/A')}
 Action amount: ${_to_amount(action.get('amount')) or 0.0:.2f}
-Action status: {'Approved and executed' if approved else f'Denied by manager — {denied_reason}' if denied_reason else 'Denied by manager'}
-Execution result: {execution if approved else 'N/A'}
+Action status: {_action_status(action, approved, denied_reason)}
+Execution result: {execution if approved and action.get('type') != 'resolve' else 'N/A'}
 
 Write a brief resolution summary using the real data above:"""),
     ]

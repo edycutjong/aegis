@@ -47,6 +47,21 @@ _BARE_ID = re.compile(
 _ROSTER_MATCH_THRESHOLD = 0.85  # a typo'd full name ("Jenifer Tayler"), not two random words
 
 
+def _customers_named_in_text(message: str, roster: list[dict]) -> list[str]:
+    """Every roster customer named exactly (full name or email), in text order."""
+    text = message.lower()
+    found = []
+    for customer in roster:
+        name = (customer.get("name") or "").lower()
+        email = (customer.get("email") or "").lower()
+        hits = [m.start() for m in [re.search(rf"\b{re.escape(name)}\b", text)] if name and m]
+        if email and email in text:
+            hits.append(text.index(email))
+        if hits:
+            found.append((min(hits), customer["name"]))
+    return [name for _, name in sorted(found)]
+
+
 def _find_customer_in_text(message: str, roster: list[dict]) -> str | None:
     """The roster customer a ticket names, however it is written.
 
@@ -180,14 +195,19 @@ async def validate_customer(state: AgentState, config: RunnableConfig | None = N
     every refund and credit downstream; the model's own SQL chooses its column
     names and can't be relied on to expose `type` or `amount`.
     """
-    result = await _validate_identity(state)
+    db = get_supabase()
+    roster = await db.list_customers()
+    result = await _validate_identity(state, roster)
     customer = result.get("customer")
     if customer and customer.get("id") is not None:
-        result["billing"] = await get_supabase().get_billing(customer["id"])
+        result["billing"] = await db.get_billing(customer["id"])
+        others = [n for n in _customers_named_in_text(state["user_message"], roster) if n != customer.get("name")]
+        if others:
+            result["other_customers"] = others
     return result
 
 
-async def _validate_identity(state: AgentState) -> dict:
+async def _validate_identity(state: AgentState, roster: list[dict]) -> dict:
     """Validate customer identity before investigation.
 
     Handles 8 edge cases:
@@ -208,7 +228,6 @@ async def _validate_identity(state: AgentState) -> dict:
     # written any other way ("chris johnson, acct 10", "Robert Kim here",
     # an email address). A regex name that is close to a real customer is
     # kept, so the typo and mismatch cases below still see what was written.
-    roster = await db.list_customers()
     roster_name = _find_customer_in_text(user_msg, roster)
     if roster_name and (mentioned_name is None or not _close_to_a_customer(mentioned_name, roster)):
         mentioned_name = roster_name
