@@ -62,19 +62,22 @@ export default function Composer({ message, onChange, onSubmit, onPreset, busy, 
                     ))}
                 </div>
 
-                <ul role="tabpanel" id={`panel-${active.id}`} aria-labelledby={`tab-${active.id}`} className="preset-list">
-                    {active.items.map((p) => (
-                        <li key={p.id}>
-                            <button type="button" className="preset" disabled={busy} onClick={() => onPreset(p)} title={p.message}>
-                                <span className="min-w-0">
-                                    <span className="preset-label">{p.label}</span>
-                                    <span className="preset-hint">{p.hint}</span>
-                                </span>
-                                <ArrowRight size={14} className="preset-arrow" aria-hidden="true" />
-                            </button>
-                        </li>
-                    ))}
-                </ul>
+                {/* The panel role lives on a wrapper: on the <ul> it would erase list semantics. */}
+                <div role="tabpanel" id={`panel-${active.id}`} aria-labelledby={`tab-${active.id}`}>
+                    <ul className="preset-list">
+                        {active.items.map((p) => (
+                            <li key={p.id}>
+                                <button type="button" className="preset" disabled={busy} onClick={() => onPreset(p)} title={p.message}>
+                                    <span className="min-w-0">
+                                        <span className="preset-label">{p.label}</span>
+                                        <span className="preset-hint">{p.hint}</span>
+                                    </span>
+                                    <ArrowRight size={14} className="preset-arrow" aria-hidden="true" />
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
 
                 {children}
             </div>
