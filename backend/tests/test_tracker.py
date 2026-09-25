@@ -220,3 +220,37 @@ class TestGetTracker:
         t1 = get_tracker()
         t2 = get_tracker()
         assert t1 is t2
+
+
+class TestInFlightSpend:
+    """Regression (external audit): runs parked at the approval gate had
+    already paid for their model calls but were missing from spend, so the
+    dashboard showed "Runs 0 · $0.000" after ten tickets."""
+
+    def test_parked_run_counts_toward_spend_but_not_averages(self):
+        tracker = ObservabilityTracker()
+        tracker.start_request("done").add_step("s", "gpt-4.1", 1000, 100)
+        tracker.complete_request("done")
+        tracker.start_request("parked").add_step("s", "gpt-4.1", 1000, 100)
+
+        stats = tracker.get_aggregate_stats()
+        one_run = tracker.receipt("done")["total_cost_usd"]
+        assert stats["total_requests"] == 2
+        assert stats["completed_requests"] == 1
+        assert stats["in_flight_requests"] == 1
+        assert stats["total_cost_usd"] == round(2 * one_run, 6)
+        assert stats["avg_cost_usd"] == one_run
+        assert stats["model_distribution"] == {"gpt-4.1": 2}
+        assert len(stats["recent_requests"]) == 1
+
+    def test_only_parked_runs(self):
+        tracker = ObservabilityTracker()
+        tracker.start_request("parked").add_step("s", "gpt-4.1", 1000, 100)
+
+        stats = tracker.get_aggregate_stats(total_cache_hits=3)
+        assert stats["total_requests"] == 1
+        assert stats["completed_requests"] == 0
+        assert stats["total_cost_usd"] > 0
+        assert stats["avg_cost_usd"] == 0.0
+        assert stats["avg_duration_seconds"] == 0.0
+        assert stats["cost_saved_by_cache"] == 0.0

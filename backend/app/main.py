@@ -715,9 +715,22 @@ async def get_traces():
     return {"traces": [], "error": "Could not load traces from LangSmith."}
 
 
+_tracing_status_cache: dict = {"data": None, "ts": 0.0}
+
+
 @app.get("/api/tracing-status")
-async def tracing_status():
-    """Check LangSmith tracing status and connectivity."""
+def tracing_status():
+    """Check LangSmith tracing status and connectivity.
+
+    A plain `def`, not `async def`: the LangSmith client call blocks, so
+    FastAPI runs this in its threadpool instead of on the event loop, where
+    it would stall every other request. The UI calls it on every page load,
+    so the answer is cached like the traces.
+    """
+    now = time.monotonic()
+    if _tracing_status_cache["data"] is not None and now - _tracing_status_cache["ts"] < _TRACES_TTL:
+        return _tracing_status_cache["data"]
+
     settings = get_settings()
     enabled = settings.langchain_tracing_v2 and bool(settings.langchain_api_key)
 
@@ -730,11 +743,13 @@ async def tracing_status():
         except Exception:
             connected = False
 
-    return {
+    result = {
         "enabled": enabled,
         "project": settings.langchain_project,
         "connected": connected,
     }
+    _tracing_status_cache.update(data=result, ts=now)
+    return result
 
 
 @app.get("/api/health")

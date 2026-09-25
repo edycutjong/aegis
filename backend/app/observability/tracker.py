@@ -128,10 +128,20 @@ class ObservabilityTracker:
         self.requests.pop(thread_id, None)
 
     def get_aggregate_stats(self, total_cache_hits: int = 0) -> dict:
-        """Get aggregate statistics across all completed requests."""
-        if not self._history:
+        """Aggregate statistics.
+
+        Spend and run counts include in-flight runs: a run parked at the
+        approval gate has already paid for every model call before it, and on
+        a demo that is where most runs end. Averages cover completed runs only,
+        since an in-flight run has no final duration or cost yet.
+        """
+        in_flight = [m.to_dict() for m in self.requests.values()]
+        spent = self._history + in_flight
+        if not spent:
             return {
                 "total_requests": 0,
+                "completed_requests": 0,
+                "in_flight_requests": 0,
                 "avg_cost_usd": 0.0,
                 "avg_duration_seconds": 0.0,
                 "total_cost_usd": 0.0,
@@ -140,14 +150,15 @@ class ObservabilityTracker:
                 "recent_requests": [],
             }
 
-        total_cost = sum(r["total_cost_usd"] for r in self._history)
-        total_tokens = sum(r["total_tokens"] for r in self._history)
+        total_cost = sum(r["total_cost_usd"] for r in spent)
+        total_tokens = sum(r["total_tokens"] for r in spent)
+        completed_cost = sum(r["total_cost_usd"] for r in self._history)
         total_duration = sum(r["duration_seconds"] for r in self._history)
         n = len(self._history)
 
         # Aggregate model distribution
         model_dist: dict[str, int] = {}
-        for r in self._history:
+        for r in spent:
             for model, count in r["models_used"].items():
                 model_dist[model] = model_dist.get(model, 0) + count
 
@@ -161,13 +172,15 @@ class ObservabilityTracker:
         avg_hitl_wait = round(sum(hitl_waits) / len(hitl_waits), 2) if hitl_waits else None
 
         # Cost saved by cache (avg cost of standard request × number of cache hits)
-        avg_real_cost = (total_cost / n) if n > 0 else 0
+        avg_real_cost = (completed_cost / n) if n > 0 else 0
         cost_saved = round(avg_real_cost * total_cache_hits, 6)
 
         return {
-            "total_requests": n,
-            "avg_cost_usd": round(total_cost / n, 6),
-            "avg_duration_seconds": round(total_duration / n, 2),
+            "total_requests": len(spent),
+            "completed_requests": n,
+            "in_flight_requests": len(in_flight),
+            "avg_cost_usd": round(completed_cost / n, 6) if n else 0.0,
+            "avg_duration_seconds": round(total_duration / n, 2) if n else 0.0,
             "total_cost_usd": round(total_cost, 6),
             "total_tokens": total_tokens,
             "model_distribution": model_dist,
