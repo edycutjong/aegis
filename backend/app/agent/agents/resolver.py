@@ -181,6 +181,19 @@ def _max_charge(billing: list, customer_id, kind: str = "refund", now: datetime 
     return max(charges) if charges else None
 
 
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
+
+
+def _mask_emails(text):
+    """Replies never carry an email address. The sender is matched, not
+    authenticated: blind v3's "executive assistant" asked for Sarah Chen's
+    account email and got it in an auto-resolve. Applied in code because the
+    prompt already said not to."""
+    if not isinstance(text, str):
+        return text
+    return _EMAIL.sub("[email on file]", text)
+
+
 LEDGER_ROWS = 20
 
 
@@ -715,7 +728,7 @@ Write a brief resolution summary using the real data above:"""),
         )
 
     return {
-        "final_response": response.content,
+        "final_response": _mask_emails(response.content),
         "active_agent": AGENT_NAME,
         "thought_log": state.get("thought_log", []) + failover_note("generate_response", AGENT_NAME, llm, response) + [
             f"✓ [{AGENT_NAME}] Generated resolution summary"
