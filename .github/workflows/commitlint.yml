@@ -48,6 +48,7 @@ jobs:
             docs
             deps
             security
+            evals
           requireScope: false
           subjectPattern: ^(?![A-Z])(?!.*\.$).+$
           subjectPatternError: |
