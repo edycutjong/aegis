@@ -62,4 +62,3 @@ def reset_singletons():
     if main_mod is not None:
         main_mod.rate_limiter._hits.clear()
         main_mod.rate_limiter._day_count = 0
-        main_mod._tracing_status_cache.update(data=None, ts=0.0)

@@ -16,8 +16,6 @@ import {
     getDbStatus,
     getTableData,
     connectSSE,
-    getTraces,
-    getTracingStatus,
     ApiError,
 } from "../api";
 
@@ -124,46 +122,6 @@ describe("api.ts", () => {
         it("throws on failure", async () => {
             mockFetch.mockResolvedValue({ ok: false, statusText: "Timeout" });
             await expect(getMetrics()).rejects.toThrow("Metrics fetch failed: Timeout");
-        });
-    });
-
-    // ── getTraces ──
-    describe("getTraces", () => {
-        it("fetches traces", async () => {
-            const mockTraces = { traces: [], error: null };
-            mockFetch.mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve(mockTraces),
-            });
-
-            const result = await getTraces();
-            expect(mockFetch).toHaveBeenCalledWith(`${API_URL}/api/traces`);
-            expect(result).toEqual(mockTraces);
-        });
-
-        it("throws on failure", async () => {
-            mockFetch.mockResolvedValue({ ok: false, statusText: "Unauthorized" });
-            await expect(getTraces()).rejects.toThrow("Traces fetch failed: Unauthorized");
-        });
-    });
-
-    // ── getTracingStatus ──
-    describe("getTracingStatus", () => {
-        it("fetches tracing status", async () => {
-            const mockStatus = { enabled: true, project: "aegis", connected: true };
-            mockFetch.mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve(mockStatus),
-            });
-
-            const result = await getTracingStatus();
-            expect(mockFetch).toHaveBeenCalledWith(`${API_URL}/api/tracing-status`);
-            expect(result).toEqual(mockStatus);
-        });
-
-        it("throws on failure", async () => {
-            mockFetch.mockResolvedValue({ ok: false, statusText: "Server Error" });
-            await expect(getTracingStatus()).rejects.toThrow("Tracing status failed: Server Error");
         });
     });
 

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Activity, ArrowUpRight, Database, LoaderCircle, ServerOff, Trash2 } from "lucide-react";
+import { Database, LoaderCircle, ServerOff, Trash2 } from "lucide-react";
 import type { Metrics, DbStatus } from "@/lib/api";
-import { clearCache, getDbStatus, getTableData, getTracingStatus } from "@/lib/api";
+import { clearCache, getDbStatus, getTableData } from "@/lib/api";
 import { shortModel } from "@/lib/trace";
 import type { BackendState } from "./TopBar";
 import AnimatedNumber from "./AnimatedNumber";
@@ -12,7 +12,6 @@ interface MetricsPanelProps {
     metrics: Metrics | null;
     backend: BackendState;
     onCacheCleared?: () => void;
-    onOpenTraces?: () => void;
 }
 
 const TABLE_META: Record<string, { label: string; columns: string[] }> = {
@@ -55,12 +54,11 @@ function Stat({ label, children, hint }: { label: string; children: React.ReactN
     );
 }
 
-export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenTraces }: MetricsPanelProps) {
+export default function MetricsPanel({ metrics, backend, onCacheCleared }: MetricsPanelProps) {
     const agent = metrics?.agent_metrics;
     const cache = metrics?.cache_metrics;
     const [clearing, setClearing] = useState(false);
     const [clearMsg, setClearMsg] = useState<string | null>(null);
-    const [tracingEnabled, setTracingEnabled] = useState(false);
     const [db, setDb] = useState<DbStatus | null>(null);
     const [dbLoading, setDbLoading] = useState(true);
     const [expanded, setExpanded] = useState<string | null>(null);
@@ -68,9 +66,6 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
     const [tableLoading, setTableLoading] = useState(false);
 
     useEffect(() => {
-        getTracingStatus()
-            .then((s) => setTracingEnabled(s.enabled))
-            .catch(() => setTracingEnabled(false));
         getDbStatus()
             .then(setDb)
             .catch(() => { })
@@ -303,14 +298,6 @@ export default function MetricsPanel({ metrics, backend, onCacheCleared, onOpenT
                             </div>
                         )}
                     </div>
-                )}
-
-                {tracingEnabled && (
-                    <button type="button" onClick={onOpenTraces} className="link-row">
-                        <Activity size={14} aria-hidden="true" />
-                        <span>LangSmith traces</span>
-                        <ArrowUpRight size={14} aria-hidden="true" className="ml-auto" />
-                    </button>
                 )}
             </div>
         </aside>

@@ -33,7 +33,7 @@
   --text-2: #b3bfd2;
   --text-3: #8793a9;
 
-  /* Legacy aliases (TracesPanel / TicketHistory / DatabaseStatus) */
+  /* Legacy aliases (TicketHistory / DatabaseStatus) */
   --aegis-bg: var(--bg);
   --aegis-surface: var(--surface);
   --aegis-surface-2: var(--surface-2);
@@ -1936,7 +1936,7 @@ kbd {
   animation: shimmer 1.4s linear infinite;
 }
 
-/* ═══ Legacy components (TicketHistory, TracesPanel) ═══ */
+/* ═══ Legacy components (TicketHistory) ═══ */
 .metric-card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -2037,39 +2037,6 @@ kbd {
   color: var(--text-3);
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.trace-node-row {
-  animation: rise 0.3s var(--ease-out) both;
-}
-
-.trace-node-row:hover {
-  background: var(--surface-2);
-}
-
-.traces-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(3, 5, 10, 0.7);
-  backdrop-filter: blur(4px);
-  transition: opacity 0.3s ease;
-}
-
-.traces-overlay {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 51;
-  height: 72vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-2);
-  border-top: 1px solid var(--line-2);
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
-  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* ═══ Motion ═══ */

@@ -6,7 +6,6 @@ import TopBar, { type BackendState } from "@/components/TopBar";
 import Composer from "@/components/Composer";
 import RunPanel from "@/components/RunPanel";
 import MetricsPanel from "@/components/MetricsPanel";
-import TracesPanel from "@/components/TracesPanel";
 import { useTicketHistory } from "@/hooks/useTicketHistory";
 import {
     startChat,
@@ -53,7 +52,6 @@ export default function Dashboard() {
     // Telemetry
     const [metrics, setMetrics] = useState<Metrics | null>(null);
     const [backendUp, setBackendUp] = useState<boolean | null>(null);
-    const [tracesOpen, setTracesOpen] = useState(false);
 
     const { entries: historyEntries, addEntry: addHistoryEntry, clearHistory } = useTicketHistory();
     const lastRecordedStatus = useRef<RunStatus>("idle");
@@ -304,11 +302,9 @@ export default function Dashboard() {
                         sqlAttempts={sqlAttempts}
                     />
 
-                    <MetricsPanel metrics={metrics} backend={backend} onCacheCleared={refreshMetrics} onOpenTraces={() => setTracesOpen(true)} />
+                    <MetricsPanel metrics={metrics} backend={backend} onCacheCleared={refreshMetrics} />
                 </div>
             </main>
-
-            <TracesPanel open={tracesOpen} onClose={() => setTracesOpen(false)} />
         </div>
     );
 }
