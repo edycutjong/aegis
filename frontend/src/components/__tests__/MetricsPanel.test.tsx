@@ -187,7 +187,8 @@ describe("MetricsPanel", () => {
     it("survives a db probe failure", async () => {
         vi.mocked(getDbStatus).mockRejectedValue(new Error("x"));
         render(<MetricsPanel metrics={FULL} backend="up" />);
-        await waitFor(() => expect(getDbStatus).toHaveBeenCalled());
+        // The section hides once the rejection is handled, not when the call starts.
+        await waitFor(() => expect(screen.queryByLabelText("Loading database status")).not.toBeInTheDocument());
         expect(screen.queryByText("Live database")).not.toBeInTheDocument();
     });
 });
