@@ -36,8 +36,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
         getDbStatus: vi.fn().mockResolvedValue({}),
         clearCache: vi.fn().mockResolvedValue({ status: "ok", keys_deleted: 0 }),
         getTableData: vi.fn().mockResolvedValue({ table: "customers", rows: [] }),
-        getTraces: vi.fn().mockResolvedValue({ traces: [], error: null }),
-        getTracingStatus: vi.fn().mockResolvedValue({ enabled: true, project: "aegis", connected: true }),
     };
 });
 
@@ -406,12 +404,8 @@ describe("Dashboard", () => {
         window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia;
     });
 
-    it("opens and closes the traces drawer, and closes the stream on unmount", async () => {
+    it("closes the stream on unmount", async () => {
         const { unmount } = render(<Dashboard />);
-        await userEvent.click(await screen.findByRole("button", { name: /LangSmith traces/ }));
-        expect(screen.getByRole("dialog", { name: "LangSmith traces" })).toHaveAttribute("aria-hidden", "false");
-        await userEvent.click(screen.getByTitle("Close (Esc)"));
-        expect(document.querySelector(".traces-overlay")).toHaveAttribute("aria-hidden", "true");
         await startRun();
         unmount();
         expect(close).toHaveBeenCalled();

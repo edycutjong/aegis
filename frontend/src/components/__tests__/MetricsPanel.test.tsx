@@ -11,11 +11,10 @@ vi.mock("@/lib/api", async (importOriginal) => {
         clearCache: vi.fn(),
         getDbStatus: vi.fn(),
         getTableData: vi.fn(),
-        getTracingStatus: vi.fn(),
     };
 });
 
-import { clearCache, getDbStatus, getTableData, getTracingStatus } from "@/lib/api";
+import { clearCache, getDbStatus, getTableData } from "@/lib/api";
 
 const FULL: Metrics = {
     agent_metrics: {
@@ -60,7 +59,6 @@ describe("MetricsPanel", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(getDbStatus).mockResolvedValue({});
-        vi.mocked(getTracingStatus).mockResolvedValue({ enabled: false, project: "aegis", connected: false });
         vi.mocked(getTableData).mockResolvedValue({ table: "customers", rows: [] });
     });
 
@@ -186,20 +184,10 @@ describe("MetricsPanel", () => {
         expect(screen.queryByRole("button", { name: /Billing/ })).not.toBeInTheDocument();
     });
 
-    it("links to LangSmith traces when tracing is on", async () => {
-        vi.mocked(getTracingStatus).mockResolvedValue({ enabled: true, project: "aegis", connected: true });
-        const onOpenTraces = vi.fn();
-        render(<MetricsPanel metrics={FULL} backend="up" onOpenTraces={onOpenTraces} />);
-        await userEvent.click(await screen.findByRole("button", { name: /LangSmith traces/ }));
-        expect(onOpenTraces).toHaveBeenCalled();
-    });
-
-    it("hides traces when the tracing probe fails, and survives a db probe failure", async () => {
-        vi.mocked(getTracingStatus).mockRejectedValue(new Error("x"));
+    it("survives a db probe failure", async () => {
         vi.mocked(getDbStatus).mockRejectedValue(new Error("x"));
         render(<MetricsPanel metrics={FULL} backend="up" />);
-        await waitFor(() => expect(getTracingStatus).toHaveBeenCalled());
-        expect(screen.queryByRole("button", { name: /LangSmith traces/ })).not.toBeInTheDocument();
+        await waitFor(() => expect(getDbStatus).toHaveBeenCalled());
         expect(screen.queryByText("Live database")).not.toBeInTheDocument();
     });
 });
