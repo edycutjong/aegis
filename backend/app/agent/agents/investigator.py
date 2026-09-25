@@ -226,12 +226,18 @@ async def _validate_identity(state: AgentState, roster: list[dict]) -> dict:
 
     # The regex only sees "Customer #N First Last". The roster finds names
     # written any other way ("chris johnson, acct 10", "Robert Kim here",
-    # an email address). A regex name that is close to a real customer is
-    # kept, so the typo and mismatch cases below still see what was written.
-    roster_name = _find_customer_in_text(user_msg, roster)
-    if roster_name and (mentioned_name is None or not _close_to_a_customer(mentioned_name, roster)):
-        mentioned_name = roster_name
+    # an email address, a typo). With an ID, a regex name close to a real
+    # customer is kept, so the typo and mismatch checks against that ID's row
+    # still see what was written. Without an ID, the roster's spelling is
+    # used: the name search below is exact, so "Jenifer Tayler" found no one.
     thoughts = state.get("thought_log", [])
+    roster_name = _find_customer_in_text(user_msg, roster)
+    if roster_name and (
+        mentioned_name is None or customer_id is None or not _close_to_a_customer(mentioned_name, roster)
+    ):
+        if mentioned_name and mentioned_name != roster_name:
+            thoughts = thoughts + [f"⚠ [{AGENT_NAME}] \"{mentioned_name}\" read as customer \"{roster_name}\""]
+        mentioned_name = roster_name
 
     # ── Case 6: No ID and no name → let SQL figure it out ──
     if customer_id is None and mentioned_name is None:

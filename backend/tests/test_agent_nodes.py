@@ -1865,6 +1865,22 @@ class TestValidateWithRoster:
         assert "other_customers" not in result
 
     @pytest.mark.asyncio
+    async def test_typo_name_without_an_id_uses_the_roster_spelling(self):
+        """Regression (held-out ho-name-typo-9): "Jenifer Tayler here" with no ID
+        was searched exactly and matched no one."""
+        roster = ROSTER + [{"id": 9, "name": "Jennifer Taylor", "email": "jt@example.com"}]
+        db = _mock_db_with_customer(None)
+        db.list_customers = AsyncMock(return_value=roster)
+        jennifer = {"id": 9, "name": "Jennifer Taylor", "plan": "pro", "status": "active"}
+        with patch("app.agent.agents.investigator.get_supabase", return_value=db), \
+             patch("app.agent.agents.investigator._search_customers_by_name", new_callable=AsyncMock,
+                   return_value=[jennifer]) as search:
+            result = await validate_customer(_make_state("Jenifer Tayler here, our webhooks stopped firing"))
+        search.assert_awaited_once_with(db, "Jennifer Taylor")
+        assert result["customer"]["id"] == 9
+        assert any('read as customer "Jennifer Taylor"' in t for t in result["thought_log"])
+
+    @pytest.mark.asyncio
     async def test_regex_name_close_to_a_customer_keeps_the_typo_flow(self):
         with patch("app.agent.agents.investigator.get_supabase", return_value=self._db(ROSTER[2] | {"plan": "pro", "status": "active"})):
             result = await validate_customer(_make_state("Customer #8 Davd Martines says he was charged twice"))
