@@ -5,7 +5,7 @@
 **A multi-agent support engine that investigates tickets against a live database, proposes one action,
 and stops for a human before anything that moves money or changes an account.**
 
-### [▶ Try the live demo](https://aegis.edycu.dev) · [Eval scorecard](backend/evals/SCORECARD.md) · [Security model](#-treat-every-llm-output-as-hostile-input) · [API docs](https://api-production-79b1f.up.railway.app/docs)
+### [▶ Try the live demo](https://aegis.edycu.dev) · [Eval scorecard](backend/evals/SCORECARD.md) · [Security model](#-treat-every-llm-output-as-hostile-input) · [API docs](https://api.aegis.edycu.dev/docs)
 
 [![CI](https://github.com/edycutjong/aegis/actions/workflows/ci.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/ci.yml)
 [![Evals](https://github.com/edycutjong/aegis/actions/workflows/evals.yml/badge.svg)](https://github.com/edycutjong/aegis/actions/workflows/evals.yml)
