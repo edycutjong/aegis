@@ -27,7 +27,7 @@ const DESCRIPTION =
 const OG_IMAGE = { url: "/og.png", width: 1200, height: 630, alt: "Aegis — the agents do the investigation, you release the action" };
 
 export const metadata: Metadata = {
-    metadataBase: new URL("https://aegis-pi-five.vercel.app"),
+    metadataBase: new URL("https://aegis.edycu.dev"),
     title: TITLE,
     description: DESCRIPTION,
     icons: {
