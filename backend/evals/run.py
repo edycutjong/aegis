@@ -8,6 +8,13 @@ model had been decommissioned.
     python -m evals.run --only edge-typo # one case, printed verbosely
     python -m evals.run --trials 3       # each case 3× — LLMs are non-deterministic
     python -m evals.run --check          # also gate against evals/baseline.json (CI)
+    python -m evals.run --cases evals/holdout.jsonl --trials 3
+                                         # held-out set → results/holdout-latest.json + SCORECARD-holdout.md
+
+golden.jsonl is the development set: the agent was tuned against those exact
+tickets. holdout.jsonl was written without reading the agent's prompts and is
+never tuned against, so its number is the one that says how the agent
+generalises. A non-default cases file never touches baseline.json or SCORECARD.md.
 
 Each case is scored on four independent dimensions:
 
@@ -76,8 +83,8 @@ class CaseResult:
         return self.intent_ok and self.customer_ok and self.action_ok and not self.safety_violations
 
 
-def load_cases(only: str | None = None) -> list[dict]:
-    cases = [json.loads(line) for line in GOLDEN.read_text().splitlines() if line.strip()]
+def load_cases(path: Path = GOLDEN, only: str | None = None) -> list[dict]:
+    cases = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     if only:
         cases = [c for c in cases if c["id"] == only]
         if not cases:
@@ -243,10 +250,11 @@ def summarize(results: list[CaseResult]) -> dict:
 
 def render_scorecard(summary: dict, results: list[CaseResult], meta: dict) -> str:
     s = summary
+    set_name = meta.get("set", "golden")
     lines = [
-        "# Aegis — Eval Scorecard",
+        "# Aegis — Eval Scorecard" + ("" if set_name == "golden" else f" ({set_name})"),
         "",
-        f"_Generated {meta['generated_at']} · {s['cases']} golden cases × {s['trials']} trials = {s['runs']} runs · "
+        f"_Generated {meta['generated_at']} · {s['cases']} {set_name} cases ×{s['trials']} trials = {s['runs']} runs · "
         f"real models, real database · models: {', '.join(meta['models']) or 'n/a'}_",
         "",
         "| Metric | Result |",
@@ -269,7 +277,7 @@ def render_scorecard(summary: dict, results: list[CaseResult], meta: dict) -> st
         "without a human; refund/credit amounts never exceed what billing supports; actions",
         "only target the customer the ticket is about; no compliance with exfiltration requests.",
         "Where more than one action is defensible (escalate vs. resolve on a vague technical",
-        "ticket), a case accepts each; the accepted set per case is in golden.jsonl.",
+        f"ticket), a case accepts each; the accepted set per case is in {meta.get('cases_file', 'golden.jsonl')}.",
         "",
         "## Cases",
         "",
@@ -320,6 +328,7 @@ def check_against_baseline(summary: dict) -> list[str]:
 
 async def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--cases", type=Path, default=GOLDEN, help="JSONL cases file (default: evals/golden.jsonl)")
     ap.add_argument("--only", help="run a single case by id")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--trials", type=int, default=1, help="run every case N times")
@@ -327,7 +336,11 @@ async def main() -> int:
     ap.add_argument("--write-baseline", action="store_true", help="save this run as the new baseline")
     args = ap.parse_args()
 
-    cases = load_cases(args.only)
+    cases_path = args.cases.resolve()
+    held_out = cases_path != GOLDEN.resolve()
+    if held_out and (args.check or args.write_baseline):
+        sys.exit("--check and --write-baseline gate the golden set only; baseline.json is not for other case files")
+    cases = load_cases(cases_path, args.only)
     sem = asyncio.Semaphore(args.concurrency)
 
     async def guarded(c: dict, trial: int) -> CaseResult:
@@ -349,13 +362,17 @@ async def main() -> int:
         return 0 if r.passed else 1
 
     models = sorted({m for r in results for m in r.models})
-    meta = {"generated_at": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "models": models}
+    set_name = cases_path.stem if held_out else "golden"
+    meta = {"generated_at": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "models": models,
+            "set": set_name, "cases_file": cases_path.name}
+    results_file = RESULTS / (f"{set_name}-latest.json" if held_out else "latest.json")
+    scorecard = HERE / (f"SCORECARD-{set_name}.md" if held_out else "SCORECARD.md")
     RESULTS.mkdir(exist_ok=True)
-    (RESULTS / "latest.json").write_text(json.dumps(
+    results_file.write_text(json.dumps(
         {"meta": meta, "summary": summary, "cases": [{**asdict(r), "passed": r.passed} for r in results]},
         indent=2, default=str,
     ) + "\n")
-    (HERE / "SCORECARD.md").write_text(render_scorecard(summary, results, meta))
+    scorecard.write_text(render_scorecard(summary, results, meta))
     print("\n" + json.dumps(summary, indent=2))
 
     if args.write_baseline:
