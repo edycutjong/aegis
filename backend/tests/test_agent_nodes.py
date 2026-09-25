@@ -669,8 +669,10 @@ class TestProposeActionAsync:
         assert result["proposed_action"]["type"] == "escalate"
 
     @pytest.mark.asyncio
-    async def test_already_resolved_refund_skips_llm(self):
-        """When billing data already contains a 'duplicate' refund, skip LLM and resolve."""
+    async def test_duplicate_refund_on_file_goes_to_a_person_without_the_llm(self):
+        """A duplicate-charge complaint with a duplicate refund already on file
+        skips the LLM and escalates with that refund as context. It used to
+        close as 'already resolved', which hid a second, new duplicate."""
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock()  # Should NOT be called
 
@@ -690,8 +692,8 @@ class TestProposeActionAsync:
             mock_tracker.return_value.get_request.return_value = None
             result = await propose_action(state)
 
-        assert result["proposed_action"]["type"] == "resolve"
-        assert "already resolved" in result["proposed_action"]["description"].lower()
+        assert result["proposed_action"]["type"] == "escalate"
+        assert "duplicate-charge refund already on file ($49.00, pending)" in result["proposed_action"]["description"].lower()
         assert result["proposed_action"]["customer_id"] == 8
         mock_llm.ainvoke.assert_not_called()
 
@@ -727,12 +729,12 @@ class TestProposeActionAsync:
 
     @pytest.mark.asyncio
     async def test_no_matching_refund_returns_none(self):
-        """When refunds exist but don't match duplicate/double, _detect_already_resolved returns None."""
-        from app.agent.agents.resolver import _detect_already_resolved
+        """When refunds exist but don't match duplicate/double, _duplicate_refund_on_file returns None."""
+        from app.agent.agents.resolver import _duplicate_refund_on_file
         sql_result = [
             {"id": 8, "name": "David Martinez", "amount": "49.00", "type": "refund", "description": "Courtesy credit for downtime"},
         ]
-        result = _detect_already_resolved(sql_result, None)
+        result = _duplicate_refund_on_file(sql_result, None)
         assert result is None
 
     @pytest.mark.asyncio
@@ -1353,47 +1355,48 @@ class TestGenerateResponseModelNameFallback:
 
 
 # ─────────────────────────────────────────────────────────────
-# _detect_already_resolved edge cases
+# _duplicate_refund_on_file edge cases
 # ─────────────────────────────────────────────────────────────
 
 
-class TestDetectAlreadyResolvedEdgeCases:
-    """Additional branch coverage for _detect_already_resolved."""
+class TestDuplicateRefundOnFileEdgeCases:
+    """Additional branch coverage for _duplicate_refund_on_file."""
 
     def test_credit_type_with_duplicate_keyword_detected(self):
-        """A 'credit' record (not just 'refund') mentioning 'duplicate' should
-        also short-circuit to a 'resolve' action (the type filter includes credit)."""
-        from app.agent.agents.resolver import _detect_already_resolved
+        """A 'credit' record (not just 'refund') mentioning 'duplicate' counts
+        too (the type filter includes credit), and it escalates."""
+        from app.agent.agents.resolver import _duplicate_refund_on_file
 
         sql_result = [
             {"id": 44, "customer_id": 8, "amount": "15.00", "type": "credit",
              "description": "Courtesy credit for duplicate billing"},
         ]
-        result = _detect_already_resolved(sql_result, {"id": 8, "name": "David Martinez"})
+        result = _duplicate_refund_on_file(sql_result, {"id": 8, "name": "David Martinez"})
         assert result is not None
-        assert result["type"] == "resolve"
+        assert result["type"] == "escalate"
         assert result["customer_id"] == 8
         assert "15.00" in result["description"]
+        assert "completed" in result["description"]
 
     def test_missing_amount_key_defaults_to_zero(self):
         """When the refund record has no 'amount' key at all, default to 0.00 in the summary."""
-        from app.agent.agents.resolver import _detect_already_resolved
+        from app.agent.agents.resolver import _duplicate_refund_on_file
 
         sql_result = [
             {"id": 44, "customer_id": 8, "type": "refund",
              "description": "Duplicate charge refund"},
         ]
-        result = _detect_already_resolved(sql_result, {"id": 8, "name": "David Martinez"})
+        result = _duplicate_refund_on_file(sql_result, {"id": 8, "name": "David Martinez"})
         assert result is not None
         assert "$0.00" in result["description"]
 
     def test_empty_sql_results_returns_none(self):
-        from app.agent.agents.resolver import _detect_already_resolved
-        assert _detect_already_resolved([], None) is None
+        from app.agent.agents.resolver import _duplicate_refund_on_file
+        assert _duplicate_refund_on_file([], None) is None
 
     def test_non_list_sql_results_returns_none(self):
-        from app.agent.agents.resolver import _detect_already_resolved
-        assert _detect_already_resolved(None, None) is None
+        from app.agent.agents.resolver import _duplicate_refund_on_file
+        assert _duplicate_refund_on_file(None, None) is None
 
 
 
@@ -1656,18 +1659,18 @@ def test_ticket_boilerplate_does_not_pull_unrelated_policies():
     assert [d["title"] for d in ranked] == ["Refund Policy"]
 
 
-class TestAlreadyResolvedScope:
+class TestDuplicateRefundOnFileScope:
     def test_failed_refunds_do_not_count(self):
-        from app.agent.agents.resolver import _detect_already_resolved
+        from app.agent.agents.resolver import _duplicate_refund_on_file
         rows = [{"id": 5, "customer_id": 8, "type": "refund", "status": "failed",
                  "amount": 49, "description": "Duplicate charge refund"}]
-        assert _detect_already_resolved(rows, {"id": 8, "name": "D"}) is None
+        assert _duplicate_refund_on_file(rows, {"id": 8, "name": "D"}) is None
 
     def test_other_customers_refunds_do_not_count(self):
-        from app.agent.agents.resolver import _detect_already_resolved
+        from app.agent.agents.resolver import _duplicate_refund_on_file
         rows = [{"id": 5, "customer_id": 9, "type": "refund", "amount": 49,
                  "description": "Duplicate charge refund"}]
-        assert _detect_already_resolved(rows, {"id": 8, "name": "D"}) is None
+        assert _duplicate_refund_on_file(rows, {"id": 8, "name": "D"}) is None
 
 
 class TestParseAction:

@@ -185,7 +185,7 @@ class TestHitlGateExhaustive:
 # ─────────────────────────────────────────────────────────────
 
 # SQL result shapes that contain NO verified customer (need both id and name).
-# None of these may trigger the "already resolved" pre-check.
+# None of these may trigger the duplicate-refund pre-check.
 NO_CUSTOMER_SQL_SHAPES = [
     [],
     [{}],
@@ -317,7 +317,7 @@ class TestUnverifiedCustomerInvariant:
 
 
 class TestInvariantsHoldOnEveryPath:
-    """Regression (audit P0): the 'already resolved' shortcut returned before
+    """Regression (audit P0): the duplicate-refund shortcut returned before
     the injection and identity overrides ran, and read the billing row's `id`
     as the customer."""
 
@@ -476,10 +476,13 @@ class TestTableAllowlistBoundary:
                 assert res.json()["table"] == name
 
 
-class TestAlreadyResolvedShortcutScope:
-    """Regression (external audit): customer #8 has a pending "Duplicate charge
-    refund", and the shortcut fired for *every* #8 ticket. An upgrade request
-    was auto-closed with a refund reply, and no model or human saw it."""
+class TestDuplicateChargeShortcut:
+    """Regression (external audits): customer #8 has a pending "Duplicate charge
+    refund". The shortcut first fired for *every* #8 ticket, then for any
+    billing ticket with "twice", "again" or "duplicate" in it, and it closed
+    them all as "already resolved" with no model and no human. A second, new
+    double charge was among them. It now fires only for a duplicate *charge*
+    and hands it to a person with the refund on file as context."""
 
     BILLING_8 = [
         {"id": 30, "customer_id": 8, "amount": "49.00", "type": "refund",
@@ -510,11 +513,18 @@ class TestAlreadyResolvedShortcutScope:
         ("Customer #8 David Martinez is reselling API access, a terms of service violation.", "account"),
         ("Customer #8 David Martinez needs a copy of last month's invoice.", "billing"),
         ("Customer #8 David Martinez wants a refund for last month's downtime.", "billing"),
+        # Billing tickets that only share the shortcut's words (second audit):
+        ("Customer #8 David Martinez is cancelling Pro and wants to be sure he won't be charged again next month.",
+         "billing"),
+        ("Customer #8 David Martinez has asked twice for a copy of his March invoice and still hasn't received it.",
+         "billing"),
+        ("Customer #8 David Martinez got a duplicate invoice email and needs a corrected invoice with his VAT number.",
+         "billing"),
     ])
-    async def test_unrelated_tickets_reach_the_model(self, message, intent):
+    async def test_other_tickets_reach_the_model(self, message, intent):
         action, llm = await self._propose(message, intent)
         llm.ainvoke.assert_called_once()
-        assert "already resolved" not in action["description"].lower()
+        assert "duplicate-charge refund" not in action["description"].lower()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("message", [
@@ -522,9 +532,87 @@ class TestAlreadyResolvedShortcutScope:
         "Customer #8 David Martinez: duplicate charge on my Pro plan.",
         "Customer #8 David Martinez was double-charged for Pro.",
         "Customer #8 David Martinez sees two identical charges on his card.",
+        "Customer #8 David Martinez was double-charged again this week: a new charge, not the one you already refunded.",
     ])
-    async def test_duplicate_charge_questions_still_use_the_shortcut(self, message):
+    async def test_duplicate_charge_complaints_go_to_a_person(self, message):
         action, llm = await self._propose(message, "billing")
         llm.ainvoke.assert_not_called()
-        assert action["type"] == "resolve"
-        assert "already resolved" in action["description"].lower()
+        assert action["type"] == "escalate"
+        assert "duplicate-charge refund already on file ($49.00, pending)" in action["description"].lower()
+        assert action["customer_id"] == 8
+
+
+def _resolve_proposal(description: str, reason: str = "r") -> str:
+    return json.dumps({"type": "resolve", "amount": None, "description": description, "reason": reason})
+
+
+class TestSecurityReportsReachAPerson:
+    """Regression (second audit): leaked-key reports were auto-resolved in every
+    eval trial with "your API key has been rotated". Nothing rotates keys, and
+    no person saw the incident. A security report can't close as a resolve."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("message", [
+        "Customer #22 Ryan King thinks his API key was compromised and wants it rotated urgently.",
+        "Customer #8 David Martinez: our staging token leaked in a public repository last night.",
+        "Customer #3 Maria Garcia believes someone hacked her account and changed the webhook URL.",
+        "Customer #7 Lisa Anderson found unauthorized logins on her workspace from another country.",
+        "Customer #12 Kevin Lee's password was phished through a fake login page.",
+    ])
+    async def test_security_report_escalates_even_when_the_model_resolves(self, message):
+        result = await TestUnverifiedCustomerInvariant._propose(
+            _resolve_proposal("Tell the customer how to generate a new key in Settings."),
+            {"user_message": message, "customer": {"id": 8, "name": "David Martinez"}},
+        )
+        action = result["proposed_action"]
+        assert action["type"] == "escalate"
+        assert action["description"].startswith("Security report")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("message", [
+        "Customer #22 Ryan King asks how to rotate his API key.",
+        "Customer #9 Jennifer Taylor wants a second API key for her staging environment.",
+    ])
+    async def test_security_questions_can_still_resolve(self, message):
+        result = await TestUnverifiedCustomerInvariant._propose(
+            _resolve_proposal("Explain how to rotate an API key under Settings > API keys."),
+            {"user_message": message, "customer": {"id": 22, "name": "Ryan King"}},
+        )
+        assert result["proposed_action"]["type"] == "resolve"
+
+
+class TestResolveCannotClaimAnAction:
+    """Regression (second audit): `resolve` performs nothing, but eval runs
+    auto-closed tickets with "has been rotated", "a 50% credit will be applied
+    automatically" and cancellations that never happened. A resolve whose text
+    claims an action goes to a person instead."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("description, reason", [
+        ("Inform the customer that their API key has been revoked and a new one generated.", "Requested."),
+        ("Explain the outage compensation.", "They get a 50% monthly credit, which will be applied automatically."),
+        ("Confirm that we've cancelled the Pro subscription.", "Customer asked to cancel."),
+        ("Tell the customer the invoice will be corrected and resent with the VAT number.", "Requested."),
+        ("Let the customer know we will refund the extra charge.", "Duplicate."),
+    ])
+    async def test_claimed_action_escalates(self, description, reason):
+        result = await TestUnverifiedCustomerInvariant._propose(
+            _resolve_proposal(description, reason),
+            {"user_message": "Customer #4 Robert Kim has a question.", "customer": {"id": 4, "name": "Robert Kim"}},
+        )
+        action = result["proposed_action"]
+        assert action["type"] == "escalate"
+        assert description[:60] in action["reason"]  # the person sees what the model wanted to say
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("description", [
+        "Explain the annual billing discount: $39/month, billed yearly.",
+        "Point the customer to the SSO setup guide and its callback URL.",
+        "Explain how to rotate an API key under Settings > API keys.",
+    ])
+    async def test_plain_answers_stay_resolved(self, description):
+        result = await TestUnverifiedCustomerInvariant._propose(
+            _resolve_proposal(description, "Information only."),
+            {"user_message": "Customer #4 Robert Kim has a question.", "customer": {"id": 4, "name": "Robert Kim"}},
+        )
+        assert result["proposed_action"]["type"] == "resolve"

@@ -27,11 +27,47 @@ import re
 AGENT_NAME = "Resolution"
 
 
-# The shortcut below answers exactly one question: "was I double-charged?".
-# Any other ticket for a customer who happens to have a past duplicate refund
-# (an upgrade, a leaked key, a ToS report) must go to the model and the gate.
+# A duplicate-charge complaint from a customer who already has a duplicate-
+# charge refund on file skips the model and goes straight to a human, with that
+# refund as context. It never closes on its own: a second double charge is new
+# money owed, and only a person can tell the two apart. The cue needs a charge
+# *and* the duplication, so "won't be charged again", "asked twice for an
+# invoice" or "a duplicate invoice email" go to the model like any other ticket.
 DUPLICATE_CHARGE_TICKET = re.compile(
-    r"\b(duplicate|twice|double[- ]?(charged?|billed|billing)|two (identical )?charges|(charged|billed) again)\b",
+    r"\b(charged|billed)\b[^.?!\n]{0,30}\b(twice|two times)\b"
+    r"|\bdouble[- ]?(charged|billed|charge|charging|billing)\b"
+    r"|\bduplicate\b[^.?!\n]{0,20}\b(charges?|payments?|billing|transactions?)\b"
+    r"|\btwo (identical |separate |duplicate )?(charges|payments)\b",
+    re.IGNORECASE,
+)
+
+# A reported leak or compromise is an incident, not a question: someone has to
+# revoke the credential and check for abuse, so it never closes on its own.
+# A false match only costs an unneeded escalation.
+_CREDENTIAL = r"(api[- ]?keys?|keys?|tokens?|passwords?|credentials?|secrets?|accounts?|logins?)"
+_COMPROMISED = (r"(leak(ed|ing|s)?|expos(ed|ing|ure)|compromis(ed|e)|stolen|hacked|breach(ed)?|phish(ed|ing)"
+                r"|published|posted publicly|shared publicly|in a public (repo|repository))")
+SECURITY_REPORT = re.compile(
+    rf"\b{_CREDENTIAL}\b[^.?!\n]{{0,60}}\b{_COMPROMISED}\b"
+    rf"|\b{_COMPROMISED}\b[^.?!\n]{{0,60}}\b{_CREDENTIAL}\b"
+    r"|\bsecurity (incident|breach)\b|\bdata breach\b|\bunauthori[sz]ed (access|logins?|use|charges?)\b",
+    re.IGNORECASE,
+)
+
+# `resolve` executes nothing, so its text may not say that something was or
+# will be done: "your key has been rotated", "a credit will be applied
+# automatically", "we've cancelled your plan". That is an action for a human.
+# This reads the model's own words; a phrasing it misses stays a resolve.
+_DONE = (r"rotated|revoked|reset|regenerated|reissued|cancell?ed|refunded|credited|reimbursed|issued|applied"
+         r"|processed|updated|changed|upgraded|downgraded|deleted|removed|reactivated|restored|suspended"
+         r"|corrected|waived|sent|resent|emailed")
+_DO = (r"rotate|revoke|reset|regenerate|reissue|cancel|refund|credit|reimburse|issue|apply|process|update"
+       r"|change|upgrade|downgrade|delete|remove|reactivate|restore|suspend|correct|waive|send|resend|email")
+ACTION_CLAIM = re.compile(
+    rf"\b(has|have|had)\s+(now\s+|already\s+)?been\s+({_DONE})\b"
+    rf"|\bwill\s+(now\s+|soon\s+)?be\s+(automatically\s+)?({_DONE})\b"
+    rf"|\b(we|i)\s*('ve|'ll|\s+have|\s+will)\s+(now\s+|already\s+)?({_DONE}|{_DO})\b"
+    r"|\bapplied automatically\b",
     re.IGNORECASE,
 )
 
@@ -42,19 +78,19 @@ def _asks_about_duplicate_charge(state: AgentState) -> bool:
     )
 
 
-def _detect_already_resolved(sql_results: list, customer: dict | None) -> dict | None:
-    """Check if billing data shows the issue was already resolved.
+def _duplicate_refund_on_file(billing: list, customer: dict | None) -> dict | None:
+    """An escalation when the customer already has a duplicate-charge refund.
 
-    Looks for a completed or in-flight (pending) refund/credit whose
-    description marks it as a duplicate-charge fix, on the validated
-    customer's own records. Returns a pre-built 'resolve' action, or None.
-    Failed refunds don't count: the customer is still owed the money.
+    Looks for a completed or pending refund/credit whose description marks it
+    as a duplicate-charge fix, on the validated customer's own records, and
+    returns an `escalate` that hands a human that refund as context. Failed
+    refunds don't count: the customer is still owed the money.
     """
-    if not sql_results or not isinstance(sql_results, list):
+    if not billing or not isinstance(billing, list):
         return None
     customer_id = (customer or {}).get("id")
 
-    for row in sql_results:
+    for row in billing:
         if not isinstance(row, dict) or row.get("type") not in ("refund", "credit"):
             continue
         if row.get("status", "completed") not in ("completed", "pending"):
@@ -65,14 +101,20 @@ def _detect_already_resolved(sql_results: list, customer: dict | None) -> dict |
         desc = (row.get("description") or "").lower()
         if "duplicate" in desc or "double" in desc:
             amount = _to_amount(row.get("amount")) or 0.0
-            state_word = "is already being processed" if row.get("status") == "pending" else "was already processed"
+            status = "pending" if row.get("status") == "pending" else "completed"
             return {
-                "type": "resolve",
+                "type": "escalate",
                 "amount": None,
                 "customer_id": customer_id,
                 "customer_name": (customer or {}).get("name", "Unknown"),
-                "description": f"Issue already resolved — a refund of ${amount:.2f} {state_word} ({desc})",
-                "reason": "Billing records show this charge has already been refunded. No further action needed.",
+                "description": (
+                    f"Duplicate-charge refund already on file (${amount:.2f}, {status}): "
+                    "confirm this ticket is about that same charge before replying."
+                ),
+                "reason": (
+                    f"Billing shows a {status} refund for an earlier duplicate charge ({desc}). "
+                    "A new duplicate would be money owed, so a person checks which charge this is."
+                ),
             }
     return None
 
@@ -152,7 +194,25 @@ def _enforce_invariants(action: dict, state: AgentState, billing: list[dict] | N
     else:
         action["amount"] = None
 
-    # 3. Screened tickets always go to a human. The model's text is dropped
+    # 3. Security reports always reach a human, whatever the model proposed.
+    if action.get("type") == "resolve" and SECURITY_REPORT.search(state.get("user_message") or ""):
+        action = _escalate(
+            action,
+            "Security report: a person revokes and reissues the credential and checks for abuse before anyone replies.",
+            "Security reports never close on their own. The model proposed 'resolve'.",
+        )
+
+    # 4. A resolve performs nothing, so it may not say that something was done.
+    if action.get("type") == "resolve" and ACTION_CLAIM.search(
+        f"{action.get('description') or ''} {action.get('reason') or ''}"
+    ):
+        action = _escalate(
+            action,
+            "Escalated: the proposed answer says an action was or will be taken, and a resolve performs none.",
+            f"The model proposed resolving with: {action.get('description') or ''}"[:300],
+        )
+
+    # 5. Screened tickets always go to a human. The model's text is dropped
     #    rather than quoted, so complied-with content cannot ride along.
     risk_flags = state.get("risk_flags") or []
     if risk_flags and action.get("type") != "escalate":
@@ -205,10 +265,10 @@ async def propose_action(state: AgentState, config: RunnableConfig | None = None
     validated = state.get("customer") or {}
     billing = state.get("billing") or []
 
-    # ── Pre-check: already resolved? (still subject to the invariants) ──
-    already = _detect_already_resolved(billing, validated) if _asks_about_duplicate_charge(state) else None
-    if already:
-        return _proposal(_enforce_invariants(already, state, billing), state)
+    # ── Pre-check: a duplicate-charge refund already on file goes to a person ──
+    on_file = _duplicate_refund_on_file(billing, validated) if _asks_about_duplicate_charge(state) else None
+    if on_file:
+        return _proposal(_enforce_invariants(on_file, state, billing), state)
 
     # The customer validated upstream is the only source of identity. Billing
     # rows carry `customer_id` but no `name`, and the LLM's query decides
@@ -240,7 +300,9 @@ Available action types:
 
 Choose the least invasive action that fully addresses the ticket. A question
 that only needs information (pricing, policy, how-to) is "resolve" — never a
-refund or credit nobody asked for.
+refund or credit nobody asked for. But when the answer is that the customer is
+owed money (an outage credit, a billing error), propose that credit or refund
+with its amount rather than describing it inside a "resolve".
 
 Money moves only on evidence. Propose refund/credit only when the billing
 records show an erroneous charge (duplicate, charged while suspended or
