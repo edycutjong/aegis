@@ -1,8 +1,11 @@
 """Dynamic model routing for cost optimization.
 
-Routes simple tasks to fast/cheap models and complex tasks to powerful/expensive ones.
-Classification and formatting are cheap; SQL and action proposal are where
-being wrong is expensive, so they get the frontier model.
+Classification runs on a fast model and SQL generation on the frontier model
+(GPT-4.1), since a wrong query is the expensive mistake. Action proposal and
+the reply use the intent lane chosen by the classifier: gpt-oss-120b on Groq
+for billing and general, Gemini 2.5 Flash for technical and account. The
+amount cap, identity override and approval gate are enforced in code after
+the model answers, whichever model that was.
 """
 
 from langchain_openai import ChatOpenAI
@@ -132,7 +135,8 @@ def get_model_for_intent(task: str, model_provider: str | None = None):
 
     For tasks like 'propose_action' and 'generate_response', uses the
     model_provider set by the classifier (groq for simple intents,
-    gemini for complex). Falls back to Gemini if Groq is unavailable.
+    gemini for complex). Each primary fails over to a different vendor
+    (see FALLBACK_MODEL).
 
     Args:
         task: The agent task name

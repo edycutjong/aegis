@@ -19,10 +19,6 @@ from app.agent.screen import screen
 
 
 AGENT_NAME = "Triage"
-AGENT_DESCRIPTION = (
-    "Classifies incoming support tickets into categories (billing, technical, "
-    "account, general) to route them to the correct investigation path."
-)
 
 
 @traceable(name="screen_input")

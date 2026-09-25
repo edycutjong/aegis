@@ -112,7 +112,7 @@ ALTER SEQUENCE support_tickets_id_seq RESTART WITH 1;
 ALTER SEQUENCE internal_docs_id_seq RESTART WITH 1;
 
 -- =============================================
--- SEED DATA: 50 Customers
+-- SEED DATA: 51 Customers
 -- =============================================
 INSERT INTO customers (name, email, plan, status, company) VALUES
 -- Enterprise customers
@@ -171,7 +171,7 @@ INSERT INTO customers (name, email, plan, status, company) VALUES
 ('Kelly Howard', 'k.howard@hotmail.com', 'free', 'active', NULL);
 
 -- =============================================
--- SEED DATA: Billing Records (200+ entries)
+-- SEED DATA: Billing Records (34 entries)
 -- =============================================
 INSERT INTO billing (customer_id, amount, type, description, status, created_at) VALUES
 -- Enterprise charges

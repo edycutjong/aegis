@@ -22,10 +22,6 @@ from app.observability.tracker import get_tracker
 
 
 AGENT_NAME = "Investigator"
-AGENT_DESCRIPTION = (
-    "Validates customer identity, generates and executes SQL queries to "
-    "investigate support issues, with self-healing retry on failures."
-)
 
 
 # ─────────────────────────────────────────────────────────────

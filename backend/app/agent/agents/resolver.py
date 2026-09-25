@@ -25,11 +25,6 @@ from app.observability.tracker import get_tracker
 import re
 
 AGENT_NAME = "Resolution"
-AGENT_DESCRIPTION = (
-    "Synthesizes investigation findings into action proposals, manages "
-    "human approval gates, executes approved actions, and generates "
-    "final response summaries."
-)
 
 
 # The shortcut below answers exactly one question: "was I double-charged?".
@@ -198,7 +193,8 @@ def _parse_action(raw: str) -> dict | None:
 async def propose_action(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Synthesize all findings and propose an action.
 
-    Uses the SMART model for critical reasoning.
+    Uses the intent lane's model (see model_router); the invariants below
+    hold whatever it proposes.
     """
     llm = get_model_for_intent("propose_action", state.get("model_provider"))
 

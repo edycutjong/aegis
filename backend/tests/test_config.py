@@ -25,11 +25,6 @@ class TestSettingsDefaults:
             s = Settings()
             assert s.redis_url == "redis://localhost:6379"
 
-    def test_default_debug_is_false(self):
-        with patch.dict(os.environ, {}, clear=True):
-            s = Settings()
-            assert s.debug is False
-
 
 class TestSettingsFromEnv:
     """Settings.__post_init__ should read from environment variables."""
@@ -46,21 +41,9 @@ class TestSettingsFromEnv:
             s = Settings()
             assert s.fast_model == "gemini-2.5-flash"
 
-    def test_debug_true_from_env(self):
-        with patch.dict(os.environ, {"DEBUG": "true"}, clear=False):
-            get_settings.cache_clear()
-            s = Settings()
-            assert s.debug is True
-
-    def test_debug_case_insensitive(self):
-        with patch.dict(os.environ, {"DEBUG": "TRUE"}, clear=False):
-            get_settings.cache_clear()
-            s = Settings()
-            assert s.debug is True
-
 
 class TestSettingsAllEnvFields:
-    """Every remaining Settings field should map from its env var (L48-63)."""
+    """Every remaining Settings field should map from its env var."""
 
     def test_supabase_url_from_env(self):
         with patch.dict(os.environ, {"SUPABASE_URL": "https://proj.supabase.co"}, clear=False):

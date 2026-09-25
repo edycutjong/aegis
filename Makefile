@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════
-#  Aegis — Production AI Agent for Customer Support
+#  Aegis — Support engine with a human approval gate
 #  One-command development workflow
 # ═══════════════════════════════════════════════════════════
 
@@ -116,7 +116,7 @@ ci: lint typecheck test audit build ## 🔁 Full CI pipeline locally (lint → t
 
 help: ## 📖 Show available commands
 	@echo ""
-	@echo "  \033[1;36mAegis\033[0m — Production AI Agent for Customer Support"
+	@echo "  \033[1;36mAegis\033[0m — Support engine with a human approval gate"
 	@echo "  ─────────────────────────────────────────────────"
 	@echo ""
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
