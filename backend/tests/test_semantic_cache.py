@@ -186,7 +186,7 @@ class TestGetCacheSingleton:
     """get_cache() should return the same instance."""
 
     async def test_returns_singleton(self):
-        import app.cache.semantic as cache_mod
+        from app.cache import semantic as cache_mod
         cache_mod._cache = None
 
         with patch.object(SemanticCache, "connect", new_callable=AsyncMock):

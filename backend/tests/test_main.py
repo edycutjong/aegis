@@ -1551,7 +1551,7 @@ class TestDemoProtection:
     """Spend protection for the public demo."""
 
     def test_rate_limited_request_returns_429_with_retry_after(self, client):
-        import app.main as main_mod
+        from app import main as main_mod
         with patch.object(main_mod.rate_limiter, "check", return_value=(False, "slow down", 42)), \
              patch("app.main._run_agent", new_callable=AsyncMock) as run:
             response = client.post("/api/chat", json={"message": "Help with billing"})
@@ -1561,7 +1561,7 @@ class TestDemoProtection:
         run.assert_not_called()
 
     def test_per_client_limit_trips_after_budget(self, client):
-        import app.main as main_mod
+        from app import main as main_mod
         limit = main_mod.rate_limiter.per_client
         with patch("app.main._run_agent", new_callable=AsyncMock):
             codes = [
@@ -1576,7 +1576,7 @@ class TestDemoProtection:
         assert response.status_code == 422
 
     def test_thread_store_evicts_oldest(self):
-        import app.main as main_mod
+        from app import main as main_mod
         saved = dict(main_mod.thread_store)
         try:
             main_mod.thread_store.clear()
@@ -1654,7 +1654,7 @@ class TestSqlVisibilityAndErrors:
         assert "approval_required" in text and "SELECT 2" in text
 
     def test_retry_after_is_exposed_to_browsers(self, client):
-        import app.main as main_mod
+        from app import main as main_mod
         with patch.object(main_mod.rate_limiter, "check", return_value=(False, "slow", 9)):
             response = client.post("/api/chat", json={"message": "x"}, headers={"Origin": "http://localhost:3000"})
         assert "retry-after" in response.headers.get("access-control-expose-headers", "").lower()
@@ -1662,7 +1662,7 @@ class TestSqlVisibilityAndErrors:
 
 class TestAuditHardening:
     def test_stream_gives_up_after_deadline(self, client):
-        import app.main as main_mod
+        from app import main as main_mod
         main_mod.thread_store["stuck"] = {"message": "t", "status": "processing", "thought_log": []}
         with patch.object(main_mod, "STREAM_DEADLINE_S", -1):
             text = client.get("/api/stream/stuck").text
@@ -1670,7 +1670,7 @@ class TestAuditHardening:
         assert "took too long" in text
 
     def test_clearing_the_cache_is_rate_limited(self, client):
-        import app.main as main_mod
+        from app import main as main_mod
         with patch.object(main_mod.rate_limiter, "check", return_value=(False, "slow", 5)):
             response = client.delete("/api/cache")
         assert response.status_code == 429
@@ -1703,7 +1703,7 @@ class TestAuditHardening:
         assert [r["thread_id"] for r in tracker._history] == ["t2", "t3", "t4"]
 
     def test_eviction_frees_checkpoints_and_metrics(self):
-        import app.main as main_mod
+        from app import main as main_mod
         saved = dict(main_mod.thread_store)
         try:
             main_mod.thread_store.clear()
@@ -1719,7 +1719,7 @@ class TestAuditHardening:
             main_mod.thread_store.update(saved)
 
     def test_thread_response_includes_receipt(self, client):
-        import app.main as main_mod
+        from app import main as main_mod
         main_mod.thread_store["with-receipt"] = {"message": "t", "status": "completed", "thought_log": []}
         with patch("app.main.get_tracker") as tracker:
             tracker.return_value.receipt.return_value = {"total_cost_usd": 0.002}

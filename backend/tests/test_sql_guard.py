@@ -115,14 +115,14 @@ AUDIT_ESCAPES = [
 ]
 
 REALISTIC = [
-    "SELECT c.id, c.name, b.amount FROM customers c JOIN billing b ON b.customer_id = c.id "
-    "WHERE c.id = 8 AND b.type = 'charge' OR b.amount > 5 ORDER BY b.created_at DESC LIMIT 20",
-    "SELECT COUNT(*) AS n, SUM(amount) FROM billing WHERE customer_id = 8 "
-    "AND created_at >= date_trunc('month', now()) - interval '1 month'",
-    "SELECT * FROM support_tickets WHERE customer_id = 3 AND status IN ('open', 'in_progress') "
-    "AND created_at BETWEEN now() - interval '7 days' AND now()",
-    "SELECT CASE WHEN type = 'refund' THEN -amount ELSE amount END AS signed FROM billing "
-    "WHERE NOT (status = 'failed') AND description ILIKE '%dup%'",
+    ("SELECT c.id, c.name, b.amount FROM customers c JOIN billing b ON b.customer_id = c.id "
+     "WHERE c.id = 8 AND b.type = 'charge' OR b.amount > 5 ORDER BY b.created_at DESC LIMIT 20"),
+    ("SELECT COUNT(*) AS n, SUM(amount) FROM billing WHERE customer_id = 8 "
+     "AND created_at >= date_trunc('month', now()) - interval '1 month'"),
+    ("SELECT * FROM support_tickets WHERE customer_id = 3 AND status IN ('open', 'in_progress') "
+     "AND created_at BETWEEN now() - interval '7 days' AND now()"),
+    ("SELECT CASE WHEN type = 'refund' THEN -amount ELSE amount END AS signed FROM billing "
+     "WHERE NOT (status = 'failed') AND description ILIKE '%dup%'"),
     "SELECT id, created_at::date, ROUND(amount, 2), string_agg(description, ', ') FROM billing GROUP BY 1, 2, 3",
     "SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) FROM billing",
 ]
