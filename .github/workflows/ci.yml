@@ -154,7 +154,7 @@ jobs:
   # ── STAGE 3: Build Verification ───────────────────────────────
   build:
     name: "Stage 3 · Build (${{ matrix.service }})"
-    needs: [backend-quality, frontend-quality]
+    needs: [backend-quality, frontend-quality, secret-scan, dependency-audit]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -174,7 +174,7 @@ jobs:
   # ── STAGE 4: E2E Tests ────────────────────────────────────────
   e2e:
     name: "Stage 4 · E2E Tests"
-    needs: [frontend-quality]
+    needs: [frontend-quality, secret-scan, dependency-audit]
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -62,6 +62,7 @@ def test_uses_real_time_by_default():
 
 def test_client_key_prefers_proxy_headers():
     assert client_key({"x-real-ip": " 1.1.1.1 "}, "9.9.9.9") == "1.1.1.1"
-    assert client_key({"x-forwarded-for": "2.2.2.2, 10.0.0.1"}, "9.9.9.9") == "2.2.2.2"
+    # The leftmost X-Forwarded-For entry is client-controlled, so it is ignored.
+    assert client_key({"x-forwarded-for": "2.2.2.2, 10.0.0.1"}, "9.9.9.9") == "9.9.9.9"
     assert client_key({}, "9.9.9.9") == "9.9.9.9"
     assert client_key({}, None) == "unknown"

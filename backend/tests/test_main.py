@@ -867,6 +867,23 @@ class TestGetTableDataEndpoint:
             assert data["table"] == "billing"
             assert data["rows"] == []
 
+    def test_emails_are_masked(self, client):
+        """Regression (external audit): the public table viewer returned every customer's email."""
+        mock_db = AsyncMock()
+        mock_db.execute_sql = AsyncMock(return_value={
+            "success": True,
+            "data": [
+                {"id": 1, "name": "Sarah Chen", "email": "sarah.chen@megacorp.com"},
+                {"id": 2, "name": "No Email", "email": None},
+                {"id": 3, "name": "Odd", "email": "not-an-address"},
+            ],
+        })
+
+        with patch("app.main.get_supabase", return_value=mock_db):
+            rows = client.get("/api/tables/customers").json()["rows"]
+        assert [r["email"] for r in rows] == ["s***@megacorp.com", None, "not-an-address"]
+        assert rows[0]["name"] == "Sarah Chen"
+
     def test_unknown_table_returns_400(self, client):
         """Cover L433-434: unknown table name returns 400."""
         response = client.get("/api/tables/secret_table")

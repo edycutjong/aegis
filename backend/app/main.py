@@ -509,11 +509,20 @@ async def db_status():
 ALLOWED_TABLES = {"customers", "billing", "support_tickets", "internal_docs"}
 
 
+def mask_email(value):
+    """sarah.chen@megacorp.com → s***@megacorp.com. The table viewer is public."""
+    if not isinstance(value, str) or "@" not in value:
+        return value
+    local, _, domain = value.partition("@")
+    return f"{local[:1]}***@{domain}"
+
+
 @app.get("/api/tables/{name}")
 async def get_table_data(name: str):
     """Return rows from a seed data table.
 
-    Only allows reading from the four known tables.
+    Only allows reading from the four known tables. The endpoint is public,
+    so email addresses are masked; the agent itself reads them unmasked.
     """
     if name not in ALLOWED_TABLES:
         raise HTTPException(status_code=400, detail=f"Unknown table: {name}")
@@ -523,7 +532,11 @@ async def get_table_data(name: str):
     try:
         res = await db.execute_sql(query)
         if res["success"]:
-            return {"table": name, "rows": res.get("data", []) or []}
+            rows = [
+                {k: mask_email(v) if k == "email" else v for k, v in row.items()}
+                for row in res.get("data", []) or []
+            ]
+            return {"table": name, "rows": rows}
         else:
             print(f"[tables] {name}: {res.get('error')}")
             raise HTTPException(status_code=500, detail="Query failed")
