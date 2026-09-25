@@ -1775,3 +1775,62 @@ def test_traces_persistent_429_returns_friendly_message():
                 data = c.get("/api/traces").json()
         assert data["traces"] == []
         assert "Rate limit exceeded" in data["error"]
+
+
+class TestErroredRunsLeaveTheTracker:
+    """Regression (audit): a run that raised stayed "in flight" in the tracker
+    until eviction, so /api/metrics counted failures as runs in progress."""
+
+    @pytest.mark.asyncio
+    async def test_failed_run_is_completed_as_errored(self):
+        from app.main import _run_agent, thread_store
+        from app.observability.tracker import get_tracker
+
+        thread_store["errored-run"] = {"message": "m", "status": "processing", "thought_log": [],
+                                       "proposed_action": None, "final_response": None}
+        get_tracker().start_request("errored-run")
+
+        async def fail(*args, **kwargs):
+            raise RuntimeError("provider down")
+            yield  # noqa: E501 — make it an async generator
+
+        graph = MagicMock()
+        graph.astream = fail
+        with patch("app.main.agent_graph", graph):
+            await _run_agent("errored-run", "m")
+
+        stats = get_tracker().get_aggregate_stats()
+        assert stats["in_flight_requests"] == 0
+        assert stats["errored_requests"] == 1
+        assert get_tracker().receipt("errored-run")["error"] is True
+        del thread_store["errored-run"]
+
+    def test_failed_approval_is_completed_as_errored(self, client):
+        from app.main import thread_store
+        from app.observability.tracker import get_tracker
+
+        thread_store["errored-approval"] = {"message": "m", "status": "awaiting_approval", "thought_log": [],
+                                            "proposed_action": {"type": "refund"}, "final_response": None}
+        get_tracker().start_request("errored-approval")
+
+        async def fail(*args, **kwargs):
+            raise RuntimeError("provider down")
+            yield  # noqa: E501 — make it an async generator
+
+        graph = MagicMock()
+        graph.astream = fail
+        with patch("app.main.agent_graph", graph):
+            assert client.post("/api/approve/errored-approval", json={"approved": True, "reason": ""}).status_code == 500
+
+        stats = get_tracker().get_aggregate_stats()
+        assert stats["in_flight_requests"] == 0
+        assert stats["errored_requests"] == 1
+        del thread_store["errored-approval"]
+
+    def test_a_run_paused_at_the_gate_is_in_flight_not_errored(self):
+        from app.observability.tracker import get_tracker
+        tracker = get_tracker()
+        tracker.start_request("paused").add_step("s", "gpt-4.1-mini", 1000, 100)
+        stats = tracker.get_aggregate_stats()
+        assert (stats["in_flight_requests"], stats["completed_requests"], stats["errored_requests"]) == (1, 0, 0)
+        assert stats["total_cost_usd"] > 0

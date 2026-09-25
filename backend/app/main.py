@@ -263,6 +263,8 @@ async def _run_agent(thread_id: str, message: str):
         thread_store[thread_id]["error"] = message
         thread_store[thread_id]["thought_log"].append(f"✗ Error: {message}")
         print(f"[Agent Error] {thread_id}: {e}")  # full detail stays in server logs
+        # A failed run is over: without this it stayed "in flight" until evicted.
+        get_tracker().complete_request(thread_id, error=True)
 
 
 def public_error(error: Exception) -> str:
@@ -420,6 +422,7 @@ async def approve_action(thread_id: str, request: ApprovalRequest):
         thread_store[thread_id]["status"] = "error"
         thread_store[thread_id]["error"] = message
         print(f"[Approve Error] {thread_id}: {e}")
+        get_tracker().complete_request(thread_id, error=True)
         raise HTTPException(status_code=500, detail=message)
 
 

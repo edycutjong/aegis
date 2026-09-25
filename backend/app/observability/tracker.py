@@ -39,6 +39,7 @@ class RequestMetrics:
 
     # Result
     approved: bool | None = None  # None = no HITL needed
+    error: bool = False  # the run failed; its spend still counts
 
     # HITL timing
     hitl_requested_at: float | None = None
@@ -84,6 +85,7 @@ class RequestMetrics:
             "steps": self.steps,
             "cache_hit": self.cache_hit,
             "approved": self.approved,
+            "error": self.error,
             "hitl_wait_seconds": round(self.hitl_resolved_at - self.hitl_requested_at, 2)
                 if self.hitl_requested_at and self.hitl_resolved_at else None,
         }
@@ -109,10 +111,11 @@ class ObservabilityTracker:
         """Get metrics for a specific request."""
         return self.requests.get(thread_id)
 
-    def complete_request(self, thread_id: str):
-        """Move request to completed history."""
+    def complete_request(self, thread_id: str, error: bool = False):
+        """Move request to completed history (errored runs too: they spent money)."""
         if thread_id in self.requests:
             metrics = self.requests.pop(thread_id)
+            metrics.error = error
             metrics.complete()
             self._history.append(metrics.to_dict())
             del self._history[:-HISTORY_LIMIT]
@@ -142,6 +145,7 @@ class ObservabilityTracker:
                 "total_requests": 0,
                 "completed_requests": 0,
                 "in_flight_requests": 0,
+                "errored_requests": 0,
                 "avg_cost_usd": 0.0,
                 "avg_duration_seconds": 0.0,
                 "total_cost_usd": 0.0,
@@ -179,6 +183,7 @@ class ObservabilityTracker:
             "total_requests": len(spent),
             "completed_requests": n,
             "in_flight_requests": len(in_flight),
+            "errored_requests": sum(1 for r in self._history if r.get("error")),
             "avg_cost_usd": round(completed_cost / n, 6) if n else 0.0,
             "avg_duration_seconds": round(total_duration / n, 2) if n else 0.0,
             "total_cost_usd": round(total_cost, 6),
