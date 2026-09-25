@@ -13,7 +13,7 @@ and stops for a human before anything that moves money or changes an account.**
 [![Coverage](https://img.shields.io/badge/coverage-100%25%20backend%20%C2%B7%20100%25%20frontend-brightgreen)](#-quality-gates)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-<img src="docs/screenshots/02-approval-gate.png" alt="Aegis holding a $49 refund at the human approval gate, with the full agent trace visible above it" width="100%">
+<img src="docs/demo.gif" alt="A real run: the agents investigate a double-charge ticket, hold a $49 refund at the human approval gate, then write the reply once it is approved" width="100%">
 
 </div>
 

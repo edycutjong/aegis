@@ -4,7 +4,7 @@
  *
  * The backend emits lines like:
  *   "✓ [Triage] Classified intent: billing (confidence: 99%)"
- *   "⚡ Routed to Groq openai/gpt-oss-120b"
+ *   "↪ [Resolution] gpt-4.1-mini unavailable, answered by backup openai/gpt-oss-120b"
  *   "✗ [Investigator] SQL retry (attempt 2/3): column \"x\" does not exist"
  * Everything here is pure so it can be tested without rendering.
  */
@@ -20,7 +20,7 @@ export interface AgentMeta {
 }
 
 export const AGENTS: AgentMeta[] = [
-    { id: "Triage", role: "Classify & route", color: "#a78bfa" },
+    { id: "Triage", role: "Screen & classify", color: "#a78bfa" },
     { id: "Investigator", role: "Validate · SQL · self-heal", color: "#22d3ee" },
     { id: "Knowledge", role: "Search policy docs", color: "#f472b6" },
     { id: "Resolution", role: "Propose one action", color: "#60a5fa" },
@@ -35,7 +35,7 @@ export type StepKind =
     | "screen_flagged"
     | "sql_blocked"
     | "intent"
-    | "route"
+    | "backup"
     | "customer"
     | "typo"
     | "sql"
@@ -60,14 +60,14 @@ export interface ParsedStep {
     data: Record<string, string>;
 }
 
-const MARKERS: Record<string, Tone> = { "✓": "ok", "✗": "fail", "⚠": "warn", "⏸": "warn" };
+const MARKERS: Record<string, Tone> = { "✓": "ok", "✗": "fail", "⚠": "warn", "⏸": "warn", "↪": "warn" };
 
 const PATTERNS: Array<[StepKind, RegExp, string[]]> = [
     ["screen_clean", /^Input screen clean(?: \((.+)\))?/, ["score"]],
     ["screen_flagged", /^Input flagged: (.+?)(?: \(([^()]*)\))?(?: — .*)?$/, ["flags", "score"]],
     ["sql_blocked", /^SQL guard blocked query \(attempt (\d+)\/(\d+)\): ?(.*)$/, ["attempt", "max", "reason"]],
     ["intent", /^Classified intent: (\w+) \(confidence: (\d+%)\)/, ["intent", "confidence"]],
-    ["route", /^Routed to (?:Groq )?(.+)$/, ["model"]],
+    ["backup", /^(\S+) unavailable, answered by backup (.+)$/, ["primary", "model"]],
     ["typo", /^Name typo detected: "(.+?)" → auto-corrected to "(.+?)" \(similarity: (\d+%)\)/, ["from", "to", "similarity"]],
     ["customer", /^Customer (?:validated|found by name): #(\d+) (.+?) \((\w+), (\w+)\)/, ["id", "name", "plan", "status"]],
     ["sql_retry", /^SQL retry \(attempt (\d+)\/(\d+)\): ?(.*)$/, ["attempt", "max", "error"]],
@@ -94,8 +94,6 @@ export function parseStep(raw: string): ParsedStep {
         // The shield marks a security control acting: input screen or SQL guard.
         tone = "guard";
         rest = rest.replace(/^🛡\uFE0F?\s*/u, "");
-    } else if (/^(⚡|🧠)/u.test(rest)) {
-        rest = rest.replace(/^(⚡|🧠)\s*/u, "");
     } else if (rest.startsWith("→")) {
         rest = rest.slice(1).trim();
     }
